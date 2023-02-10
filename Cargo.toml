@@ -1,0 +1,7 @@
+[workspace]
+members = [
+    "colabrodo_cli",
+    "colabrodo_core",
+    "colabrodo_macros",
+]
+
