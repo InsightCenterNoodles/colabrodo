@@ -6,7 +6,7 @@ use crate::nooid::NooID;
 use crate::server_messages::*;
 use ciborium::value;
 use serde::{ser::SerializeSeq, ser::SerializeStruct, Serialize};
-use std::cell::RefCell;
+use std::cell::{Ref, RefCell, RefMut};
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::hash::Hash;
@@ -15,16 +15,14 @@ use std::sync::mpsc::Sender;
 
 pub type CallbackPtr = Sender<Vec<u8>>;
 
-#[derive(Serialize)]
+// =============================================================================
+
 pub struct ComponentCell<T>
 where
     T: Serialize + ServerStateItemMessageIDs + Debug,
 {
     id: NooID,
-    #[serde(flatten)]
-    pub(crate) state: T,
-    #[serde(skip)]
-    host: Weak<RefCell<ServerComponentList<T>>>,
+    host: Rc<RefCell<ServerComponentList<T>>>,
 }
 
 impl<T> Debug for ComponentCell<T>
@@ -34,7 +32,6 @@ where
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ComponentCell")
             .field("id", &self.id)
-            .field("state", &self.state)
             .finish()
     }
 }
@@ -61,10 +58,12 @@ where
 
         // now inform the host what has happened
 
-        if let Some(h) = self.host.upgrade() {
-            h.borrow_mut().tx.send(recorder.data).unwrap();
+        let mut h = self.host.borrow_mut();
 
-            h.borrow_mut().return_id(self.id);
+        {
+            h.broadcast.send(recorder.data).unwrap();
+
+            h.return_id(self.id);
         }
     }
 }
@@ -77,16 +76,77 @@ where
         self.id
     }
 
-    pub(crate) fn send_to_tx(&self, rec: Recorder) {
-        Weak::upgrade(&self.host)
-            .unwrap()
-            .borrow_mut()
-            .send_to_tx(rec);
+    pub fn get(&self) -> ComponentCellGuard<T> {
+        ComponentCellGuard {
+            guard: self.host.borrow(),
+            id: self.id,
+        }
+        //std::cell::Ref::map(self.host.borrow(), |x| x.get_data(self.id))
+    }
+
+    pub fn borrow_mut(&self) -> ComponentCellGuardMut<T> {
+        //std::cell::Ref::map(self.host.borrow(), |x| &x.get_data_mut(self.id))
+        ComponentCellGuardMut {
+            guard: self.host.borrow_mut(),
+            id: self.id,
+        }
+    }
+
+    pub(crate) fn send_to_broadcast(&self, rec: Recorder) {
+        self.host.borrow_mut().send_to_tx(rec);
     }
 }
 
+pub struct ComponentCellGuard<'a, T>
+where
+    T: Serialize + ServerStateItemMessageIDs + Debug,
+{
+    guard: Ref<'a, ServerComponentList<T>>,
+    id: NooID,
+}
+
+impl<'a, T> std::ops::Deref for ComponentCellGuard<'a, T>
+where
+    T: Serialize + ServerStateItemMessageIDs + Debug,
+{
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        self.guard.get_data(self.id).unwrap()
+    }
+}
+
+pub struct ComponentCellGuardMut<'a, T>
+where
+    T: Serialize + ServerStateItemMessageIDs + Debug,
+{
+    guard: RefMut<'a, ServerComponentList<T>>,
+    id: NooID,
+}
+
+impl<'a, T> std::ops::Deref for ComponentCellGuardMut<'a, T>
+where
+    T: Serialize + ServerStateItemMessageIDs + Debug,
+{
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        self.guard.get_data(self.id).unwrap()
+    }
+}
+
+impl<'a, T> std::ops::DerefMut for ComponentCellGuardMut<'a, T>
+where
+    T: Serialize + ServerStateItemMessageIDs + Debug,
+{
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.guard.get_data_mut(self.id).unwrap()
+    }
+}
+// =============================================================================
+
 #[derive(Debug)]
-pub struct ComponentPtr<T>(pub Rc<RefCell<ComponentCell<T>>>)
+pub struct ComponentPtr<T>(pub Rc<ComponentCell<T>>)
 where
     T: Serialize + ServerStateItemMessageIDs + Debug;
 
@@ -98,7 +158,7 @@ where
     where
         S: serde::Serializer,
     {
-        (*self.0.borrow()).serialize(serializer)
+        self.0.get().serialize(serializer)
     }
 }
 
@@ -116,11 +176,11 @@ where
     T: Serialize + ServerStateItemMessageIDs + Debug,
 {
     pub fn id(&self) -> NooID {
-        self.0.borrow().id()
+        self.0.id()
     }
 
-    pub(crate) fn send_to_tx(&self, rec: Recorder) {
-        self.0.borrow_mut().send_to_tx(rec)
+    pub(crate) fn send_to_broadcast(&self, rec: Recorder) {
+        self.0.send_to_broadcast(rec)
     }
 }
 
@@ -147,12 +207,15 @@ impl<T> Eq for ComponentPtr<T> where
 {
 }
 
+// =============================================================================
+
 pub struct ServerComponentList<T>
 where
     T: Serialize + ServerStateItemMessageIDs + Debug,
 {
-    list: HashMap<NooID, Rc<RefCell<ComponentCell<T>>>>,
-    tx: CallbackPtr,
+    list: HashMap<NooID, T>,
+    id_list: HashMap<NooID, Weak<ComponentCell<T>>>,
+    broadcast: CallbackPtr,
     free_list: Vec<NooID>,
 }
 
@@ -160,13 +223,14 @@ impl<T: Serialize + ServerStateItemMessageIDs + Debug> ServerComponentList<T> {
     fn new(tx: CallbackPtr) -> Self {
         Self {
             list: HashMap::new(),
-            tx,
+            id_list: HashMap::new(),
+            broadcast: tx,
             free_list: Default::default(),
         }
     }
 
     fn send_to_tx(&self, rec: Recorder) {
-        self.tx.send(rec.data).unwrap();
+        self.broadcast.send(rec.data).unwrap();
     }
 
     fn provision_id(&mut self) -> NooID {
@@ -179,6 +243,7 @@ impl<T: Serialize + ServerStateItemMessageIDs + Debug> ServerComponentList<T> {
 
     fn return_id(&mut self, id: NooID) {
         self.list.remove(&id);
+        self.id_list.remove(&id);
         self.free_list.push(id);
     }
 
@@ -192,27 +257,32 @@ impl<T: Serialize + ServerStateItemMessageIDs + Debug> ServerComponentList<T> {
 
         println!("Adding Component {} {}", std::any::type_name::<T>(), new_id);
 
-        //self.setup_and_write(new_id, &mut new_t);
-
-        let c = ComponentCell::<T> {
-            id: new_id,
-            state: new_t,
-            host: Rc::downgrade(&host),
-        };
+        let write_tuple = (
+            T::create_message_id() as u32,
+            Bouncer {
+                id: new_id,
+                content: &new_t,
+            },
+        );
 
         let mut recorder = Recorder::default();
-
-        let write_tuple = (T::create_message_id() as u32, &c);
 
         ciborium::ser::into_writer(&write_tuple, &mut recorder.data).unwrap();
 
         self.send_to_tx(recorder);
 
-        let c = Rc::new(RefCell::new(c));
+        self.list.insert(new_id, new_t);
 
-        self.list.insert(new_id, c.clone());
+        let cell = ComponentCell::<T> {
+            id: new_id,
+            host: host,
+        };
 
-        ComponentPtr(c)
+        let cell = Rc::new(cell);
+
+        self.id_list.insert(new_id, Rc::downgrade(&cell));
+
+        ComponentPtr(cell)
     }
 
     pub fn len(&self) -> usize {
@@ -223,8 +293,22 @@ impl<T: Serialize + ServerStateItemMessageIDs + Debug> ServerComponentList<T> {
         self.len() == 0
     }
 
+    pub fn get_data(&self, id: NooID) -> Option<&T> {
+        self.list.get(&id)
+    }
+
+    pub fn get_data_mut(&mut self, id: NooID) -> Option<&mut T> {
+        self.list.get_mut(&id)
+    }
+
     pub fn resolve(&self, id: NooID) -> Option<ComponentPtr<T>> {
-        self.list.get(&id).map(|x| ComponentPtr(x.clone()))
+        match self.id_list.get(&id) {
+            None => None,
+            Some(x) => match x.upgrade() {
+                None => None,
+                Some(x) => Some(ComponentPtr(x)),
+            },
+        }
     }
 
     fn dump_state_helper<S>(&self, s: &mut S) -> Result<(), S::Error>
@@ -232,14 +316,17 @@ impl<T: Serialize + ServerStateItemMessageIDs + Debug> ServerComponentList<T> {
         S: SerializeSeq,
     {
         for element in &self.list {
-            //seq.serialize_element(element)?;
-            let st = element.1.borrow();
             s.serialize_element(&T::create_message_id())?;
-            s.serialize_element(&*st)?;
+            s.serialize_element(&Bouncer {
+                id: *element.0,
+                content: &element.1,
+            })?;
         }
         Ok(())
     }
 }
+
+// =============================================================================
 
 pub struct PubUserCompList<T>
 where
@@ -283,6 +370,8 @@ where
         self.list.borrow().dump_state_helper(s)
     }
 }
+
+// =============================================================================
 
 pub struct ServerState {
     tx: CallbackPtr,
@@ -519,18 +608,15 @@ fn invoke_helper(
         InvokeObj::Document => {
             find_method_in_state(&method, &c.state().comm.methods_list)
         }
-        InvokeObj::Entity(x) => find_method_in_state(
-            &method,
-            &x.0.borrow().state.extra.methods_list,
-        ),
-        InvokeObj::Plot(x) => find_method_in_state(
-            &method,
-            &x.0.borrow().state.extra.methods_list,
-        ),
-        InvokeObj::Table(x) => find_method_in_state(
-            &method,
-            &x.0.borrow().state.extra.methods_list,
-        ),
+        InvokeObj::Entity(x) => {
+            find_method_in_state(&method, &x.0.get().extra.methods_list)
+        }
+        InvokeObj::Plot(x) => {
+            find_method_in_state(&method, &x.0.get().extra.methods_list)
+        }
+        InvokeObj::Table(x) => {
+            find_method_in_state(&method, &x.0.get().extra.methods_list)
+        }
     };
 
     if !has_method {

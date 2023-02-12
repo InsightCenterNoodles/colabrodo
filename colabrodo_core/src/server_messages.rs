@@ -2,7 +2,7 @@ use ciborium::tag::Required;
 use colabrodo_macros::UpdatableStateItem;
 use core::fmt::Debug;
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
-use std::{cell::RefCell, rc::Rc};
+use std::rc::Rc;
 
 use crate::nooid::NooID;
 
@@ -117,7 +117,7 @@ impl Serialize for Url {
 // Component Refs ==============================================
 
 #[derive(Debug, Clone)]
-pub struct ComponentReference<T>(Rc<RefCell<ComponentCell<T>>>)
+pub struct ComponentReference<T>(Rc<ComponentCell<T>>)
 where
     T: Serialize + ServerStateItemMessageIDs + Debug;
 
@@ -130,7 +130,7 @@ where
     }
 
     pub fn id(&self) -> NooID {
-        self.0.borrow().id()
+        self.0.id()
     }
 }
 
@@ -142,10 +142,20 @@ where
     where
         S: serde::Serializer,
     {
-        let id = (*self.0).borrow().id();
+        let id = (*self.0).id();
 
         id.serialize(serializer)
     }
+}
+
+// =============================================================================
+
+#[derive(Serialize)]
+pub struct Bouncer<'a, T> {
+    pub id: NooID,
+
+    #[serde(flatten)]
+    pub content: &'a T,
 }
 
 // Write destination ==============================================
@@ -585,7 +595,7 @@ pub struct BufferViewState {
 
 impl BufferViewState {
     pub fn new_from_whole_buffer(buffer: ComponentPtr<BufferState>) -> Self {
-        let buffer_size = buffer.0.borrow().state.size;
+        let buffer_size = buffer.0.get().size;
 
         Self {
             name: None,

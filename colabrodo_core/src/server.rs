@@ -215,5 +215,7 @@ async fn client_handler(
         }
     }
 
+    println!("Client closed.");
+
     Ok(())
 }
