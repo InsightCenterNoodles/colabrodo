@@ -8,7 +8,7 @@ use crate::nooid::NooID;
 
 use crate::common;
 
-use crate::server_state::{ComponentCell, ComponentPtr, SignalInvokeObj};
+use crate::server_state::{ComponentCell, SignalInvokeObj};
 
 // =====================================================
 
@@ -112,8 +112,8 @@ impl Serialize for Url {
 
 // Component Refs ==============================================
 
-#[derive(Debug, Clone)]
-pub struct ComponentReference<T>(Rc<ComponentCell<T>>)
+#[derive(Debug)]
+pub struct ComponentReference<T>(pub(crate) Rc<ComponentCell<T>>)
 where
     T: Serialize + ServerStateItemMessageIDs + Debug;
 
@@ -121,12 +121,25 @@ impl<T> ComponentReference<T>
 where
     T: Serialize + ServerStateItemMessageIDs + Debug,
 {
-    pub fn new(ptr: &ComponentPtr<T>) -> Self {
-        Self(ptr.0.clone())
+    pub fn new(ptr: Rc<ComponentCell<T>>) -> Self {
+        Self(ptr)
     }
 
     pub fn id(&self) -> NooID {
         self.0.id()
+    }
+
+    pub(crate) fn send_to_broadcast(&self, rec: Recorder) {
+        self.0.send_to_broadcast(rec)
+    }
+}
+
+impl<T> Clone for ComponentReference<T>
+where
+    T: Serialize + ServerStateItemMessageIDs + Debug,
+{
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
     }
 }
 
@@ -142,6 +155,29 @@ where
 
         id.serialize(serializer)
     }
+}
+
+impl<T> core::hash::Hash for ComponentReference<T>
+where
+    T: Serialize + ServerStateItemMessageIDs + Debug,
+{
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        std::ptr::hash(&*self.0, state);
+    }
+}
+
+impl<T> PartialEq for ComponentReference<T>
+where
+    T: Serialize + ServerStateItemMessageIDs + Debug,
+{
+    fn eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl<T> Eq for ComponentReference<T> where
+    T: Serialize + ServerStateItemMessageIDs + Debug
+{
 }
 
 // =============================================================================
@@ -588,12 +624,14 @@ pub struct BufferViewState {
 }
 
 impl BufferViewState {
-    pub fn new_from_whole_buffer(buffer: ComponentPtr<BufferState>) -> Self {
+    pub fn new_from_whole_buffer(
+        buffer: ComponentReference<BufferState>,
+    ) -> Self {
         let buffer_size = buffer.0.get().size;
 
         Self {
             name: None,
-            source_buffer: ComponentReference::new(&buffer),
+            source_buffer: buffer,
             view_type: BufferViewType::Unknown,
             offset: 0,
             length: buffer_size,
@@ -709,10 +747,12 @@ pub struct ImageState {
 }
 
 impl ImageState {
-    pub fn new_from_buffer(buffer: ComponentPtr<BufferViewState>) -> Self {
+    pub fn new_from_buffer(
+        buffer: ComponentReference<BufferViewState>,
+    ) -> Self {
         Self {
             name: None,
-            source: ImageSource::Buffer(ComponentReference::new(&buffer)),
+            source: ImageSource::Buffer(buffer),
         }
     }
 
@@ -752,13 +792,13 @@ pub struct TextureState {
 
 impl TextureState {
     pub fn new(
-        image: ComponentPtr<ImageState>,
-        sampler: Option<ComponentPtr<SamplerState>>,
+        image: ComponentReference<ImageState>,
+        sampler: Option<ComponentReference<SamplerState>>,
     ) -> Self {
         Self {
             name: Default::default(),
-            image: ComponentReference::new(&image),
-            sampler: (sampler).map(|x| ComponentReference::new(&x)),
+            image,
+            sampler,
         }
     }
 }

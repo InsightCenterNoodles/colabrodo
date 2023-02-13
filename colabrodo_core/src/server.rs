@@ -1,3 +1,5 @@
+//! A tokio powered server framework. Users can plug in a user server struct to this framework to obtain a coroutine powered NOODLES server.
+
 use std::thread;
 
 use futures_util::SinkExt;
@@ -35,7 +37,12 @@ fn debug_cbor(data: &Vec<u8>) {
 #[derive(Debug)]
 struct FromClientMessage(mpsc::Sender<Vec<u8>>, Vec<u8>);
 
-/// Public entry point to the server process. Users should define a type that conforms to UserServerState and pass it in like:
+/// Public entry point to the server process.
+///
+/// Note that this function will spawn a number of threads.
+///
+/// # Example
+/// Users should define a type that conforms to UserServerState and pass it in like:
 /// ```
 /// struct MyServer {
 ///     state: ServerState,
@@ -47,9 +54,9 @@ struct FromClientMessage(mpsc::Sender<Vec<u8>>, Vec<u8>);
 ///     // ...
 /// }
 ///
-/// fn main() {
-///     colabrodo_core::server_tokio::server_main::<MyServer>();
-/// }
+///
+/// colabrodo_core::server_tokio::server_main::<MyServer>();
+///
 /// ```
 pub fn server_main<T>()
 where
@@ -146,11 +153,16 @@ fn server_state_loop<T>(
         // to the client's output queue
         print!("RECV:");
         debug_cbor(&msg.1);
-        server_state::handle_next(&mut server_state, msg.1, |out| {
-            print!("SEND CLIENT:");
-            debug_cbor(&out);
-            msg.0.blocking_send(out).unwrap();
-        })
+        let result =
+            server_state::handle_next(&mut server_state, msg.1, |out| {
+                print!("SEND CLIENT:");
+                debug_cbor(&out);
+                msg.0.blocking_send(out).unwrap();
+            });
+
+        if let Err(x) = result {
+            log::warn!("Unable to handle message from client: {x:?}");
+        }
     }
 }
 

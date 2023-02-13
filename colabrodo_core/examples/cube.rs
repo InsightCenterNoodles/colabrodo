@@ -1,9 +1,14 @@
+//! An example NOODLES server that provides cube geometry for clients.
+
 use colabrodo_core::{
     server_bufferbuilder,
     server_messages::*,
-    server_state::{ComponentPtr, ServerState, UserServerState},
+    server_state::{ServerState, UserServerState},
 };
 
+/// Build the actual cube geometry.
+///
+/// This uses the simple helper tools to build a geometry buffer; you don't have to use this feature if you don't want to.
 fn make_cube(server_state: &mut ServerState) -> GeometryPatch {
     let mut test_source = server_bufferbuilder::VertexSource::default();
 
@@ -54,6 +59,7 @@ fn make_cube(server_state: &mut ServerState) -> GeometryPatch {
         [6, 7, 3],
     ];
 
+    // Create a material to go along with this cube
     let material = server_state.materials.new_component(MaterialState {
         name: None,
         extra: MaterialStateUpdatable {
@@ -68,16 +74,20 @@ fn make_cube(server_state: &mut ServerState) -> GeometryPatch {
         },
     });
 
+    // Return a new mesh with this geometry/material
     server_bufferbuilder::create_mesh(server_state, test_source, material)
 }
 
+/// Example implementation of a server
 struct CubeServer {
     state: ServerState,
 
-    cube_entity: Option<ComponentPtr<EntityState>>,
+    cube_entity: Option<ComponentReference<EntityState>>,
 }
 
+/// All server states should use this trait...
 impl UserServerState for CubeServer {
+    /// When needed the network server will create our struct with this function
     fn new(tx: colabrodo_core::server_state::CallbackPtr) -> Self {
         Self {
             state: ServerState::new(tx),
@@ -85,6 +95,7 @@ impl UserServerState for CubeServer {
         }
     }
 
+    /// Any additional state can be created here.
     fn initialize_state(&mut self) {
         let cube = make_cube(&mut self.state);
 
@@ -101,7 +112,7 @@ impl UserServerState for CubeServer {
                     transform: None,
                     representation: Some(EntityRepresentation::Render(
                         RenderRepresentation {
-                            mesh: ComponentReference::new(&geom),
+                            mesh: geom,
                             instances: None,
                         },
                     )),
@@ -110,19 +121,20 @@ impl UserServerState for CubeServer {
             }));
     }
 
+    /// Some code will need mutable access to the core server state
     fn mut_state(&mut self) -> &ServerState {
         &self.state
     }
 
+    /// Some code will need non-mutable access to the core server state
     fn state(&self) -> &ServerState {
         &self.state
     }
 
+    /// When a method invoke is received, it will be validated and then passed here for processing.
     fn invoke(
         &mut self,
-        _method: colabrodo_core::server_state::ComponentPtr<
-            colabrodo_core::server_messages::MethodState,
-        >,
+        _method: ComponentReference<MethodState>,
         _context: colabrodo_core::server_state::InvokeObj,
         _args: Vec<ciborium::value::Value>,
     ) -> colabrodo_core::server_state::MethodResult {

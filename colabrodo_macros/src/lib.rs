@@ -18,7 +18,7 @@ pub fn emit_optional_patch_function(input: TokenStream) -> TokenStream {
     let mut ret_impl = format!(
         "
         impl UpdatableStateItem for {name} {{
-            type HostState = ComponentPtr<{host_name}>;
+            type HostState = ComponentReference<{host_name}>;
             fn patch(self, h: &mut Self::HostState){{
                 let write_tuple = (
                     {host_name}::update_message_id(),

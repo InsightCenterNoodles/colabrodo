@@ -1,7 +1,4 @@
-use crate::{
-    server_messages::*,
-    server_state::{ComponentPtr, ServerState},
-};
+use crate::{server_messages::*, server_state::ServerState};
 
 #[derive(Debug, Default)]
 pub struct VertexSource {
@@ -50,7 +47,7 @@ where
 pub fn create_mesh(
     server_state: &mut ServerState,
     source: VertexSource,
-    material: ComponentPtr<MaterialState>,
+    material: ComponentReference<MaterialState>,
 ) -> GeometryPatch {
     let v_count = source.positions.len();
 
@@ -129,7 +126,7 @@ pub fn create_mesh(
     let vertex_view =
         server_state.buffer_views.new_component(BufferViewState {
             name: None,
-            source_buffer: ComponentReference::new(&buffer),
+            source_buffer: buffer.clone(),
             view_type: BufferViewType::Geometry,
             offset: 0,
             length: (v_byte_size * v_count) as u64,
@@ -140,7 +137,7 @@ pub fn create_mesh(
         vertex_count: v_count as u64,
         indices: None,
         patch_type: PrimitiveType::Triangles,
-        material: ComponentReference::new(&material),
+        material: material,
     };
 
     let mut cursor = 3 * 4;
@@ -148,7 +145,7 @@ pub fn create_mesh(
     {
         // add in position
         ret.attributes.push(GeometryAttribute {
-            view: ComponentReference::new(&vertex_view),
+            view: vertex_view.clone(),
             semantic: AttributeSemantic::Position,
             channel: None,
             offset: Some(0),
@@ -165,7 +162,7 @@ pub fn create_mesh(
         cursor += 3 * 4;
 
         ret.attributes.push(GeometryAttribute {
-            view: ComponentReference::new(&vertex_view),
+            view: vertex_view.clone(),
             semantic: AttributeSemantic::Normal,
             channel: None,
             offset: Some(normal_offset),
@@ -182,7 +179,7 @@ pub fn create_mesh(
         cursor += 4;
 
         ret.attributes.push(GeometryAttribute {
-            view: ComponentReference::new(&vertex_view),
+            view: vertex_view.clone(),
             semantic: AttributeSemantic::Normal,
             channel: None,
             offset: Some(texture_offset),
@@ -199,7 +196,7 @@ pub fn create_mesh(
         //cursor += 1;
 
         ret.attributes.push(GeometryAttribute {
-            view: ComponentReference::new(&vertex_view),
+            view: vertex_view.clone(),
             semantic: AttributeSemantic::Color,
             channel: None,
             offset: Some(color_offset),
@@ -215,14 +212,14 @@ pub fn create_mesh(
     if i_count != 0 {
         let view = server_state.buffer_views.new_component(BufferViewState {
             name: None,
-            source_buffer: ComponentReference::new(&buffer),
+            source_buffer: buffer,
             view_type: BufferViewType::Geometry,
             offset: v_total_bytes as u64,
             length: i_total_bytes as u64,
         });
 
         ret.indices = Some(GeometryIndex {
-            view: ComponentReference::new(&view),
+            view: view,
             count: (i_count * 3) as u32,
             offset: None,
             stride: None,

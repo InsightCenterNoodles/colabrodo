@@ -1,3 +1,11 @@
+//! Methods and structs to manage the state of a server. This includes lists of objects, and document methods/signals.
+//!
+//! Users should define a struct that conforms to the [`UserServerState`] trait; they can then use [`handle_next`] to drive changes to the state.
+//!
+//! Servers currently require a sink for broadcast messages that should be sent to all clients. Users of this library should provide such a sink (currently [`std::sync::mpsc::Sender<T>`]) and drain it regularily.
+//!
+//!
+
 use crate::client_messages::{
     AllClientMessages, ClientInvokeMessage, ClientRootMessage, InvokeIDType,
 };
@@ -9,14 +17,17 @@ use serde::{ser::SerializeSeq, ser::SerializeStruct, Serialize};
 use std::cell::{Ref, RefCell, RefMut};
 use std::collections::HashMap;
 use std::fmt::Debug;
-use std::hash::Hash;
 use std::rc::{Rc, Weak};
 use std::sync::mpsc::Sender;
+use thiserror::Error;
 
 pub type CallbackPtr = Sender<Vec<u8>>;
 
 // =============================================================================
 
+/// A struct to manage the lifetime of a component. Holds the id of the component, and the list that contains it.
+/// When this struct goes out of scope, the ID is deleted for recycling and the component is erased.
+/// Thus, this should be held in an Rc.
 pub struct ComponentCell<T>
 where
     T: Serialize + ServerStateItemMessageIDs + Debug,
@@ -41,7 +52,7 @@ where
     T: Serialize + ServerStateItemMessageIDs + Debug,
 {
     fn drop(&mut self) {
-        println!(
+        log::debug!(
             "Deleting Component {} {}",
             std::any::type_name::<T>(),
             self.id
@@ -56,13 +67,11 @@ where
 
         ciborium::ser::into_writer(&write_tuple, &mut recorder.data).unwrap();
 
-        // now inform the host what has happened
-
+        // now inform the host list what has happened
         let mut h = self.host.borrow_mut();
 
         {
             h.broadcast.send(recorder.data).unwrap();
-
             h.return_id(self.id);
         }
     }
@@ -72,10 +81,13 @@ impl<T> ComponentCell<T>
 where
     T: Serialize + ServerStateItemMessageIDs + Debug,
 {
+    /// Obtain the ID of the managed component
     pub fn id(&self) -> NooID {
         self.id
     }
 
+    /// Obtain the component. This is done in a somewhat roundabout way,
+    /// As the containing list is a mutable shared item.
     pub fn get(&self) -> ComponentCellGuard<T> {
         ComponentCellGuard {
             guard: self.host.borrow(),
@@ -84,7 +96,8 @@ where
         //std::cell::Ref::map(self.host.borrow(), |x| x.get_data(self.id))
     }
 
-    pub fn borrow_mut(&self) -> ComponentCellGuardMut<T> {
+    /// Obtain the component for mutation. Should not be called by users directly, only for our updating infrastructure.
+    pub(crate) fn borrow_mut(&self) -> ComponentCellGuardMut<T> {
         //std::cell::Ref::map(self.host.borrow(), |x| &x.get_data_mut(self.id))
         ComponentCellGuardMut {
             guard: self.host.borrow_mut(),
@@ -92,8 +105,9 @@ where
         }
     }
 
+    /// Send a given message to the server broadcast pipeline
     pub(crate) fn send_to_broadcast(&self, rec: Recorder) {
-        self.host.borrow_mut().send_to_tx(rec);
+        self.host.borrow_mut().send_to_broadcast(rec);
     }
 }
 
@@ -145,8 +159,11 @@ where
 }
 // =============================================================================
 
+/// A shared pointer to a component. This is an internal only type.
+/// It is used primarily to make a distinction when serializing lists
+/// of component pointers: this will serialize the actual component content.
 #[derive(Debug)]
-pub struct ComponentPtr<T>(pub Rc<ComponentCell<T>>)
+struct ComponentPtr<T>(Rc<ComponentCell<T>>)
 where
     T: Serialize + ServerStateItemMessageIDs + Debug;
 
@@ -171,45 +188,12 @@ where
     }
 }
 
-impl<T> ComponentPtr<T>
-where
-    T: Serialize + ServerStateItemMessageIDs + Debug,
-{
-    pub fn id(&self) -> NooID {
-        self.0.id()
-    }
-
-    pub(crate) fn send_to_broadcast(&self, rec: Recorder) {
-        self.0.send_to_broadcast(rec)
-    }
-}
-
-impl<T> Hash for ComponentPtr<T>
-where
-    T: Serialize + ServerStateItemMessageIDs + Debug,
-{
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        std::ptr::hash(&*self.0, state);
-    }
-}
-
-impl<T> PartialEq for ComponentPtr<T>
-where
-    T: Serialize + ServerStateItemMessageIDs + Debug,
-{
-    fn eq(&self, other: &Self) -> bool {
-        Rc::ptr_eq(&self.0, &other.0)
-    }
-}
-
-impl<T> Eq for ComponentPtr<T> where
-    T: Serialize + ServerStateItemMessageIDs + Debug
-{
-}
-
 // =============================================================================
 
-pub struct ServerComponentList<T>
+/// A list of components. Has the list of content, and a list of id managed pointers.
+/// We use a split list here to reduce the amount of RefCells we would otherwise be throwing around.
+/// Also included is a sink for broadcast messages, and a list of free ids for recycling.
+struct ServerComponentList<T>
 where
     T: Serialize + ServerStateItemMessageIDs + Debug,
 {
@@ -229,10 +213,12 @@ impl<T: Serialize + ServerStateItemMessageIDs + Debug> ServerComponentList<T> {
         }
     }
 
-    fn send_to_tx(&self, rec: Recorder) {
+    /// Send a CBOR message to the broadcast sink
+    fn send_to_broadcast(&self, rec: Recorder) {
         self.broadcast.send(rec.data).unwrap();
     }
 
+    /// Obtain a new id. Either generates a new ID if there are no free slots. If there are free slots, reuse and bump the generation.
     fn provision_id(&mut self) -> NooID {
         if self.free_list.is_empty() {
             return NooID::new_with_slot(self.list.len().try_into().unwrap());
@@ -241,22 +227,29 @@ impl<T: Serialize + ServerStateItemMessageIDs + Debug> ServerComponentList<T> {
         NooID::next_generation(self.free_list.pop().unwrap())
     }
 
+    /// Inform us that the given ID (slot) is free to be used again.
     fn return_id(&mut self, id: NooID) {
         self.list.remove(&id);
         self.id_list.remove(&id);
         self.free_list.push(id);
     }
 
-    // Interface
-    pub fn new_component(
+    // Create a new component. User provides initial state, and we need a pointer to the list (ourselves) to hand out to the new component.
+    fn new_component(
         &mut self,
         new_t: T,
         host: Rc<RefCell<ServerComponentList<T>>>,
-    ) -> ComponentPtr<T> {
+    ) -> ComponentReference<T> {
         let new_id = self.provision_id();
 
-        println!("Adding Component {} {}", std::any::type_name::<T>(), new_id);
+        log::info!(
+            "Adding Component {} {}",
+            std::any::type_name::<T>(),
+            new_id
+        );
 
+        // Use a pack here to encode the message id and the message.
+        // TODO: Figure out a way we can pack many messages into one.
         let write_tuple = (
             T::create_message_id() as u32,
             Bouncer {
@@ -269,8 +262,9 @@ impl<T: Serialize + ServerStateItemMessageIDs + Debug> ServerComponentList<T> {
 
         ciborium::ser::into_writer(&write_tuple, &mut recorder.data).unwrap();
 
-        self.send_to_tx(recorder);
+        self.send_to_broadcast(recorder);
 
+        // After broadcast, actually insert the content
         self.list.insert(new_id, new_t);
 
         let cell = ComponentCell::<T> {
@@ -282,35 +276,36 @@ impl<T: Serialize + ServerStateItemMessageIDs + Debug> ServerComponentList<T> {
 
         self.id_list.insert(new_id, Rc::downgrade(&cell));
 
-        ComponentPtr(cell)
+        ComponentReference(cell)
     }
 
-    pub fn len(&self) -> usize {
+    /// Obtain the count of components in this list
+    fn len(&self) -> usize {
         self.list.len()
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
-    pub fn get_data(&self, id: NooID) -> Option<&T> {
+    /// Get a reference to a component by ID
+    fn get_data(&self, id: NooID) -> Option<&T> {
         self.list.get(&id)
     }
 
-    pub fn get_data_mut(&mut self, id: NooID) -> Option<&mut T> {
+    /// Get a mutable reference to a component by ID
+    fn get_data_mut(&mut self, id: NooID) -> Option<&mut T> {
         self.list.get_mut(&id)
     }
 
-    pub fn resolve(&self, id: NooID) -> Option<ComponentPtr<T>> {
+    /// Get a pointer to a component by ID
+    fn resolve(&self, id: NooID) -> Option<ComponentReference<T>> {
         match self.id_list.get(&id) {
             None => None,
             Some(x) => match x.upgrade() {
                 None => None,
-                Some(x) => Some(ComponentPtr(x)),
+                Some(x) => Some(ComponentReference::new(x.clone())),
             },
         }
     }
 
+    /// Function that only exists to help serialize all items in this list
     fn dump_state_helper<S>(&self, s: &mut S) -> Result<(), S::Error>
     where
         S: SerializeSeq,
@@ -328,6 +323,8 @@ impl<T: Serialize + ServerStateItemMessageIDs + Debug> ServerComponentList<T> {
 
 // =============================================================================
 
+/// User facing list of components
+/// Internally this is a shared pointer to our internal list, as our components need a reference to this list as well.
 pub struct PubUserCompList<T>
 where
     T: Serialize + ServerStateItemMessageIDs + Debug,
@@ -339,30 +336,36 @@ impl<T> PubUserCompList<T>
 where
     T: Serialize + ServerStateItemMessageIDs + Debug,
 {
+    /// Create a new list
     fn new(tx: CallbackPtr) -> Self {
         Self {
             list: Rc::new(RefCell::new(ServerComponentList::new(tx))),
         }
     }
 
-    pub fn new_component(&mut self, new_t: T) -> ComponentPtr<T> {
+    /// Create a new component. Initial state for the component should be provided, and in return a reference to the new component is given.
+    pub fn new_component(&mut self, new_t: T) -> ComponentReference<T> {
         self.list
             .borrow_mut()
             .new_component(new_t, self.list.clone())
     }
 
-    pub fn resolve(&self, id: NooID) -> Option<ComponentPtr<T>> {
+    /// Discover a component by its ID. If the ID is invalid, returns None
+    pub fn resolve(&self, id: NooID) -> Option<ComponentReference<T>> {
         self.list.borrow().resolve(id)
     }
 
+    /// Ask how many components are in this list
     pub fn len(&self) -> usize {
         self.list.borrow().len()
     }
 
+    /// Ask if the list is empty
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
+    /// This function only exists to help serialize state
     fn dump_state_helper<S>(&self, s: &mut S) -> Result<(), S::Error>
     where
         S: SerializeSeq,
@@ -373,6 +376,8 @@ where
 
 // =============================================================================
 
+/// Core server state, or Document. Maintains a list of all components that clients may discover. Also maintains state for document lists.
+/// See examples for usage.
 pub struct ServerState {
     tx: CallbackPtr,
     pub methods: PubUserCompList<MethodState>,
@@ -396,6 +401,7 @@ pub struct ServerState {
     comm: DocumentUpdate,
 }
 
+/// A dummy struct for use when we need a message with no content. Terrible.
 #[derive(Serialize)]
 struct Dummy {
     v: bool,
@@ -406,8 +412,12 @@ impl Serialize for ServerState {
     where
         S: serde::Serializer,
     {
+        // We would like to be kind here and provide a count of elements
+        // the count is the number of all components, plus two messages (document update, and init one) at the end. Then we multiply by 2 as we have IDs for each message
         let count = (self.all_element_count() + 2) * 2;
         let mut s = serializer.serialize_seq(Some(count))?;
+
+        // We should now dump each list in an order that should not cause undefined references or IDs that point to nothing.
         self.methods.dump_state_helper(&mut s)?;
         self.signals.dump_state_helper(&mut s)?;
         self.buffers.dump_state_helper(&mut s)?;
@@ -434,26 +444,29 @@ impl Serialize for ServerState {
 }
 
 impl ServerState {
-    pub fn new(tx: CallbackPtr) -> Self {
+    /// Create a new server state. A sink must be provided; this sink will collect messages that are to be broadcasted to all clients, and should be serviced regularly.
+    pub fn new(broadcast: CallbackPtr) -> Self {
         Self {
-            tx: tx.clone(),
-            methods: PubUserCompList::new(tx.clone()),
-            signals: PubUserCompList::new(tx.clone()),
-            buffers: PubUserCompList::new(tx.clone()),
-            buffer_views: PubUserCompList::new(tx.clone()),
-            samplers: PubUserCompList::new(tx.clone()),
-            images: PubUserCompList::new(tx.clone()),
-            textures: PubUserCompList::new(tx.clone()),
-            materials: PubUserCompList::new(tx.clone()),
-            geometries: PubUserCompList::new(tx.clone()),
-            tables: PubUserCompList::new(tx.clone()),
-            plots: PubUserCompList::new(tx.clone()),
-            entities: PubUserCompList::new(tx),
-            // missing plot and tables
+            tx: broadcast.clone(),
+
+            methods: PubUserCompList::new(broadcast.clone()),
+            signals: PubUserCompList::new(broadcast.clone()),
+            buffers: PubUserCompList::new(broadcast.clone()),
+            buffer_views: PubUserCompList::new(broadcast.clone()),
+            samplers: PubUserCompList::new(broadcast.clone()),
+            images: PubUserCompList::new(broadcast.clone()),
+            textures: PubUserCompList::new(broadcast.clone()),
+            materials: PubUserCompList::new(broadcast.clone()),
+            geometries: PubUserCompList::new(broadcast.clone()),
+            tables: PubUserCompList::new(broadcast.clone()),
+            plots: PubUserCompList::new(broadcast.clone()),
+            entities: PubUserCompList::new(broadcast),
+
             comm: Default::default(),
         }
     }
 
+    /// Update the document's methods and signals
     pub fn update_document(&mut self, update: DocumentUpdate) {
         let msg_tuple = (ServerMessages::MsgDocumentUpdate as u32, &update);
 
@@ -466,9 +479,15 @@ impl ServerState {
         self.comm = update;
     }
 
+    /// Issue a signal for all clients
+    ///
+    /// Takes a signal to issue, the context on which the signal operates, and the arguments to be sent
+    ///
+    /// # Panics
+    /// This will panic if the broadcast queue is unable to accempt more content.
     pub fn issue_signal(
         &self,
-        signals: ComponentPtr<SignalState>,
+        signals: ComponentReference<SignalState>,
         context: Option<SignalInvokeObj>,
         arguments: Vec<value::Value>,
     ) {
@@ -488,8 +507,7 @@ impl ServerState {
         self.tx.send(recorder.data).unwrap();
     }
 
-    // A helper function for serialization
-    // returns message count
+    /// A helper function for serialization, returns the count of all components
     fn all_element_count(&self) -> usize {
         self.methods.len()
             + self.signals.len()
@@ -506,18 +524,20 @@ impl ServerState {
     }
 }
 
+/// Helper enum of the target of a method invocation
 #[derive(Clone)]
 pub enum InvokeObj {
     Document,
-    Entity(ComponentPtr<EntityState>),
-    Table(ComponentPtr<TableState>),
-    Plot(ComponentPtr<PlotState>),
+    Entity(ComponentReference<EntityState>),
+    Table(ComponentReference<TableState>),
+    Plot(ComponentReference<PlotState>),
 }
 
+/// Helper enum to describe the target of a signal invocation
 pub enum SignalInvokeObj {
-    Entity(ComponentPtr<EntityState>),
-    Table(ComponentPtr<TableState>),
-    Plot(ComponentPtr<PlotState>),
+    Entity(ComponentReference<EntityState>),
+    Table(ComponentReference<TableState>),
+    Plot(ComponentReference<PlotState>),
 }
 
 impl Serialize for SignalInvokeObj {
@@ -537,8 +557,14 @@ impl Serialize for SignalInvokeObj {
     }
 }
 
+/// The result of a method invocation.
+///
+/// Invoked methods can use this to provide a meaningful result, or to signal that an exception has occurred.
 pub type MethodResult = Result<value::Value, MethodException>;
 
+/// Trait for operating on user-defined server states.
+///
+/// Users should have their own struct that conforms to this specification, as it is required for message handling (see [`handle_next`]).
 pub trait UserServerState {
     fn new(tx: CallbackPtr) -> Self;
     fn initialize_state(&mut self);
@@ -546,14 +572,15 @@ pub trait UserServerState {
     fn state(&self) -> &ServerState;
     fn invoke(
         &mut self,
-        method: ComponentPtr<MethodState>,
+        method: ComponentReference<MethodState>,
         context: InvokeObj,
         args: Vec<value::Value>,
     ) -> MethodResult;
 }
 
+/// Helper function to determine if a method is indeed attached to a given target.
 fn find_method_in_state(
-    method: &ComponentPtr<MethodState>,
+    method: &ComponentReference<MethodState>,
     state: &Option<Vec<ComponentReference<MethodState>>>,
 ) -> bool {
     match state {
@@ -569,6 +596,9 @@ fn find_method_in_state(
     }
 }
 
+/// Helper function to actually invoke a method
+///
+/// Determines if the method exists, can be invoked on the target, etc, and if so, dispatches to the user server
 fn invoke_helper(
     c: &mut impl UserServerState,
     invoke: ClientInvokeMessage,
@@ -631,14 +661,30 @@ fn invoke_helper(
     c.invoke(method, context, invoke.args)
 }
 
-pub fn handle_next<F>(c: &mut impl UserServerState, msg: Vec<u8>, write: F)
+#[derive(Error, Debug)]
+pub enum ServerError {
+    #[error("Decode error")]
+    DecodeError(String),
+    #[error("Root message is not valid")]
+    InvalidRootMessage(String),
+}
+
+/// Drive state changes by handling the next message to the server.
+///
+/// This function takes a user server state, a message, and a writeback function. The message is assumed to be encoded in CBOR. If a specific message is needed to be sent back, the `write` function argument will be called with the content; it is up to user code to determine how to send that to the client.
+pub fn handle_next<F>(
+    c: &mut impl UserServerState,
+    msg: Vec<u8>,
+    write: F,
+) -> Result<(), ServerError>
 where
     F: Fn(Vec<u8>),
 {
     // extract a typed message from the input stream
     let root_message = ciborium::de::from_reader(msg.as_slice());
 
-    let root_message: ClientRootMessage = root_message.unwrap();
+    let root_message: ClientRootMessage = root_message
+        .map_err(|_| ServerError::InvalidRootMessage("Unable to extract root client message; this should just be a CBOR array.".to_string()))?;
 
     for message in root_message.list {
         match message {
@@ -655,16 +701,21 @@ where
                 write(recorder.data);
             }
             AllClientMessages::Invoke(invoke) => {
+                // copy the reply ident
                 let reply_id = invoke.invoke_id.clone();
 
+                // invoke the method and get the result or error
                 let result = invoke_helper(c, invoke);
 
+                // if we have a reply id, then we can ship a response. Otherwise, we just skip this step.
                 if let Some(resp) = reply_id {
+                    // Format a reply object
                     let mut reply = MessageMethodReply {
                         invoke_id: resp,
                         ..Default::default()
                     };
 
+                    // only fill in a certain field if a reply or exception...
                     match result {
                         Err(x) => {
                             reply.method_exception = Some(x);
@@ -675,7 +726,6 @@ where
                     }
 
                     // now send it back
-
                     let msg = (ServerMessages::MsgMethodReply, reply);
 
                     let mut recorder = Recorder::default();
@@ -688,6 +738,8 @@ where
             }
         }
     }
+
+    Ok(())
 }
 
 #[cfg(test)]

@@ -1,9 +1,7 @@
 use colabrodo_core::server_messages::{ComponentReference, MethodArg};
 use colabrodo_core::{
     server_messages::MethodState,
-    server_state::{
-        ComponentPtr, InvokeObj, MethodResult, ServerState, UserServerState,
-    },
+    server_state::{InvokeObj, MethodResult, ServerState, UserServerState},
 };
 use std::collections::HashMap;
 
@@ -16,7 +14,7 @@ type Function = fn(
 struct PingPongServer {
     state: ServerState,
 
-    method_list: HashMap<ComponentPtr<MethodState>, Function>,
+    method_list: HashMap<ComponentReference<MethodState>, Function>,
 }
 
 fn ping_pong(
@@ -54,7 +52,7 @@ impl UserServerState for PingPongServer {
 
         self.state.update_document(
             colabrodo_core::server_messages::DocumentUpdate {
-                methods_list: Some(vec![ComponentReference::new(&ptr)]),
+                methods_list: Some(vec![ptr]),
                 ..Default::default()
             },
         )
@@ -70,7 +68,7 @@ impl UserServerState for PingPongServer {
 
     fn invoke(
         &mut self,
-        method: ComponentPtr<MethodState>,
+        method: ComponentReference<MethodState>,
         context: colabrodo_core::server_state::InvokeObj,
         args: Vec<ciborium::value::Value>,
     ) -> MethodResult {
