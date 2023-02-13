@@ -5,7 +5,6 @@ use std::thread;
 use futures_util::SinkExt;
 use futures_util::StreamExt;
 use log;
-use tokio::runtime;
 use tokio::{
     net::{TcpListener, TcpStream},
     sync::{broadcast, mpsc},
@@ -58,16 +57,10 @@ struct FromClientMessage(mpsc::Sender<Vec<u8>>, Vec<u8>);
 /// colabrodo_core::server_tokio::server_main::<MyServer>();
 ///
 /// ```
-pub fn server_main<T>()
+pub async fn server_main<T>()
 where
     T: UserServerState,
 {
-    let rt = runtime::Builder::new_multi_thread()
-        .worker_threads(4)
-        .enable_all()
-        .build()
-        .unwrap();
-
     // channel for messages to be sent to all clients
     let (bcast_send, _) = broadcast::channel(16);
 
@@ -77,11 +70,11 @@ where
     // channel for server to send messages to all clients
     let (from_server_send, from_server_recv) = std::sync::mpsc::channel();
 
-    let listener = rt.block_on(listen());
+    let listener = listen().await;
 
     log::info!("Listening...");
 
-    rt.spawn(client_connect_task(
+    tokio::spawn(client_connect_task(
         listener,
         bcast_send.clone(),
         to_server_send,
@@ -91,7 +84,7 @@ where
         server_state_loop::<T>(from_server_send, to_server_recv)
     });
 
-    rt.block_on(server_message_pump(bcast_send, from_server_recv));
+    server_message_pump(bcast_send, from_server_recv).await;
 
     state_handle.join().unwrap();
 }

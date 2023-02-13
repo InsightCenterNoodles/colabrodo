@@ -77,6 +77,7 @@ impl UserServerState for PingPongServer {
     }
 }
 
-fn main() {
-    colabrodo_core::server::server_main::<PingPongServer>();
+#[tokio::main]
+async fn main() {
+    colabrodo_core::server::server_main::<PingPongServer>().await;
 }

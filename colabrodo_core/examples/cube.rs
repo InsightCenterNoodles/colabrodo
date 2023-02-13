@@ -142,6 +142,7 @@ impl UserServerState for CubeServer {
     }
 }
 
-fn main() {
-    colabrodo_core::server::server_main::<CubeServer>();
+#[tokio::main]
+async fn main() {
+    colabrodo_core::server::server_main::<CubeServer>().await;
 }
