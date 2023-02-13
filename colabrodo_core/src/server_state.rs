@@ -692,10 +692,37 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::collections::VecDeque;
+
+    use ciborium::{cbor, tag::Required, value::Value};
+
     use super::*;
+
+    fn encode(v: value::Value) -> Vec<u8> {
+        let mut ret: Vec<u8> = Vec::new();
+
+        ciborium::ser::into_writer(&v, &mut ret).unwrap();
+
+        ret
+    }
+
+    fn encode_msg<T: Serialize>(item: &T) -> Vec<u8> {
+        let mut ret: Vec<u8> = Vec::new();
+
+        ciborium::ser::into_writer(&item, &mut ret).unwrap();
+
+        ret
+    }
+
+    fn decode(v: &Vec<u8>) -> Value {
+        let ret: Value = ciborium::de::from_reader(v.as_slice()).unwrap();
+        ret
+    }
 
     #[test]
     fn build_server_state() {
+        // we test by encoding to cbor and then decoding.
+        // messages can be encoded different ways, ie, indefinite size of maps, etc.
         let (tx, rx) = std::sync::mpsc::channel();
 
         let mut state = ServerState::new(tx);
@@ -712,8 +739,93 @@ mod tests {
             BufferViewState::new_from_whole_buffer(component_b.clone()),
         );
 
+        // messages
+
+        let mut messages = VecDeque::new();
+
+        #[derive(Serialize)]
+        struct ByteMessage {
+            id: NooID,
+            size: u32,
+            inline_bytes: ByteBuff,
+        }
+
+        messages.push_back(encode_msg(&(
+            10,
+            ByteMessage {
+                id: NooID::new(0, 0),
+                size: 4,
+                inline_bytes: ByteBuff::new(vec![10, 10, 25, 25]),
+            },
+        )));
+
+        messages.push_back(encode(
+            cbor!(
+                [
+                    11,
+                    {
+                        "id" => [0, 0],
+                    }
+                ]
+            )
+            .unwrap(),
+        ));
+
+        #[derive(Serialize)]
+        struct ComplexMsg {
+            id: NooID,
+            size: u32,
+            uri_bytes: ciborium::tag::Required<String, 32>,
+        }
+
+        let complex_message = (
+            10,
+            ComplexMsg {
+                id: NooID::new(0, 1),
+                size: 1024,
+                uri_bytes: Required("http://wombat.com".to_string()),
+            },
+        );
+
+        messages.push_back(encode_msg(&complex_message));
+
+        messages.push_back(encode(
+            cbor!(
+                [
+                    12,
+                    {
+                        "id" => [0, 0],
+                        "source_buffer" => [0, 1],
+                        "type"=> "UNK",
+                        "offset"=> 0,
+                        "length"=> 1024
+                    }
+                ]
+            )
+            .unwrap(),
+        ));
+
+        messages.push_back(encode(
+            cbor!(
+                [
+                    13,
+                    {
+                        "id"=> [0, 0]
+                    }
+                ]
+            )
+            .unwrap(),
+        ));
+
         while let Ok(msg) = rx.try_recv() {
-            println!("{msg:02X?}");
+            //println!("{msg:02X?}");
+            let truth = messages.pop_front().unwrap();
+
+            assert_eq!(
+                decode(&truth),
+                decode(&msg),
+                "Messages do not match! Truth: {truth:02X?} | Got: {msg:02X?}"
+            );
         }
     }
 }

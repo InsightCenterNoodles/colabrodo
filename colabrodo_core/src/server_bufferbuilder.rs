@@ -122,7 +122,7 @@ pub fn create_mesh(
         name: Some(format!("{}_buffer", source.name)),
         size: bytes.len() as u64,
         representation: crate::server_messages::BufferRepresentation::Inline(
-            ByteBuff::new_with_data(bytes),
+            ByteBuff::new(bytes),
         ),
     });
 

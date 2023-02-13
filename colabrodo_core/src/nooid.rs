@@ -71,8 +71,8 @@ impl NooID {
         }
     }
 
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(slot: u32, gen: u32) -> Self {
+        Self { slot, gen }
     }
 
     pub fn new_with_slot(slot: u32) -> Self {

@@ -71,11 +71,7 @@ pub struct ByteBuff {
 }
 
 impl ByteBuff {
-    pub fn new() -> Self {
-        Self { bytes: Vec::new() }
-    }
-
-    pub fn new_with_data(data: Vec<u8>) -> Self {
+    pub fn new(data: Vec<u8>) -> Self {
         Self { bytes: data }
     }
 }
@@ -499,7 +495,7 @@ pub enum BufferRepresentation {
 
 impl Default for BufferRepresentation {
     fn default() -> Self {
-        Self::Inline(ByteBuff::new())
+        Self::Inline(ByteBuff::default())
     }
 }
 
@@ -537,9 +533,7 @@ impl BufferState {
         Self {
             name: None,
             size: bytes.len() as u64,
-            representation: BufferRepresentation::Inline(
-                ByteBuff::new_with_data(bytes),
-            ),
+            representation: BufferRepresentation::Inline(ByteBuff::new(bytes)),
         }
     }
 
