@@ -75,7 +75,18 @@ fn make_cube(server_state: &mut ServerState) -> GeometryPatch {
     });
 
     // Return a new mesh with this geometry/material
-    server_bufferbuilder::create_mesh(server_state, test_source, material)
+    let intermediate =
+        server_bufferbuilder::create_mesh(server_state, test_source);
+
+    // build the cube with our material
+
+    GeometryPatch {
+        attributes: intermediate.attributes,
+        vertex_count: intermediate.vertex_count,
+        indices: intermediate.indices,
+        patch_type: intermediate.patch_type,
+        material: material,
+    }
 }
 
 /// Example implementation of a server

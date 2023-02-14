@@ -44,11 +44,17 @@ where
     }
 }
 
+pub struct IntermediateGeometryPatch {
+    pub attributes: Vec<GeometryAttribute>,
+    pub vertex_count: u64,
+    pub indices: Option<GeometryIndex>,
+    pub patch_type: PrimitiveType,
+}
+
 pub fn create_mesh(
     server_state: &mut ServerState,
     source: VertexSource,
-    material: ComponentReference<MaterialState>,
-) -> GeometryPatch {
+) -> IntermediateGeometryPatch {
     let v_count = source.positions.len();
 
     let i_count = source.triangles.len();
@@ -132,12 +138,11 @@ pub fn create_mesh(
             length: (v_byte_size * v_count) as u64,
         });
 
-    let mut ret = GeometryPatch {
+    let mut ret = IntermediateGeometryPatch {
         attributes: Vec::default(),
         vertex_count: v_count as u64,
         indices: None,
         patch_type: PrimitiveType::Triangles,
-        material: material,
     };
 
     let mut cursor = 3 * 4;
