@@ -185,7 +185,7 @@ pub fn create_mesh(
 
         ret.attributes.push(GeometryAttribute {
             view: vertex_view.clone(),
-            semantic: AttributeSemantic::Normal,
+            semantic: AttributeSemantic::Texture,
             channel: None,
             offset: Some(texture_offset),
             stride: Some(v_byte_size as u32),
