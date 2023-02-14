@@ -1,8 +1,10 @@
+use colabrodo_core::server::ServerOptions;
 use colabrodo_core::server_messages::{ComponentReference, MethodArg};
 use colabrodo_core::{
     server_messages::MethodState,
     server_state::{InvokeObj, MethodResult, ServerState, UserServerState},
 };
+use log;
 use std::collections::HashMap;
 
 type Function = fn(
@@ -34,7 +36,7 @@ impl UserServerState for PingPongServer {
     }
 
     fn initialize_state(&mut self) {
-        println!("Initializing ping pong state");
+        log::debug!("Initializing ping pong state");
         let ptr = self.state.methods.new_component(MethodState {
             name: "ping_pong".to_string(),
             doc: Some(
@@ -79,5 +81,7 @@ impl UserServerState for PingPongServer {
 
 #[tokio::main]
 async fn main() {
-    colabrodo_core::server::server_main::<PingPongServer>().await;
+    println!("Connect clients to localhost:50000");
+    let opts = ServerOptions::default();
+    colabrodo_core::server::server_main::<PingPongServer>(opts).await;
 }

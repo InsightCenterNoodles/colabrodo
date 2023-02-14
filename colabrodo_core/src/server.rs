@@ -22,6 +22,7 @@ pub use tokio;
 // We have a task that listens for clients, that spawns a per client task.
 
 /// Dump cbor to the terminal in both diagnostic and in byte form for debugging.
+#[allow(dead_code)]
 fn debug_cbor(data: &Vec<u8>) {
     let output: ciborium::value::Value =
         match ciborium::de::from_reader(data.as_slice()) {
@@ -37,6 +38,18 @@ fn debug_cbor(data: &Vec<u8>) {
 /// Models a message from a client. As the server thread doesn't know who sent it, we pass along a lightweight handle to the client-specific queue so the server can send specific messages along
 #[derive(Debug)]
 struct FromClientMessage(mpsc::Sender<Vec<u8>>, Vec<u8>);
+
+pub struct ServerOptions {
+    pub host: String,
+}
+
+impl Default for ServerOptions {
+    fn default() -> Self {
+        Self {
+            host: "localhost:50000".to_string(),
+        }
+    }
+}
 
 /// Public entry point to the server process.
 ///
@@ -55,11 +68,11 @@ struct FromClientMessage(mpsc::Sender<Vec<u8>>, Vec<u8>);
 ///     // ...
 /// }
 ///
-///
-/// colabrodo_core::server_tokio::server_main::<MyServer>();
+/// let opts = ServerOptions::default();
+/// colabrodo_core::server_tokio::server_main::<MyServer>(opts);
 ///
 /// ```
-pub async fn server_main<T>()
+pub async fn server_main<T>(opts: ServerOptions)
 where
     T: UserServerState,
 {
@@ -72,9 +85,12 @@ where
     // channel for server to send messages to all clients
     let (from_server_send, from_server_recv) = std::sync::mpsc::channel();
 
-    let listener = listen().await;
+    let listener = listen(&opts).await;
 
-    log::info!("Listening...");
+    let local_addy =
+        listener.local_addr().expect("Unable to find local address");
+
+    log::info!("NOODLES server accepting clients @ {local_addy}");
 
     tokio::spawn(client_connect_task(
         listener,
@@ -92,10 +108,8 @@ where
 }
 
 // Task to construct a listening socket
-async fn listen() -> TcpListener {
-    let addr = "localhost:50000".to_string();
-
-    TcpListener::bind(&addr)
+async fn listen(opts: &ServerOptions) -> TcpListener {
+    TcpListener::bind(&opts.host)
         .await
         .expect("Unable to bind to address")
 }
@@ -126,7 +140,7 @@ async fn server_message_pump(
         }
 
         if bcast_send.send(msg).is_err() {
-            println!("Internal error: Unable to broadcast message.")
+            log::error!("Internal error: Unable to broadcast message.")
         }
     }
 }
@@ -146,12 +160,12 @@ fn server_state_loop<T>(
     while let Ok(msg) = from_clients.recv() {
         // handle a message from a client, and write any replies
         // to the client's output queue
-        print!("RECV:");
-        debug_cbor(&msg.1);
+        // print!("RECV:");
+        //debug_cbor(&msg.1);
         let result =
             server_state::handle_next(&mut server_state, msg.1, |out| {
-                print!("SEND CLIENT:");
-                debug_cbor(&out);
+                //print!("SEND CLIENT:");
+                //debug_cbor(&out);
                 msg.0.blocking_send(out).unwrap();
             });
 
@@ -213,7 +227,13 @@ async fn client_handler(
 
     // handle recv of any data, and forward on to the server
     while let Some(message) = rx.next().await {
-        let message = message.unwrap();
+        let message = match message {
+            Ok(x) => x,
+            Err(error) => {
+                log::warn!("Client disconnected: {error:?}");
+                return Ok(());
+            }
+        };
 
         if message.is_binary() {
             to_server_send
@@ -222,7 +242,7 @@ async fn client_handler(
         }
     }
 
-    println!("Client closed.");
+    log::info!("Client closed.");
 
     Ok(())
 }

@@ -692,7 +692,7 @@ where
                 // dump current state to the client. The serde handler should
                 // do the right thing here and make one big list of messages
                 // to send back
-                println!("Client joined, providing initial state");
+                log::debug!("Client joined, providing initial state");
                 let mut recorder = Recorder::default();
 
                 ciborium::ser::into_writer(&c.state(), &mut recorder.data)

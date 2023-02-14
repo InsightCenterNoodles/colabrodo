@@ -1,6 +1,7 @@
 //! An example NOODLES server that provides cube geometry for clients.
 
 use colabrodo_core::{
+    server::ServerOptions,
     server_bufferbuilder,
     server_messages::*,
     server_state::{ServerState, UserServerState},
@@ -155,5 +156,7 @@ impl UserServerState for CubeServer {
 
 #[tokio::main]
 async fn main() {
-    colabrodo_core::server::server_main::<CubeServer>().await;
+    println!("Connect clients to localhost:50000");
+    let opts = ServerOptions::default();
+    colabrodo_core::server::server_main::<CubeServer>(opts).await;
 }

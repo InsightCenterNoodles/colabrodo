@@ -85,7 +85,7 @@ impl ComponentList {
     fn delete(&mut self, id: NooID, _: NooValueMap) -> Option<()> {
         let ret = self.components.remove(&id);
         if ret.is_none() {
-            println!("Asked to delete a component that does not exist!");
+            error!("Asked to delete a component that does not exist!");
             return None;
         }
         Some(())
@@ -145,7 +145,7 @@ impl CLIState {
 
         let id = id_for_message(&content).unwrap();
 
-        println!("Message: {message} on {id}");
+        debug!("Message: {message} on {id}");
 
         let result = match message.arch_type() {
             MessageArchType::Create => {
@@ -157,7 +157,7 @@ impl CLIState {
         };
 
         if result.is_none() {
-            println!("Unable to handle message: {message} on {id}");
+            debug!("Unable to handle message: {message} on {id}");
             abort()
         }
 
