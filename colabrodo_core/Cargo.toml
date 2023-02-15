@@ -19,6 +19,7 @@ tokio-tungstenite = "*"
 log = "0.4"
 futures-util = "0.3.24"
 futures-channel = "0.3.24"
+indexmap = "1.9"
 
 [dependencies.uuid]
 version = "1.2"

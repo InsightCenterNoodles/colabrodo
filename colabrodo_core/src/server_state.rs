@@ -13,6 +13,7 @@ use crate::common::ServerMessages;
 use crate::nooid::NooID;
 use crate::server_messages::*;
 use ciborium::value;
+use indexmap::IndexMap;
 use serde::{ser::SerializeSeq, ser::SerializeStruct, Serialize};
 use std::cell::{Ref, RefCell, RefMut};
 use std::collections::HashMap;
@@ -197,7 +198,11 @@ struct ServerComponentList<T>
 where
     T: Serialize + ServerStateItemMessageIDs + Debug,
 {
-    list: HashMap<NooID, T>,
+    // this list HAS to be sorted at the moment.
+    // as in most cases parent object IDs are lower in the slot list.
+    // however, this is not guaranteed, and some clients scream if it is not
+    // true.
+    list: IndexMap<NooID, T>,
     id_list: HashMap<NooID, Weak<ComponentCell<T>>>,
     broadcast: CallbackPtr,
     free_list: Vec<NooID>,
@@ -206,7 +211,7 @@ where
 impl<T: Serialize + ServerStateItemMessageIDs + Debug> ServerComponentList<T> {
     fn new(tx: CallbackPtr) -> Self {
         Self {
-            list: HashMap::new(),
+            list: IndexMap::new(),
             id_list: HashMap::new(),
             broadcast: tx,
             free_list: Default::default(),
