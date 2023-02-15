@@ -69,12 +69,16 @@ where
         ciborium::ser::into_writer(&write_tuple, &mut recorder.data).unwrap();
 
         // now inform the host list what has happened
-        let mut h = self.host.borrow_mut();
+        // this is tricky if, through our delete, we happen to trigger another delete from this list. so we want to move things out first, to release our borrow on the host. We can then let the T go out of scope outside of that borrow.
+        let mut _holder: Option<T>;
 
         {
+            let mut h = self.host.borrow_mut();
             h.broadcast.send(recorder.data).unwrap();
-            h.return_id(self.id);
+            _holder = h.return_id(self.id);
         }
+
+        _holder = None;
     }
 }
 
@@ -233,10 +237,13 @@ impl<T: Serialize + ServerStateItemMessageIDs + Debug> ServerComponentList<T> {
     }
 
     /// Inform us that the given ID (slot) is free to be used again.
-    fn return_id(&mut self, id: NooID) {
-        self.list.remove(&id);
+    /// This returns the component we destroyed.
+    ///
+    /// The reason for this is if we delete an item from a list that triggers (through rc ptrs) a delete from the same list. We need to move the reference out of here so calling code can safely release their borrow before dropping again.
+    fn return_id(&mut self, id: NooID) -> Option<T> {
         self.id_list.remove(&id);
         self.free_list.push(id);
+        self.list.remove(&id)
     }
 
     // Create a new component. User provides initial state, and we need a pointer to the list (ourselves) to hand out to the new component.
@@ -882,5 +889,37 @@ mod tests {
                 "Messages do not match! Truth: {truth:02X?} | Got: {msg:02X?}"
             );
         }
+    }
+
+    #[test]
+    fn cascade_delete() {
+        let (tx, rx) = std::sync::mpsc::channel();
+
+        let mut state = ServerState::new(tx);
+
+        {
+            let a = state.entities.new_component(EntityState {
+                name: Some("A".to_string()),
+                extra: Default::default(),
+            });
+
+            let b = state.entities.new_component(EntityState {
+                name: Some("B".to_string()),
+                extra: EntityStateUpdatable {
+                    parent: Some(a),
+                    ..Default::default()
+                },
+            });
+
+            let _c = state.entities.new_component(EntityState {
+                name: Some("C".to_string()),
+                extra: EntityStateUpdatable {
+                    parent: Some(b),
+                    ..Default::default()
+                },
+            });
+        }
+
+        while let Ok(_msg) = rx.try_recv() {}
     }
 }
