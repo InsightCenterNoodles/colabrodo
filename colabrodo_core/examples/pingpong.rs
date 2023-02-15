@@ -1,4 +1,4 @@
-use colabrodo_core::server::ServerOptions;
+use colabrodo_core::server::{AsyncServer, DefaultCommand, ServerOptions};
 use colabrodo_core::server_messages::{ComponentReference, MethodArg};
 use colabrodo_core::{
     server_messages::MethodState,
@@ -19,6 +19,7 @@ struct PingPongServer {
     method_list: HashMap<ComponentReference<MethodState>, Function>,
 }
 
+/// This function will handle a method invocation, parse arguments, and compute a reply.
 fn ping_pong(
     _state: &mut PingPongServer,
     _context: &InvokeObj,
@@ -27,7 +28,31 @@ fn ping_pong(
     Ok(ciborium::value::Value::Array(args))
 }
 
+/// All server states should use this trait...
 impl UserServerState for PingPongServer {
+    fn mut_state(&mut self) -> &ServerState {
+        return &self.state;
+    }
+
+    fn state(&self) -> &ServerState {
+        return &self.state;
+    }
+
+    fn invoke(
+        &mut self,
+        method: ComponentReference<MethodState>,
+        context: colabrodo_core::server_state::InvokeObj,
+        args: Vec<ciborium::value::Value>,
+    ) -> MethodResult {
+        let function = self.method_list.get(&method).unwrap();
+        (function)(self, &context, args)
+    }
+}
+
+/// And servers that use the provided tokio infrastructure should impl this trait, too...
+impl AsyncServer for PingPongServer {
+    type CommandType = DefaultCommand;
+
     fn new(tx: colabrodo_core::server_state::CallbackPtr) -> Self {
         Self {
             state: ServerState::new(tx.clone()),
@@ -60,22 +85,9 @@ impl UserServerState for PingPongServer {
         )
     }
 
-    fn mut_state(&mut self) -> &ServerState {
-        return &self.state;
-    }
-
-    fn state(&self) -> &ServerState {
-        return &self.state;
-    }
-
-    fn invoke(
-        &mut self,
-        method: ComponentReference<MethodState>,
-        context: colabrodo_core::server_state::InvokeObj,
-        args: Vec<ciborium::value::Value>,
-    ) -> MethodResult {
-        let function = self.method_list.get(&method).unwrap();
-        (function)(self, &context, args)
+    // If we had some kind of out-of-band messaging to the server, it would be handled here
+    fn handle_command(&mut self, _: Self::CommandType) {
+        // pass
     }
 }
 

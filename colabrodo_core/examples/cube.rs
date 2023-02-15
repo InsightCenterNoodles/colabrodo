@@ -1,7 +1,7 @@
 //! An example NOODLES server that provides cube geometry for clients.
 
 use colabrodo_core::{
-    server::ServerOptions,
+    server::{AsyncServer, DefaultCommand, ServerOptions},
     server_bufferbuilder,
     server_messages::*,
     server_state::{ServerState, UserServerState},
@@ -99,6 +99,31 @@ struct CubeServer {
 
 /// All server states should use this trait...
 impl UserServerState for CubeServer {
+    /// Some code will need mutable access to the core server state
+    fn mut_state(&mut self) -> &ServerState {
+        &self.state
+    }
+
+    /// Some code will need non-mutable access to the core server state
+    fn state(&self) -> &ServerState {
+        &self.state
+    }
+
+    /// When a method invoke is received, it will be validated and then passed here for processing.
+    fn invoke(
+        &mut self,
+        _method: ComponentReference<MethodState>,
+        _context: colabrodo_core::server_state::InvokeObj,
+        _args: Vec<ciborium::value::Value>,
+    ) -> colabrodo_core::server_state::MethodResult {
+        Err(MethodException::method_not_found(None))
+    }
+}
+
+/// And servers that use the provided tokio infrastructure should impl this trait, too...
+impl AsyncServer for CubeServer {
+    type CommandType = DefaultCommand;
+
     /// When needed the network server will create our struct with this function
     fn new(tx: colabrodo_core::server_state::CallbackPtr) -> Self {
         Self {
@@ -133,24 +158,9 @@ impl UserServerState for CubeServer {
             }));
     }
 
-    /// Some code will need mutable access to the core server state
-    fn mut_state(&mut self) -> &ServerState {
-        &self.state
-    }
-
-    /// Some code will need non-mutable access to the core server state
-    fn state(&self) -> &ServerState {
-        &self.state
-    }
-
-    /// When a method invoke is received, it will be validated and then passed here for processing.
-    fn invoke(
-        &mut self,
-        _method: ComponentReference<MethodState>,
-        _context: colabrodo_core::server_state::InvokeObj,
-        _args: Vec<ciborium::value::Value>,
-    ) -> colabrodo_core::server_state::MethodResult {
-        Err(MethodException::method_not_found(None))
+    // If we had some kind of out-of-band messaging to the server, it would be handled here
+    fn handle_command(&mut self, _: Self::CommandType) {
+        // pass
     }
 }
 
