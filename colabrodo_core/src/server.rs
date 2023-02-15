@@ -5,6 +5,7 @@ use std::thread;
 use futures_util::SinkExt;
 use futures_util::StreamExt;
 use log;
+use log::log_enabled;
 use tokio::{
     net::{TcpListener, TcpStream},
     sync::{broadcast, mpsc},
@@ -219,14 +220,18 @@ fn server_state_loop<T>(
             ToServerMessage::Client(client_msg) => {
                 // handle a message from a client, and write any replies
                 // to the client's output queue
-                // print!("RECV:");
-                //debug_cbor(&msg.1);
+                if log_enabled!(log::Level::Debug) {
+                    print!("RECV:");
+                    debug_cbor(&client_msg.1);
+                }
                 let result = server_state::handle_next(
                     &mut server_state,
                     client_msg.1,
                     |out| {
-                        //print!("SEND CLIENT:");
-                        //debug_cbor(&out);
+                        if log_enabled!(log::Level::Debug) {
+                            print!("SEND TO CLIENT:");
+                            debug_cbor(&out);
+                        }
                         client_msg.0.blocking_send(out).unwrap();
                     },
                 );

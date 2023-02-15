@@ -223,59 +223,56 @@ pub fn id_for_message(map: &NooValueMap) -> Option<NooID> {
 }
 
 pub mod strings {
-    pub const MTHD_TBL_SUBSCRIBE: &str = "noo::mthd_tbl_subscribe";
-    pub const MTHD_TBL_INSERT: &str = "noo::mthd_tbl_insert";
-    pub const MTHD_TBL_UPDATE: &str = "noo::mthd_tbl_update";
-    pub const MTHD_TBL_REMOVE: &str = "noo::mthd_tbl_remove";
-    pub const MTHD_TBL_CLEAR: &str = "noo::mthd_tbl_clear";
-    pub const MTHD_TBL_UPDATE_SELECTION: &str =
-        "noo::mthd_tbl_update_selection";
+    pub const MTHD_TBL_SUBSCRIBE: &str = "noo::tbl_subscribe";
+    pub const MTHD_TBL_INSERT: &str = "noo::tbl_insert";
+    pub const MTHD_TBL_UPDATE: &str = "noo::tbl_update";
+    pub const MTHD_TBL_REMOVE: &str = "noo::tbl_remove";
+    pub const MTHD_TBL_CLEAR: &str = "noo::tbl_clear";
+    pub const MTHD_TBL_UPDATE_SELECTION: &str = "noo::tbl_update_selection";
 
-    pub const SIG_TBL_RESET: &str = "noo::sig_tbl_reset";
-    pub const SIG_TBL_UPDATED: &str = "noo::sig_tbl_updated";
-    pub const SIG_TBL_ROWS_REMOVED: &str = "noo::sig_tbl_rows_removed";
-    pub const SIG_TBL_SELECTION_UPDATED: &str =
-        "noo::sig_tbl_selection_updated";
-    pub const SIG_SIGNAL_ATTENTION: &str = "noo::sig_signal_attention";
+    pub const SIG_TBL_RESET: &str = "noo::tbl_reset";
+    pub const SIG_TBL_UPDATED: &str = "noo::tbl_updated";
+    pub const SIG_TBL_ROWS_REMOVED: &str = "noo::tbl_rows_removed";
+    pub const SIG_TBL_SELECTION_UPDATED: &str = "noo::tbl_selection_updated";
+    pub const SIG_SIGNAL_ATTENTION: &str = "noo::signal_attention";
 
-    pub const MTHD_ACTIVATE: &str = "noo::mthd_activate";
-    pub const MTHD_GET_ACTIVATION_CHOICES: &str =
-        "noo::mthd_get_activation_choices";
-    pub const MTHD_GET_VAR_KEYS: &str = "noo::mthd_get_var_keys";
-    pub const MTHD_GET_VAR_OPTIONS: &str = "noo::mthd_get_var_options";
-    pub const MTHD_GET_VAR_VALUE: &str = "noo::mthd_get_var_value";
-    pub const MTHD_SET_VAR_VALUE: &str = "noo::mthd_set_var_value";
-    pub const MTHD_SET_POSITION: &str = "noo::mthd_set_position";
-    pub const MTHD_SET_ROTATION: &str = "noo::mthd_set_rotation";
-    pub const MTHD_SET_SCALE: &str = "noo::mthd_set_scale";
-    pub const MTHD_SELECT_REGION: &str = "noo::mthd_select_region";
-    pub const MTHD_SELECT_SPHERE: &str = "noo::mthd_select_sphere";
-    pub const MTHD_SELECT_HALF_PLANE: &str = "noo::mthd_select_half_plane";
-    pub const MTHD_SELECT_HULL: &str = "noo::mthd_select_hull";
-    pub const MTHD_PROBE_AT: &str = "noo::mthd_probe_at";
-    pub const MTHD_SIGNAL_ATTENTION: &str = "noo::mthd_signal_attention";
-    pub const MTHD_CLIENT_VIEW: &str = "noo::mthd_client_view";
+    pub const MTHD_ACTIVATE: &str = "noo::activate";
+    pub const MTHD_GET_ACTIVATION_CHOICES: &str = "noo::get_activation_choices";
+    pub const MTHD_GET_VAR_KEYS: &str = "noo::get_var_keys";
+    pub const MTHD_GET_VAR_OPTIONS: &str = "noo::get_var_options";
+    pub const MTHD_GET_VAR_VALUE: &str = "noo::get_var_value";
+    pub const MTHD_SET_VAR_VALUE: &str = "noo::set_var_value";
+    pub const MTHD_SET_POSITION: &str = "noo::set_position";
+    pub const MTHD_SET_ROTATION: &str = "noo::set_rotation";
+    pub const MTHD_SET_SCALE: &str = "noo::set_scale";
+    pub const MTHD_SELECT_REGION: &str = "noo::select_region";
+    pub const MTHD_SELECT_SPHERE: &str = "noo::select_sphere";
+    pub const MTHD_SELECT_HALF_PLANE: &str = "noo::select_half_plane";
+    pub const MTHD_SELECT_HULL: &str = "noo::select_hull";
+    pub const MTHD_PROBE_AT: &str = "noo::probe_at";
+    pub const MTHD_SIGNAL_ATTENTION: &str = "noo::signal_attention";
+    pub const MTHD_CLIENT_VIEW: &str = "noo::client_view";
 
-    pub const TAG_USER_HIDDEN: &str = "noo::tag_user_hidden";
+    pub const TAG_USER_HIDDEN: &str = "noo::user_hidden";
 
-    pub const HINT_ANY: &str = "noo::hint_any";
-    pub const HINT_TEXT: &str = "noo::hint_text";
-    pub const HINT_INTEGER: &str = "noo::hint_integer";
-    pub const HINT_INTEGERLIST: &str = "noo::hint_integerlist";
-    pub const HINT_REAL: &str = "noo::hint_real";
-    pub const HINT_REALLIST: &str = "noo::hint_reallist";
-    pub const HINT_DATA: &str = "noo::hint_data";
-    pub const HINT_LIST: &str = "noo::hint_list";
-    pub const HINT_MAP: &str = "noo::hint_map";
-    pub const HINT_ANYID: &str = "noo::hint_anyid";
-    pub const HINT_OBJECTID: &str = "noo::hint_objectid";
-    pub const HINT_TABLEID: &str = "noo::hint_tableid";
-    pub const HINT_SIGNALID: &str = "noo::hint_signalid";
-    pub const HINT_METHODID: &str = "noo::hint_methodid";
-    pub const HINT_MATERIALID: &str = "noo::hint_materialid";
-    pub const HINT_GEOMETRYID: &str = "noo::hint_geometryid";
-    pub const HINT_LIGHTID: &str = "noo::hint_lightid";
-    pub const HINT_TEXTUREID: &str = "noo::hint_textureid";
-    pub const HINT_BUFFERID: &str = "noo::hint_bufferid";
-    pub const HINT_PLOTID: &str = "noo::hint_plotid";
+    pub const HINT_ANY: &str = "noo::any";
+    pub const HINT_TEXT: &str = "noo::text";
+    pub const HINT_INTEGER: &str = "noo::integer";
+    pub const HINT_INTEGERLIST: &str = "noo::integerlist";
+    pub const HINT_REAL: &str = "noo::real";
+    pub const HINT_REALLIST: &str = "noo::reallist";
+    pub const HINT_DATA: &str = "noo::data";
+    pub const HINT_LIST: &str = "noo::list";
+    pub const HINT_MAP: &str = "noo::map";
+    pub const HINT_ANYID: &str = "noo::anyid";
+    pub const HINT_OBJECTID: &str = "noo::objectid";
+    pub const HINT_TABLEID: &str = "noo::tableid";
+    pub const HINT_SIGNALID: &str = "noo::signalid";
+    pub const HINT_METHODID: &str = "noo::methodid";
+    pub const HINT_MATERIALID: &str = "noo::materialid";
+    pub const HINT_GEOMETRYID: &str = "noo::geometryid";
+    pub const HINT_LIGHTID: &str = "noo::lightid";
+    pub const HINT_TEXTUREID: &str = "noo::textureid";
+    pub const HINT_BUFFERID: &str = "noo::bufferid";
+    pub const HINT_PLOTID: &str = "noo::plotid";
 }
