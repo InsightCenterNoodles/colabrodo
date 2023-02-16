@@ -1,6 +1,6 @@
 //! An example NOODLES server that provides cube geometry for clients.
 
-use colabrodo_core::{
+use colabrodo_server::{
     server::{AsyncServer, DefaultCommand, NoInit, ServerOptions},
     server_bufferbuilder,
     server_messages::*,
@@ -113,9 +113,9 @@ impl UserServerState for CubeServer {
     fn invoke(
         &mut self,
         _method: ComponentReference<MethodState>,
-        _context: colabrodo_core::server_state::InvokeObj,
+        _context: colabrodo_server::server_state::InvokeObj,
         _args: Vec<ciborium::value::Value>,
-    ) -> colabrodo_core::server_state::MethodResult {
+    ) -> colabrodo_server::server_state::MethodResult {
         Err(MethodException::method_not_found(None))
     }
 }
@@ -127,7 +127,7 @@ impl AsyncServer for CubeServer {
 
     /// When needed the network server will create our struct with this function
     fn new(
-        tx: colabrodo_core::server_state::CallbackPtr,
+        tx: colabrodo_server::server_state::CallbackPtr,
         _init: NoInit,
     ) -> Self {
         Self {
@@ -172,5 +172,5 @@ impl AsyncServer for CubeServer {
 async fn main() {
     println!("Connect clients to localhost:50000");
     let opts = ServerOptions::default();
-    colabrodo_core::server::server_main::<CubeServer>(opts, NoInit {}).await;
+    colabrodo_server::server::server_main::<CubeServer>(opts, NoInit {}).await;
 }

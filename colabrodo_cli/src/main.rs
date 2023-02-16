@@ -3,23 +3,23 @@ use std::io::Write;
 use std::process::abort;
 use std::sync::{Arc, Mutex};
 
-use colabrodo_core::client::ciborium::{de, ser, value};
-use colabrodo_core::client::{self, handle_next, UserClientState};
-use colabrodo_core::client_messages::{
-    ClientIntroductionMessage, ClientInvokeMessage, NoodlesClientMessageID,
-};
-use colabrodo_core::common::{
+use colabrodo_client::client::ciborium::{de, ser, value};
+use colabrodo_client::client::{self, handle_next, UserClientState};
+use colabrodo_common::common::{
     id_for_message, lookup, ComponentType, MessageArchType, NooValueMap,
     ServerMessages,
 };
+use colabrodo_server::client_messages::{
+    ClientIntroductionMessage, ClientInvokeMessage, NoodlesClientMessageID,
+};
 
-use colabrodo_core::nooid::NooID;
+use colabrodo_common::nooid::NooID;
 use futures_util::{future, pin_mut, SinkExt, StreamExt};
 
 use tokio::runtime;
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 
-use colabrodo_core::client::ciborium::value::Value;
+use colabrodo_client::client::ciborium::value::Value;
 
 use clap::Parser;
 

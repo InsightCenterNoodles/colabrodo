@@ -4,9 +4,9 @@ use core::fmt::Debug;
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
 use std::rc::Rc;
 
-use crate::nooid::NooID;
+use colabrodo_common::nooid::NooID;
 
-use crate::common;
+use colabrodo_common::common;
 
 use crate::server_state::{ComponentCell, SignalInvokeObj};
 

@@ -2,7 +2,7 @@ use ciborium::value::Value;
 use serde::de::{self, Visitor};
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
 
-use crate::nooid::NooID;
+use colabrodo_common::nooid::NooID;
 
 pub trait NoodlesClientMessageID {
     fn message_id() -> u32;

@@ -4,8 +4,8 @@ use num_traits::FromPrimitive;
 
 pub use ciborium;
 
-use crate::common::{NooValueMap, ServerMessages};
-use crate::nooid::NooID;
+use colabrodo_common::common::{NooValueMap, ServerMessages};
+use colabrodo_common::nooid::NooID;
 
 #[derive(Error, Debug)]
 pub enum ClientError {
