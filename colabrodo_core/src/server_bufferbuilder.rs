@@ -201,7 +201,7 @@ pub fn create_mesh(
         //cursor += 1;
 
         ret.attributes.push(GeometryAttribute {
-            view: vertex_view.clone(),
+            view: vertex_view,
             semantic: AttributeSemantic::Color,
             channel: None,
             offset: Some(color_offset),
@@ -224,7 +224,7 @@ pub fn create_mesh(
         });
 
         ret.indices = Some(GeometryIndex {
-            view: view,
+            view,
             count: (i_count * 3) as u32,
             offset: None,
             stride: None,

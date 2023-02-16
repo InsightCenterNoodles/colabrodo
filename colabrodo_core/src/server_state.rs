@@ -279,10 +279,7 @@ impl<T: Serialize + ServerStateItemMessageIDs + Debug> ServerComponentList<T> {
         // After broadcast, actually insert the content
         self.list.insert(new_id, new_t);
 
-        let cell = ComponentCell::<T> {
-            id: new_id,
-            host: host,
-        };
+        let cell = ComponentCell::<T> { id: new_id, host };
 
         let cell = Rc::new(cell);
 
@@ -310,10 +307,7 @@ impl<T: Serialize + ServerStateItemMessageIDs + Debug> ServerComponentList<T> {
     fn resolve(&self, id: NooID) -> Option<ComponentReference<T>> {
         match self.id_list.get(&id) {
             None => None,
-            Some(x) => match x.upgrade() {
-                None => None,
-                Some(x) => Some(ComponentReference::new(x.clone())),
-            },
+            Some(x) => x.upgrade().map(ComponentReference::new),
         }
     }
 

@@ -15,11 +15,13 @@ num-derive = "0.3"
 serde = "1.0.152"
 serde_with = "2.2.0"
 tokio = { version = "1", features = ["full"] }
+hyper = { version = "0.14", features = ["full"] }
 tokio-tungstenite = "*"
 log = "0.4"
 futures-util = "0.3.24"
 futures-channel = "0.3.24"
 indexmap = "1.9"
+tokio-util = "0.7"
 
 [dependencies.uuid]
 version = "1.2"
