@@ -60,13 +60,27 @@ impl Default for ServerOptions {
     }
 }
 
+/// A placeholder if the user server doesn't support commands
 pub struct DefaultCommand {}
 
+/// A placeholder if the user server doesn't support initialization arguments
+pub struct NoInit {}
+
+/// Trait for user servers to implement
 pub trait AsyncServer: UserServerState {
+    /// Type to use for the handle command callback
     type CommandType;
-    fn new(tx: server_state::CallbackPtr) -> Self;
+
+    /// Type to use for additional initialization
+    type InitType;
+
+    /// Called when our framework needs to create the user state
+    fn new(tx: server_state::CallbackPtr, init: Self::InitType) -> Self;
+
+    /// Called after the user state has been created. Extra setup can happen here.
     fn initialize_state(&mut self);
 
+    /// Called when an async command is received
     fn handle_command(&mut self, command: Self::CommandType);
 }
 
@@ -95,20 +109,23 @@ pub trait AsyncServer: UserServerState {
 /// colabrodo_core::server_tokio::server_main::<MyServer>(opts);
 ///
 /// ```
-pub async fn server_main<T>(opts: ServerOptions)
+pub async fn server_main<T>(opts: ServerOptions, init: T::InitType)
 where
     T: AsyncServer + 'static,
     T::CommandType: std::marker::Send,
+    <T as AsyncServer>::InitType: std::marker::Send,
 {
-    server_main_with_command_queue::<T>(opts, None).await;
+    server_main_with_command_queue::<T>(opts, init, None).await;
 }
 
 pub async fn server_main_with_command_queue<T>(
     opts: ServerOptions,
+    init: T::InitType,
     command_queue: Option<mpsc::Receiver<T::CommandType>>,
 ) where
     T: AsyncServer + 'static,
     T::CommandType: std::marker::Send,
+    <T as AsyncServer>::InitType: std::marker::Send,
 {
     // channel for messages to be sent to all clients
     let (bcast_send, _) = broadcast::channel(16);
@@ -140,7 +157,7 @@ pub async fn server_main_with_command_queue<T>(
     }
 
     let state_handle = thread::spawn(move || {
-        server_state_loop::<T>(from_server_send, to_server_recv)
+        server_state_loop::<T>(from_server_send, init, to_server_recv)
     });
 
     server_message_pump(bcast_send, from_server_recv).await;
@@ -206,12 +223,13 @@ async fn server_message_pump(
 /// to this task.
 fn server_state_loop<T>(
     tx: server_state::CallbackPtr,
+    init: T::InitType,
     from_world: std::sync::mpsc::Receiver<ToServerMessage<T>>,
 ) where
     T: AsyncServer,
     T::CommandType: std::marker::Send,
 {
-    let mut server_state = T::new(tx);
+    let mut server_state = T::new(tx, init);
 
     server_state.initialize_state();
 

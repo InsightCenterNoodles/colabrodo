@@ -51,10 +51,14 @@ pub struct IntermediateGeometryPatch {
     pub patch_type: PrimitiveType,
 }
 
-pub fn create_mesh(
+pub fn create_mesh_with<F>(
     server_state: &mut ServerState,
     source: VertexSource,
-) -> IntermediateGeometryPatch {
+    register_bytes: F,
+) -> IntermediateGeometryPatch
+where
+    F: FnOnce(Vec<u8>) -> crate::server_messages::BufferRepresentation,
+{
     let v_count = source.positions.len();
 
     let i_count = source.triangles.len();
@@ -124,9 +128,7 @@ pub fn create_mesh(
     let buffer = server_state.buffers.new_component(BufferState {
         name: Some(format!("{}_buffer", source.name)),
         size: bytes.len() as u64,
-        representation: crate::server_messages::BufferRepresentation::Inline(
-            ByteBuff::new(bytes),
-        ),
+        representation: register_bytes(bytes),
     });
 
     let vertex_view =
@@ -233,4 +235,15 @@ pub fn create_mesh(
     }
 
     ret
+}
+
+pub fn create_mesh(
+    server_state: &mut ServerState,
+    source: VertexSource,
+) -> IntermediateGeometryPatch {
+    create_mesh_with(server_state, source, |data| {
+        crate::server_messages::BufferRepresentation::Inline(ByteBuff {
+            bytes: data,
+        })
+    })
 }

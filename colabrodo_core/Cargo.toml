@@ -17,6 +17,7 @@ serde_with = "2.2.0"
 tokio = { version = "1", features = ["full"] }
 hyper = { version = "0.14", features = ["full"] }
 tokio-tungstenite = "*"
+hostname = "0.3.1"
 log = "0.4"
 futures-util = "0.3.24"
 futures-channel = "0.3.24"

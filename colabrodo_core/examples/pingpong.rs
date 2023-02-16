@@ -1,4 +1,6 @@
-use colabrodo_core::server::{AsyncServer, DefaultCommand, ServerOptions};
+use colabrodo_core::server::{
+    AsyncServer, DefaultCommand, NoInit, ServerOptions,
+};
 use colabrodo_core::server_messages::{ComponentReference, MethodArg};
 use colabrodo_core::{
     server_messages::MethodState,
@@ -52,8 +54,12 @@ impl UserServerState for PingPongServer {
 /// And servers that use the provided tokio infrastructure should impl this trait, too...
 impl AsyncServer for PingPongServer {
     type CommandType = DefaultCommand;
+    type InitType = NoInit;
 
-    fn new(tx: colabrodo_core::server_state::CallbackPtr) -> Self {
+    fn new(
+        tx: colabrodo_core::server_state::CallbackPtr,
+        _init: NoInit,
+    ) -> Self {
         Self {
             state: ServerState::new(tx.clone()),
             method_list: Default::default(),
@@ -95,5 +101,6 @@ impl AsyncServer for PingPongServer {
 async fn main() {
     println!("Connect clients to localhost:50000");
     let opts = ServerOptions::default();
-    colabrodo_core::server::server_main::<PingPongServer>(opts).await;
+    colabrodo_core::server::server_main::<PingPongServer>(opts, NoInit {})
+        .await;
 }

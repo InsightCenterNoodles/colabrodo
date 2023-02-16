@@ -1,8 +1,9 @@
 //! An example NOODLES server that provides cube geometry for clients.
 
 use colabrodo_core::{
-    server::{AsyncServer, DefaultCommand, NoInit, ServerOptions},
+    server::{AsyncServer, DefaultCommand, ServerOptions},
     server_bufferbuilder,
+    server_http::*,
     server_messages::*,
     server_state::{ServerState, UserServerState},
 };
@@ -10,7 +11,10 @@ use colabrodo_core::{
 /// Build the actual cube geometry.
 ///
 /// This uses the simple helper tools to build a geometry buffer; you don't have to use this feature if you don't want to.
-fn make_cube(server_state: &mut ServerState) -> GeometryPatch {
+fn make_cube(
+    server_state: &mut ServerState,
+    link: &mut AssetServerLink,
+) -> GeometryPatch {
     let mut test_source = server_bufferbuilder::VertexSource::default();
 
     test_source.name = "Cube".to_string();
@@ -76,8 +80,21 @@ fn make_cube(server_state: &mut ServerState) -> GeometryPatch {
     });
 
     // Return a new mesh with this geometry/material
-    let intermediate =
-        server_bufferbuilder::create_mesh(server_state, test_source);
+    // Unlike the other cube example, we use a callback to describe how to store the data. Our callback uses the link to the asset server to create a new asset, and publish the URL.
+    let intermediate = server_bufferbuilder::create_mesh_with(
+        server_state,
+        test_source,
+        |data| {
+            let url = link.add_asset(
+                create_asset_id(),
+                Asset::new_from_slice(data.as_slice()),
+            );
+            println!("URL is at {url}");
+            colabrodo_core::server_messages::BufferRepresentation::URI(
+                Url::new(url),
+            )
+        },
+    );
 
     // build the cube with our material
 
@@ -93,6 +110,8 @@ fn make_cube(server_state: &mut ServerState) -> GeometryPatch {
 /// Example implementation of a server
 struct CubeServer {
     state: ServerState,
+
+    init: CubeServerInit,
 
     cube_entity: Option<ComponentReference<EntityState>>,
 }
@@ -120,25 +139,30 @@ impl UserServerState for CubeServer {
     }
 }
 
+struct CubeServerInit {
+    link: AssetServerLink,
+}
+
 /// And servers that use the provided tokio infrastructure should impl this trait, too...
 impl AsyncServer for CubeServer {
     type CommandType = DefaultCommand;
-    type InitType = NoInit;
+    type InitType = CubeServerInit;
 
     /// When needed the network server will create our struct with this function
     fn new(
         tx: colabrodo_core::server_state::CallbackPtr,
-        _init: NoInit,
+        init: CubeServerInit,
     ) -> Self {
         Self {
             state: ServerState::new(tx),
+            init,
             cube_entity: None,
         }
     }
 
     /// Any additional state can be created here.
     fn initialize_state(&mut self) {
-        let cube = make_cube(&mut self.state);
+        let cube = make_cube(&mut self.state, &mut self.init.link);
 
         let geom = self.state.geometries.new_component(GeometryState {
             name: Some("Cube Geom".to_string()),
@@ -171,6 +195,22 @@ impl AsyncServer for CubeServer {
 #[tokio::main]
 async fn main() {
     println!("Connect clients to localhost:50000");
+
+    // Set up the web binary asset server
+    let (asset_server, mut link) =
+        make_asset_server(AssetServerOptions::default());
+
+    // Launch it
+    tokio::spawn(asset_server);
+
+    // Wait for it to start
+    link.wait_for_start().await;
+
+    // Proceed as normal
     let opts = ServerOptions::default();
-    colabrodo_core::server::server_main::<CubeServer>(opts, NoInit {}).await;
+    colabrodo_core::server::server_main::<CubeServer>(
+        opts,
+        CubeServerInit { link },
+    )
+    .await;
 }
