@@ -4,7 +4,7 @@ use num_traits::FromPrimitive;
 
 pub use ciborium;
 
-use colabrodo_common::common::{NooValueMap, ServerMessages};
+use colabrodo_common::common::{NooValueMap, ServerMessageIDs};
 use colabrodo_common::nooid::NooID;
 
 #[derive(Error, Debug)]
@@ -23,7 +23,7 @@ pub enum UserError {
 pub trait UserClientState {
     fn handle_message(
         &mut self,
-        message: ServerMessages,
+        message: ServerMessageIDs,
         content: &NooValueMap,
     ) -> Result<(), UserError>;
 }
@@ -60,7 +60,7 @@ pub fn handle_next<U: UserClientState>(
 
         let mid = u32::try_from(mid.unwrap()).unwrap();
 
-        let msg: Option<ServerMessages> = FromPrimitive::from_u32(mid);
+        let msg: Option<ServerMessageIDs> = FromPrimitive::from_u32(mid);
 
         if msg.is_none() {
             return Err(ClientError::InvalidRootMessage(

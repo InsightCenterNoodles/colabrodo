@@ -89,7 +89,7 @@ fn make_cube(
                 create_asset_id(),
                 Asset::new_from_slice(data.as_slice()),
             );
-            println!("URL is at {url}");
+            println!("Cube asset URL is at {url}");
             colabrodo_server::server_messages::BufferRepresentation::URI(
                 Url::new(url),
             )

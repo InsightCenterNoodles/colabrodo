@@ -1,4 +1,5 @@
 use crate::{server_messages::*, server_state::ServerState};
+use colabrodo_common::types::*;
 
 #[derive(Debug, Default)]
 pub struct VertexSource {

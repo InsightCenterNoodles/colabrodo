@@ -7,7 +7,7 @@ use colabrodo_client::client::ciborium::{de, ser, value};
 use colabrodo_client::client::{self, handle_next, UserClientState};
 use colabrodo_common::common::{
     id_for_message, lookup, ComponentType, MessageArchType, NooValueMap,
-    ServerMessages,
+    ServerMessageIDs,
 };
 use colabrodo_server::client_messages::{
     ClientIntroductionMessage, ClientInvokeMessage, NoodlesClientMessageID,
@@ -136,7 +136,7 @@ impl CLIState {
 
     fn handle_component_message(
         &mut self,
-        message: &ServerMessages,
+        message: &ServerMessageIDs,
         content: NooValueMap,
     ) -> Option<()> {
         let index = message.component_type() as usize;
@@ -166,15 +166,15 @@ impl CLIState {
 
     fn handle_document_message(
         &mut self,
-        message: &ServerMessages,
+        message: &ServerMessageIDs,
         content: &NooValueMap,
     ) -> Option<()> {
         match message {
-            ServerMessages::MsgDocumentReset => {
+            ServerMessageIDs::MsgDocumentReset => {
                 self.clear();
                 Some(())
             }
-            ServerMessages::MsgDocumentUpdate => {
+            ServerMessageIDs::MsgDocumentUpdate => {
                 merge_values(content.to_vec(), &mut self.document);
                 Some(())
             }
@@ -184,15 +184,15 @@ impl CLIState {
 
     fn handle_special_message(
         &mut self,
-        message: &ServerMessages,
+        message: &ServerMessageIDs,
         content: &NooValueMap,
     ) -> Option<()> {
         match message {
-            ServerMessages::MsgSignalInvoke => {}
-            ServerMessages::MsgMethodReply => {
+            ServerMessageIDs::MsgSignalInvoke => {}
+            ServerMessageIDs::MsgMethodReply => {
                 self.handle_method_reply(content)?
             }
-            ServerMessages::MsgDocumentInitialized => {}
+            ServerMessageIDs::MsgDocumentInitialized => {}
             _ => {}
         }
 
@@ -219,7 +219,7 @@ impl CLIState {
 impl UserClientState for CLIState {
     fn handle_message(
         &mut self,
-        message: ServerMessages,
+        message: ServerMessageIDs,
         content: &NooValueMap,
     ) -> Result<(), client::UserError> {
         debug!("Message from server {}: {:?}", message, content);

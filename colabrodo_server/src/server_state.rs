@@ -11,7 +11,7 @@ use crate::client_messages::{
 };
 use crate::server_messages::*;
 use ciborium::value;
-use colabrodo_common::common::ServerMessages;
+use colabrodo_common::common::ServerMessageIDs;
 use colabrodo_common::nooid::NooID;
 use indexmap::IndexMap;
 use serde::{ser::SerializeSeq, ser::SerializeStruct, Serialize};
@@ -438,11 +438,11 @@ impl Serialize for ServerState {
         self.entities.dump_state_helper(&mut s)?;
 
         // custom handling for the doc update.
-        s.serialize_element(&ServerMessages::MsgDocumentUpdate)?;
+        s.serialize_element(&ServerMessageIDs::MsgDocumentUpdate)?;
         s.serialize_element(&self.comm)?;
 
         // now signal full init
-        s.serialize_element(&ServerMessages::MsgDocumentInitialized)?;
+        s.serialize_element(&ServerMessageIDs::MsgDocumentInitialized)?;
         s.serialize_element(&Dummy { v: true })?; // dummy content
 
         s.end()
@@ -474,7 +474,7 @@ impl ServerState {
 
     /// Update the document's methods and signals
     pub fn update_document(&mut self, update: DocumentUpdate) {
-        let msg_tuple = (ServerMessages::MsgDocumentUpdate as u32, &update);
+        let msg_tuple = (ServerMessageIDs::MsgDocumentUpdate as u32, &update);
 
         let mut recorder = Recorder::default();
 
@@ -498,7 +498,7 @@ impl ServerState {
         arguments: Vec<value::Value>,
     ) {
         let msg_tuple = (
-            ServerMessages::MsgDocumentUpdate as u32,
+            ServerMessageIDs::MsgDocumentUpdate as u32,
             MessageSignalInvoke {
                 id: signals.id(),
                 context,
@@ -730,7 +730,7 @@ where
                     }
 
                     // now send it back
-                    let msg = (ServerMessages::MsgMethodReply, reply);
+                    let msg = (ServerMessageIDs::MsgMethodReply, reply);
 
                     let mut recorder = Recorder::default();
 

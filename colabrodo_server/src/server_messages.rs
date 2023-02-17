@@ -1,50 +1,14 @@
 use ciborium::tag::Required;
 use colabrodo_macros::UpdatableStateItem;
 use core::fmt::Debug;
-use serde::{ser::SerializeStruct, Deserialize, Serialize};
+use serde::{ser::SerializeStruct, Serialize};
 use std::rc::Rc;
 
-use colabrodo_common::nooid::NooID;
-
 use colabrodo_common::common;
+use colabrodo_common::nooid::NooID;
+use colabrodo_common::types::*;
 
 use crate::server_state::{ComponentCell, SignalInvokeObj};
-
-// =====================================================
-
-#[derive(Debug, Serialize, Default)]
-pub enum Format {
-    #[default]
-    U8,
-    U16,
-    U32,
-
-    U8VEC4,
-
-    U16VEC2,
-
-    VEC2,
-    VEC3,
-    VEC4,
-
-    MAT3,
-    MAT4,
-}
-
-pub type RGB = [f32; 3];
-pub type RGBA = [f32; 4];
-
-pub type Vec3 = [f32; 3];
-pub type Vec4 = [f32; 4];
-
-pub type Mat3 = [f32; 9];
-pub type Mat4 = [f32; 16];
-
-#[derive(Debug, Deserialize, Serialize, Default)]
-pub struct BoundingBox {
-    pub min: Vec3,
-    pub max: Vec3,
-}
 
 // Traits ==============================================
 
@@ -54,9 +18,9 @@ pub trait UpdatableStateItem {
 }
 
 pub trait ServerStateItemMessageIDs {
-    fn create_message_id() -> common::ServerMessages;
-    fn update_message_id() -> common::ServerMessages;
-    fn delete_message_id() -> common::ServerMessages;
+    fn create_message_id() -> common::ServerMessageIDs;
+    fn update_message_id() -> common::ServerMessageIDs;
+    fn delete_message_id() -> common::ServerMessageIDs;
 }
 
 #[derive(Debug, Serialize)]
@@ -216,16 +180,16 @@ pub struct MethodState {
 }
 
 impl ServerStateItemMessageIDs for MethodState {
-    fn update_message_id() -> common::ServerMessages {
-        common::ServerMessages::Unknown
+    fn update_message_id() -> common::ServerMessageIDs {
+        common::ServerMessageIDs::Unknown
     }
 
-    fn create_message_id() -> common::ServerMessages {
-        common::ServerMessages::MsgMethodCreate
+    fn create_message_id() -> common::ServerMessageIDs {
+        common::ServerMessageIDs::MsgMethodCreate
     }
 
-    fn delete_message_id() -> common::ServerMessages {
-        common::ServerMessages::MsgMethodDelete
+    fn delete_message_id() -> common::ServerMessageIDs {
+        common::ServerMessageIDs::MsgMethodDelete
     }
 }
 
@@ -241,16 +205,16 @@ pub struct SignalState {
 }
 
 impl ServerStateItemMessageIDs for SignalState {
-    fn update_message_id() -> common::ServerMessages {
-        common::ServerMessages::Unknown
+    fn update_message_id() -> common::ServerMessageIDs {
+        common::ServerMessageIDs::Unknown
     }
 
-    fn create_message_id() -> common::ServerMessages {
-        common::ServerMessages::MsgSignalCreate
+    fn create_message_id() -> common::ServerMessageIDs {
+        common::ServerMessageIDs::MsgSignalCreate
     }
 
-    fn delete_message_id() -> common::ServerMessages {
-        common::ServerMessages::MsgSignalDelete
+    fn delete_message_id() -> common::ServerMessageIDs {
+        common::ServerMessageIDs::MsgSignalDelete
     }
 }
 
@@ -346,16 +310,16 @@ pub struct EntityState {
 }
 
 impl ServerStateItemMessageIDs for EntityState {
-    fn update_message_id() -> common::ServerMessages {
-        common::ServerMessages::MsgEntityUpdate
+    fn update_message_id() -> common::ServerMessageIDs {
+        common::ServerMessageIDs::MsgEntityUpdate
     }
 
-    fn create_message_id() -> common::ServerMessages {
-        common::ServerMessages::MsgEntityCreate
+    fn create_message_id() -> common::ServerMessageIDs {
+        common::ServerMessageIDs::MsgEntityCreate
     }
 
-    fn delete_message_id() -> common::ServerMessages {
-        common::ServerMessages::MsgEntityDelete
+    fn delete_message_id() -> common::ServerMessageIDs {
+        common::ServerMessageIDs::MsgEntityDelete
     }
 }
 
@@ -437,16 +401,16 @@ pub struct GeometryState {
 }
 
 impl ServerStateItemMessageIDs for GeometryState {
-    fn update_message_id() -> common::ServerMessages {
-        common::ServerMessages::Unknown
+    fn update_message_id() -> common::ServerMessageIDs {
+        common::ServerMessageIDs::Unknown
     }
 
-    fn create_message_id() -> common::ServerMessages {
-        common::ServerMessages::MsgGeometryCreate
+    fn create_message_id() -> common::ServerMessageIDs {
+        common::ServerMessageIDs::MsgGeometryCreate
     }
 
-    fn delete_message_id() -> common::ServerMessages {
-        common::ServerMessages::MsgGeometryDelete
+    fn delete_message_id() -> common::ServerMessageIDs {
+        common::ServerMessageIDs::MsgGeometryDelete
     }
 }
 
@@ -472,16 +436,16 @@ pub struct TableState {
 }
 
 impl ServerStateItemMessageIDs for TableState {
-    fn update_message_id() -> common::ServerMessages {
-        common::ServerMessages::MsgTableUpdate
+    fn update_message_id() -> common::ServerMessageIDs {
+        common::ServerMessageIDs::MsgTableUpdate
     }
 
-    fn create_message_id() -> common::ServerMessages {
-        common::ServerMessages::MsgTableCreate
+    fn create_message_id() -> common::ServerMessageIDs {
+        common::ServerMessageIDs::MsgTableCreate
     }
 
-    fn delete_message_id() -> common::ServerMessages {
-        common::ServerMessages::MsgTableDelete
+    fn delete_message_id() -> common::ServerMessageIDs {
+        common::ServerMessageIDs::MsgTableDelete
     }
 }
 
@@ -508,16 +472,16 @@ pub struct PlotState {
 }
 
 impl ServerStateItemMessageIDs for PlotState {
-    fn update_message_id() -> common::ServerMessages {
-        common::ServerMessages::MsgPlotUpdate
+    fn update_message_id() -> common::ServerMessageIDs {
+        common::ServerMessageIDs::MsgPlotUpdate
     }
 
-    fn create_message_id() -> common::ServerMessages {
-        common::ServerMessages::MsgPlotCreate
+    fn create_message_id() -> common::ServerMessageIDs {
+        common::ServerMessageIDs::MsgPlotCreate
     }
 
-    fn delete_message_id() -> common::ServerMessages {
-        common::ServerMessages::MsgPlotDelete
+    fn delete_message_id() -> common::ServerMessageIDs {
+        common::ServerMessageIDs::MsgPlotDelete
     }
 }
 
@@ -583,16 +547,16 @@ impl BufferState {
 }
 
 impl ServerStateItemMessageIDs for BufferState {
-    fn update_message_id() -> common::ServerMessages {
-        common::ServerMessages::Unknown
+    fn update_message_id() -> common::ServerMessageIDs {
+        common::ServerMessageIDs::Unknown
     }
 
-    fn create_message_id() -> common::ServerMessages {
-        common::ServerMessages::MsgBufferCreate
+    fn create_message_id() -> common::ServerMessageIDs {
+        common::ServerMessageIDs::MsgBufferCreate
     }
 
-    fn delete_message_id() -> common::ServerMessages {
-        common::ServerMessages::MsgBufferDelete
+    fn delete_message_id() -> common::ServerMessageIDs {
+        common::ServerMessageIDs::MsgBufferDelete
     }
 }
 
@@ -640,16 +604,16 @@ impl BufferViewState {
 }
 
 impl ServerStateItemMessageIDs for BufferViewState {
-    fn update_message_id() -> common::ServerMessages {
-        common::ServerMessages::Unknown
+    fn update_message_id() -> common::ServerMessageIDs {
+        common::ServerMessageIDs::Unknown
     }
 
-    fn create_message_id() -> common::ServerMessages {
-        common::ServerMessages::MsgBufferViewCreate
+    fn create_message_id() -> common::ServerMessageIDs {
+        common::ServerMessageIDs::MsgBufferViewCreate
     }
 
-    fn delete_message_id() -> common::ServerMessages {
-        common::ServerMessages::MsgBufferViewDelete
+    fn delete_message_id() -> common::ServerMessageIDs {
+        common::ServerMessageIDs::MsgBufferViewDelete
     }
 }
 
@@ -700,16 +664,16 @@ pub struct MaterialState {
 }
 
 impl ServerStateItemMessageIDs for MaterialState {
-    fn update_message_id() -> common::ServerMessages {
-        common::ServerMessages::MsgMaterialUpdate
+    fn update_message_id() -> common::ServerMessageIDs {
+        common::ServerMessageIDs::MsgMaterialUpdate
     }
 
-    fn create_message_id() -> common::ServerMessages {
-        common::ServerMessages::MsgMaterialCreate
+    fn create_message_id() -> common::ServerMessageIDs {
+        common::ServerMessageIDs::MsgMaterialCreate
     }
 
-    fn delete_message_id() -> common::ServerMessages {
-        common::ServerMessages::MsgMaterialDelete
+    fn delete_message_id() -> common::ServerMessageIDs {
+        common::ServerMessageIDs::MsgMaterialDelete
     }
 }
 
@@ -765,16 +729,16 @@ impl ImageState {
 }
 
 impl ServerStateItemMessageIDs for ImageState {
-    fn update_message_id() -> common::ServerMessages {
-        common::ServerMessages::Unknown
+    fn update_message_id() -> common::ServerMessageIDs {
+        common::ServerMessageIDs::Unknown
     }
 
-    fn create_message_id() -> common::ServerMessages {
-        common::ServerMessages::MsgImageCreate
+    fn create_message_id() -> common::ServerMessageIDs {
+        common::ServerMessageIDs::MsgImageCreate
     }
 
-    fn delete_message_id() -> common::ServerMessages {
-        common::ServerMessages::MsgImageDelete
+    fn delete_message_id() -> common::ServerMessageIDs {
+        common::ServerMessageIDs::MsgImageDelete
     }
 }
 
@@ -804,16 +768,16 @@ impl TextureState {
 }
 
 impl ServerStateItemMessageIDs for TextureState {
-    fn update_message_id() -> common::ServerMessages {
-        common::ServerMessages::Unknown
+    fn update_message_id() -> common::ServerMessageIDs {
+        common::ServerMessageIDs::Unknown
     }
 
-    fn create_message_id() -> common::ServerMessages {
-        common::ServerMessages::MsgTextureCreate
+    fn create_message_id() -> common::ServerMessageIDs {
+        common::ServerMessageIDs::MsgTextureCreate
     }
 
-    fn delete_message_id() -> common::ServerMessages {
-        common::ServerMessages::MsgTextureDelete
+    fn delete_message_id() -> common::ServerMessageIDs {
+        common::ServerMessageIDs::MsgTextureDelete
     }
 }
 
@@ -860,16 +824,16 @@ pub struct SamplerState {
 }
 
 impl ServerStateItemMessageIDs for SamplerState {
-    fn update_message_id() -> common::ServerMessages {
-        common::ServerMessages::Unknown
+    fn update_message_id() -> common::ServerMessageIDs {
+        common::ServerMessageIDs::Unknown
     }
 
-    fn create_message_id() -> common::ServerMessages {
-        common::ServerMessages::MsgSamplerCreate
+    fn create_message_id() -> common::ServerMessageIDs {
+        common::ServerMessageIDs::MsgSamplerCreate
     }
 
-    fn delete_message_id() -> common::ServerMessages {
-        common::ServerMessages::MsgSamplerDelete
+    fn delete_message_id() -> common::ServerMessageIDs {
+        common::ServerMessageIDs::MsgSamplerDelete
     }
 }
 
@@ -942,16 +906,16 @@ pub struct LightState {
 }
 
 impl ServerStateItemMessageIDs for LightState {
-    fn update_message_id() -> common::ServerMessages {
-        common::ServerMessages::MsgLightUpdate
+    fn update_message_id() -> common::ServerMessageIDs {
+        common::ServerMessageIDs::MsgLightUpdate
     }
 
-    fn create_message_id() -> common::ServerMessages {
-        common::ServerMessages::MsgLightCreate
+    fn create_message_id() -> common::ServerMessageIDs {
+        common::ServerMessageIDs::MsgLightCreate
     }
 
-    fn delete_message_id() -> common::ServerMessages {
-        common::ServerMessages::MsgLightDelete
+    fn delete_message_id() -> common::ServerMessageIDs {
+        common::ServerMessageIDs::MsgLightDelete
     }
 }
 

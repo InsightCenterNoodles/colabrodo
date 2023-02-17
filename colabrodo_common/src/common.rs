@@ -41,7 +41,7 @@ impl std::fmt::Display for ComponentType {
 
 /// Discriminant for server message types
 #[derive(FromPrimitive, Clone, Copy, Debug)]
-pub enum ServerMessages {
+pub enum ServerMessageIDs {
     MsgMethodCreate = 0,
     MsgMethodDelete = 1,
     MsgSignalCreate = 2,
@@ -84,14 +84,14 @@ pub enum ServerMessages {
 
 /// Discriminant for client message types
 #[derive(FromPrimitive, Clone, Copy, Debug)]
-pub enum ClientMessages {
+pub enum ClientMessageIDs {
     MsgClientIntro = 0,
     MsgClientInvoke = 1,
 
     Unknown = 255,
 }
 
-impl serde::Serialize for ServerMessages {
+impl serde::Serialize for ServerMessageIDs {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -108,50 +108,50 @@ pub enum MessageArchType {
     Other = 3,
 }
 
-impl std::fmt::Display for ServerMessages {
+impl std::fmt::Display for ServerMessageIDs {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", format!("{self:?}").to_lowercase())
     }
 }
 
-impl ServerMessages {
+impl ServerMessageIDs {
     /// Ask what Archetype a given message has
     pub fn arch_type(&self) -> MessageArchType {
         // There is probably a macro that could be made to make my life easier.
         match self {
-            ServerMessages::MsgMethodCreate => MessageArchType::Create,
-            ServerMessages::MsgMethodDelete => MessageArchType::Delete,
-            ServerMessages::MsgSignalCreate => MessageArchType::Create,
-            ServerMessages::MsgSignalDelete => MessageArchType::Delete,
-            ServerMessages::MsgEntityCreate => MessageArchType::Create,
-            ServerMessages::MsgEntityUpdate => MessageArchType::Update,
-            ServerMessages::MsgEntityDelete => MessageArchType::Delete,
-            ServerMessages::MsgPlotCreate => MessageArchType::Create,
-            ServerMessages::MsgPlotUpdate => MessageArchType::Update,
-            ServerMessages::MsgPlotDelete => MessageArchType::Delete,
-            ServerMessages::MsgBufferCreate => MessageArchType::Create,
-            ServerMessages::MsgBufferDelete => MessageArchType::Delete,
-            ServerMessages::MsgBufferViewCreate => MessageArchType::Create,
-            ServerMessages::MsgBufferViewDelete => MessageArchType::Delete,
-            ServerMessages::MsgMaterialCreate => MessageArchType::Create,
-            ServerMessages::MsgMaterialUpdate => MessageArchType::Update,
-            ServerMessages::MsgMaterialDelete => MessageArchType::Delete,
-            ServerMessages::MsgImageCreate => MessageArchType::Create,
-            ServerMessages::MsgImageDelete => MessageArchType::Delete,
-            ServerMessages::MsgTextureCreate => MessageArchType::Create,
-            ServerMessages::MsgTextureDelete => MessageArchType::Delete,
-            ServerMessages::MsgSamplerCreate => MessageArchType::Create,
-            ServerMessages::MsgSamplerDelete => MessageArchType::Delete,
-            ServerMessages::MsgLightCreate => MessageArchType::Create,
-            ServerMessages::MsgLightUpdate => MessageArchType::Update,
-            ServerMessages::MsgLightDelete => MessageArchType::Delete,
-            ServerMessages::MsgGeometryCreate => MessageArchType::Create,
-            ServerMessages::MsgGeometryDelete => MessageArchType::Delete,
-            ServerMessages::MsgTableCreate => MessageArchType::Create,
-            ServerMessages::MsgTableUpdate => MessageArchType::Update,
-            ServerMessages::MsgTableDelete => MessageArchType::Delete,
-            ServerMessages::MsgDocumentUpdate => MessageArchType::Update,
-            ServerMessages::MsgDocumentReset => MessageArchType::Delete,
+            ServerMessageIDs::MsgMethodCreate => MessageArchType::Create,
+            ServerMessageIDs::MsgMethodDelete => MessageArchType::Delete,
+            ServerMessageIDs::MsgSignalCreate => MessageArchType::Create,
+            ServerMessageIDs::MsgSignalDelete => MessageArchType::Delete,
+            ServerMessageIDs::MsgEntityCreate => MessageArchType::Create,
+            ServerMessageIDs::MsgEntityUpdate => MessageArchType::Update,
+            ServerMessageIDs::MsgEntityDelete => MessageArchType::Delete,
+            ServerMessageIDs::MsgPlotCreate => MessageArchType::Create,
+            ServerMessageIDs::MsgPlotUpdate => MessageArchType::Update,
+            ServerMessageIDs::MsgPlotDelete => MessageArchType::Delete,
+            ServerMessageIDs::MsgBufferCreate => MessageArchType::Create,
+            ServerMessageIDs::MsgBufferDelete => MessageArchType::Delete,
+            ServerMessageIDs::MsgBufferViewCreate => MessageArchType::Create,
+            ServerMessageIDs::MsgBufferViewDelete => MessageArchType::Delete,
+            ServerMessageIDs::MsgMaterialCreate => MessageArchType::Create,
+            ServerMessageIDs::MsgMaterialUpdate => MessageArchType::Update,
+            ServerMessageIDs::MsgMaterialDelete => MessageArchType::Delete,
+            ServerMessageIDs::MsgImageCreate => MessageArchType::Create,
+            ServerMessageIDs::MsgImageDelete => MessageArchType::Delete,
+            ServerMessageIDs::MsgTextureCreate => MessageArchType::Create,
+            ServerMessageIDs::MsgTextureDelete => MessageArchType::Delete,
+            ServerMessageIDs::MsgSamplerCreate => MessageArchType::Create,
+            ServerMessageIDs::MsgSamplerDelete => MessageArchType::Delete,
+            ServerMessageIDs::MsgLightCreate => MessageArchType::Create,
+            ServerMessageIDs::MsgLightUpdate => MessageArchType::Update,
+            ServerMessageIDs::MsgLightDelete => MessageArchType::Delete,
+            ServerMessageIDs::MsgGeometryCreate => MessageArchType::Create,
+            ServerMessageIDs::MsgGeometryDelete => MessageArchType::Delete,
+            ServerMessageIDs::MsgTableCreate => MessageArchType::Create,
+            ServerMessageIDs::MsgTableUpdate => MessageArchType::Update,
+            ServerMessageIDs::MsgTableDelete => MessageArchType::Delete,
+            ServerMessageIDs::MsgDocumentUpdate => MessageArchType::Update,
+            ServerMessageIDs::MsgDocumentReset => MessageArchType::Delete,
             _ => MessageArchType::Other,
         }
     }
@@ -159,39 +159,39 @@ impl ServerMessages {
     /// Asks what component a message operates on
     pub fn component_type(&self) -> ComponentType {
         match self {
-            ServerMessages::MsgMethodCreate => ComponentType::Method,
-            ServerMessages::MsgMethodDelete => ComponentType::Method,
-            ServerMessages::MsgSignalCreate => ComponentType::Signal,
-            ServerMessages::MsgSignalDelete => ComponentType::Signal,
-            ServerMessages::MsgEntityCreate => ComponentType::Entity,
-            ServerMessages::MsgEntityUpdate => ComponentType::Entity,
-            ServerMessages::MsgEntityDelete => ComponentType::Entity,
-            ServerMessages::MsgPlotCreate => ComponentType::Plot,
-            ServerMessages::MsgPlotUpdate => ComponentType::Plot,
-            ServerMessages::MsgPlotDelete => ComponentType::Plot,
-            ServerMessages::MsgBufferCreate => ComponentType::Buffer,
-            ServerMessages::MsgBufferDelete => ComponentType::Buffer,
-            ServerMessages::MsgBufferViewCreate => ComponentType::BufferView,
-            ServerMessages::MsgBufferViewDelete => ComponentType::BufferView,
-            ServerMessages::MsgMaterialCreate => ComponentType::Material,
-            ServerMessages::MsgMaterialUpdate => ComponentType::Material,
-            ServerMessages::MsgMaterialDelete => ComponentType::Material,
-            ServerMessages::MsgImageCreate => ComponentType::Image,
-            ServerMessages::MsgImageDelete => ComponentType::Image,
-            ServerMessages::MsgTextureCreate => ComponentType::Texture,
-            ServerMessages::MsgTextureDelete => ComponentType::Texture,
-            ServerMessages::MsgSamplerCreate => ComponentType::Sampler,
-            ServerMessages::MsgSamplerDelete => ComponentType::Sampler,
-            ServerMessages::MsgLightCreate => ComponentType::Light,
-            ServerMessages::MsgLightUpdate => ComponentType::Light,
-            ServerMessages::MsgLightDelete => ComponentType::Light,
-            ServerMessages::MsgGeometryCreate => ComponentType::Geometry,
-            ServerMessages::MsgGeometryDelete => ComponentType::Geometry,
-            ServerMessages::MsgTableCreate => ComponentType::Table,
-            ServerMessages::MsgTableUpdate => ComponentType::Table,
-            ServerMessages::MsgTableDelete => ComponentType::Table,
-            ServerMessages::MsgDocumentUpdate => ComponentType::Document,
-            ServerMessages::MsgDocumentReset => ComponentType::Document,
+            ServerMessageIDs::MsgMethodCreate => ComponentType::Method,
+            ServerMessageIDs::MsgMethodDelete => ComponentType::Method,
+            ServerMessageIDs::MsgSignalCreate => ComponentType::Signal,
+            ServerMessageIDs::MsgSignalDelete => ComponentType::Signal,
+            ServerMessageIDs::MsgEntityCreate => ComponentType::Entity,
+            ServerMessageIDs::MsgEntityUpdate => ComponentType::Entity,
+            ServerMessageIDs::MsgEntityDelete => ComponentType::Entity,
+            ServerMessageIDs::MsgPlotCreate => ComponentType::Plot,
+            ServerMessageIDs::MsgPlotUpdate => ComponentType::Plot,
+            ServerMessageIDs::MsgPlotDelete => ComponentType::Plot,
+            ServerMessageIDs::MsgBufferCreate => ComponentType::Buffer,
+            ServerMessageIDs::MsgBufferDelete => ComponentType::Buffer,
+            ServerMessageIDs::MsgBufferViewCreate => ComponentType::BufferView,
+            ServerMessageIDs::MsgBufferViewDelete => ComponentType::BufferView,
+            ServerMessageIDs::MsgMaterialCreate => ComponentType::Material,
+            ServerMessageIDs::MsgMaterialUpdate => ComponentType::Material,
+            ServerMessageIDs::MsgMaterialDelete => ComponentType::Material,
+            ServerMessageIDs::MsgImageCreate => ComponentType::Image,
+            ServerMessageIDs::MsgImageDelete => ComponentType::Image,
+            ServerMessageIDs::MsgTextureCreate => ComponentType::Texture,
+            ServerMessageIDs::MsgTextureDelete => ComponentType::Texture,
+            ServerMessageIDs::MsgSamplerCreate => ComponentType::Sampler,
+            ServerMessageIDs::MsgSamplerDelete => ComponentType::Sampler,
+            ServerMessageIDs::MsgLightCreate => ComponentType::Light,
+            ServerMessageIDs::MsgLightUpdate => ComponentType::Light,
+            ServerMessageIDs::MsgLightDelete => ComponentType::Light,
+            ServerMessageIDs::MsgGeometryCreate => ComponentType::Geometry,
+            ServerMessageIDs::MsgGeometryDelete => ComponentType::Geometry,
+            ServerMessageIDs::MsgTableCreate => ComponentType::Table,
+            ServerMessageIDs::MsgTableUpdate => ComponentType::Table,
+            ServerMessageIDs::MsgTableDelete => ComponentType::Table,
+            ServerMessageIDs::MsgDocumentUpdate => ComponentType::Document,
+            ServerMessageIDs::MsgDocumentReset => ComponentType::Document,
             _ => ComponentType::None,
         }
     }

@@ -55,7 +55,7 @@ pub struct ServerOptions {
 impl Default for ServerOptions {
     fn default() -> Self {
         Self {
-            host: "localhost:50000".to_string(),
+            host: "0.0.0.0:50000".to_string(),
         }
     }
 }
