@@ -1,5 +1,6 @@
 //! An example NOODLES server that provides cube geometry for clients.
 
+use colabrodo_common::types::Url;
 use colabrodo_server::{
     server::{AsyncServer, DefaultCommand, ServerOptions},
     server_bufferbuilder,
@@ -14,7 +15,7 @@ use colabrodo_server::{
 fn make_cube(
     server_state: &mut ServerState,
     link: &mut AssetServerLink,
-) -> GeometryPatch {
+) -> ServerGeometryPatch {
     let mut test_source = server_bufferbuilder::VertexSource::default();
 
     test_source.name = "Cube".to_string();
@@ -65,10 +66,10 @@ fn make_cube(
     ];
 
     // Create a material to go along with this cube
-    let material = server_state.materials.new_component(MaterialState {
+    let material = server_state.materials.new_component(ServerMaterialState {
         name: None,
-        extra: MaterialStateUpdatable {
-            pbr_info: Some(PBRInfo {
+        mutable: ServerMaterialStateUpdatable {
+            pbr_info: Some(ServerPBRInfo {
                 base_color: [1.0, 1.0, 0.75, 1.0],
                 metallic: Some(1.0),
                 roughness: Some(0.1),
@@ -98,7 +99,7 @@ fn make_cube(
 
     // build the cube with our material
 
-    GeometryPatch {
+    ServerGeometryPatch {
         attributes: intermediate.attributes,
         vertex_count: intermediate.vertex_count,
         indices: intermediate.indices,
@@ -113,7 +114,7 @@ struct CubeServer {
 
     init: CubeServerInit,
 
-    cube_entity: Option<ComponentReference<EntityState>>,
+    cube_entity: Option<ComponentReference<ServerEntityState>>,
 }
 
 /// All server states should use this trait...
@@ -164,19 +165,19 @@ impl AsyncServer for CubeServer {
     fn initialize_state(&mut self) {
         let cube = make_cube(&mut self.state, &mut self.init.link);
 
-        let geom = self.state.geometries.new_component(GeometryState {
+        let geom = self.state.geometries.new_component(ServerGeometryState {
             name: Some("Cube Geom".to_string()),
             patches: vec![cube],
         });
 
         self.cube_entity =
-            Some(self.state.entities.new_component(EntityState {
+            Some(self.state.entities.new_component(ServerEntityState {
                 name: Some("Cube".to_string()),
-                extra: EntityStateUpdatable {
+                mutable: ServerEntityStateUpdatable {
                     parent: None,
                     transform: None,
-                    representation: Some(EntityRepresentation::Render(
-                        RenderRepresentation {
+                    representation: Some(ServerEntityRepresentation::Render(
+                        ServerRenderRepresentation {
                             mesh: geom,
                             instances: None,
                         },

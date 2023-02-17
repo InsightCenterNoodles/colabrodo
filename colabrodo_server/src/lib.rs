@@ -1,4 +1,3 @@
-pub mod client_messages;
 pub mod server;
 pub mod server_bufferbuilder;
 pub mod server_http;

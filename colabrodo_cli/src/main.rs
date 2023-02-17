@@ -5,12 +5,12 @@ use std::sync::{Arc, Mutex};
 
 use colabrodo_client::client::ciborium::{de, ser, value};
 use colabrodo_client::client::{self, handle_next, UserClientState};
+use colabrodo_common::client_communication::{
+    ClientIntroductionMessage, ClientInvokeMessage, NoodlesClientMessageID,
+};
 use colabrodo_common::common::{
     id_for_message, lookup, ComponentType, MessageArchType, NooValueMap,
     ServerMessageIDs,
-};
-use colabrodo_server::client_messages::{
-    ClientIntroductionMessage, ClientInvokeMessage, NoodlesClientMessageID,
 };
 
 use colabrodo_common::nooid::NooID;

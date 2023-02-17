@@ -6,12 +6,13 @@
 //!
 //!
 
-use crate::client_messages::{
-    AllClientMessages, ClientInvokeMessage, ClientRootMessage, InvokeIDType,
-};
 use crate::server_messages::*;
 use ciborium::value;
+use colabrodo_common::client_communication::{
+    AllClientMessages, ClientInvokeMessage, ClientRootMessage, InvokeIDType,
+};
 use colabrodo_common::common::ServerMessageIDs;
+use colabrodo_common::components::*;
 use colabrodo_common::nooid::NooID;
 use indexmap::IndexMap;
 use serde::{ser::SerializeSeq, ser::SerializeStruct, Serialize};
@@ -390,19 +391,19 @@ pub struct ServerState {
     pub signals: PubUserCompList<SignalState>,
 
     pub buffers: PubUserCompList<BufferState>,
-    pub buffer_views: PubUserCompList<BufferViewState>,
+    pub buffer_views: PubUserCompList<ServerBufferViewState>,
 
     pub samplers: PubUserCompList<SamplerState>,
-    pub images: PubUserCompList<ImageState>,
-    pub textures: PubUserCompList<TextureState>,
+    pub images: PubUserCompList<ServerImageState>,
+    pub textures: PubUserCompList<ServerTextureState>,
 
-    pub materials: PubUserCompList<MaterialState>,
-    pub geometries: PubUserCompList<GeometryState>,
+    pub materials: PubUserCompList<ServerMaterialState>,
+    pub geometries: PubUserCompList<ServerGeometryState>,
 
-    pub tables: PubUserCompList<TableState>,
-    pub plots: PubUserCompList<PlotState>,
+    pub tables: PubUserCompList<ServerTableState>,
+    pub plots: PubUserCompList<ServerPlotState>,
 
-    pub entities: PubUserCompList<EntityState>,
+    pub entities: PubUserCompList<ServerEntityState>,
 
     comm: DocumentUpdate,
 }
@@ -534,16 +535,16 @@ impl ServerState {
 #[derive(Clone)]
 pub enum InvokeObj {
     Document,
-    Entity(ComponentReference<EntityState>),
-    Table(ComponentReference<TableState>),
-    Plot(ComponentReference<PlotState>),
+    Entity(ComponentReference<ServerEntityState>),
+    Table(ComponentReference<ServerTableState>),
+    Plot(ComponentReference<ServerPlotState>),
 }
 
 /// Helper enum to describe the target of a signal invocation
 pub enum SignalInvokeObj {
-    Entity(ComponentReference<EntityState>),
-    Table(ComponentReference<TableState>),
-    Plot(ComponentReference<PlotState>),
+    Entity(ComponentReference<ServerEntityState>),
+    Table(ComponentReference<ServerTableState>),
+    Plot(ComponentReference<ServerPlotState>),
 }
 
 impl Serialize for SignalInvokeObj {
@@ -643,13 +644,13 @@ fn invoke_helper(
             find_method_in_state(&method, &c.state().comm.methods_list)
         }
         InvokeObj::Entity(x) => {
-            find_method_in_state(&method, &x.0.get().extra.methods_list)
+            find_method_in_state(&method, &x.0.get().mutable.methods_list)
         }
         InvokeObj::Plot(x) => {
-            find_method_in_state(&method, &x.0.get().extra.methods_list)
+            find_method_in_state(&method, &x.0.get().mutable.methods_list)
         }
         InvokeObj::Table(x) => {
-            find_method_in_state(&method, &x.0.get().extra.methods_list)
+            find_method_in_state(&method, &x.0.get().mutable.methods_list)
         }
     };
 
@@ -751,6 +752,7 @@ mod tests {
     use std::collections::VecDeque;
 
     use ciborium::{cbor, tag::Required, value::Value};
+    use colabrodo_common::types::ByteBuff;
 
     use super::*;
 
@@ -892,22 +894,22 @@ mod tests {
         let mut state = ServerState::new(tx);
 
         {
-            let a = state.entities.new_component(EntityState {
+            let a = state.entities.new_component(ServerEntityState {
                 name: Some("A".to_string()),
-                extra: Default::default(),
+                mutable: Default::default(),
             });
 
-            let b = state.entities.new_component(EntityState {
+            let b = state.entities.new_component(ServerEntityState {
                 name: Some("B".to_string()),
-                extra: EntityStateUpdatable {
+                mutable: ServerEntityStateUpdatable {
                     parent: Some(a),
                     ..Default::default()
                 },
             });
 
-            let _c = state.entities.new_component(EntityState {
+            let _c = state.entities.new_component(ServerEntityState {
                 name: Some("C".to_string()),
-                extra: EntityStateUpdatable {
+                mutable: ServerEntityStateUpdatable {
                     parent: Some(b),
                     ..Default::default()
                 },

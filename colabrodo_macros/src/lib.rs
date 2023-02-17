@@ -57,7 +57,7 @@ pub fn emit_optional_patch_function(input: TokenStream) -> TokenStream {
 
         updater_impl.push_str(&format!(
             "if self.{name_string}.is_some() {{
-                host_state.extra.{name_string} = self.{name_string};
+                host_state.mutable.{name_string} = self.{name_string};
             }}\n"
         ));
     }
