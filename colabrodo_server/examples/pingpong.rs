@@ -84,7 +84,7 @@ impl AsyncServer for PingPongServer {
         self.method_list.insert(ptr.clone(), ping_pong);
 
         self.state.update_document(
-            colabrodo_server::server_messages::DocumentUpdate {
+            colabrodo_server::server_messages::ServerDocumentUpdate {
                 methods_list: Some(vec![ptr]),
                 ..Default::default()
             },

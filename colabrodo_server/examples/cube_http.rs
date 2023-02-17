@@ -6,7 +6,7 @@ use colabrodo_server::{
     server_bufferbuilder,
     server_http::*,
     server_messages::*,
-    server_state::{ServerState, UserServerState},
+    server_state::{MethodException, ServerState, UserServerState},
 };
 
 /// Build the actual cube geometry.

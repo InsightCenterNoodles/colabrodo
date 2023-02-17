@@ -4,7 +4,7 @@ use serde::{ser::SerializeStruct, Deserialize, Serialize};
 
 use crate::nooid::NooID;
 
-pub trait NoodlesClientMessageID {
+pub trait ClientMessageID {
     fn message_id() -> u32;
 }
 
@@ -13,7 +13,7 @@ pub struct ClientIntroductionMessage {
     pub client_name: String,
 }
 
-impl NoodlesClientMessageID for ClientIntroductionMessage {
+impl ClientMessageID for ClientIntroductionMessage {
     fn message_id() -> u32 {
         0
     }
@@ -99,7 +99,7 @@ pub struct ClientInvokeMessage {
     pub args: Vec<Value>,
 }
 
-impl NoodlesClientMessageID for ClientInvokeMessage {
+impl ClientMessageID for ClientInvokeMessage {
     fn message_id() -> u32 {
         1
     }

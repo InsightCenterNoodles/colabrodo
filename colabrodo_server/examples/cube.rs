@@ -4,7 +4,7 @@ use colabrodo_server::{
     server::{AsyncServer, DefaultCommand, NoInit, ServerOptions},
     server_bufferbuilder,
     server_messages::*,
-    server_state::{ServerState, UserServerState},
+    server_state::{MethodException, ServerState, UserServerState},
 };
 
 /// Build the actual cube geometry.

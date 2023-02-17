@@ -14,8 +14,12 @@ use colabrodo_common::client_communication::{
 use colabrodo_common::common::ServerMessageIDs;
 use colabrodo_common::components::*;
 use colabrodo_common::nooid::NooID;
+pub use colabrodo_common::server_communication::{
+    ExceptionCodes, MessageMethodReply, MessageSignalInvoke, MethodException,
+    SignalInvokeObj,
+};
 use indexmap::IndexMap;
-use serde::{ser::SerializeSeq, ser::SerializeStruct, Serialize};
+use serde::{ser::SerializeSeq, Serialize};
 use std::cell::{Ref, RefCell, RefMut};
 use std::collections::HashMap;
 use std::fmt::Debug;
@@ -32,7 +36,7 @@ pub type CallbackPtr = Sender<Vec<u8>>;
 /// Thus, this should be held in an Rc.
 pub struct ComponentCell<T>
 where
-    T: Serialize + ServerStateItemMessageIDs + Debug,
+    T: Serialize + ComponentMessageIDs + Debug,
 {
     id: NooID,
     host: Rc<RefCell<ServerComponentList<T>>>,
@@ -40,7 +44,7 @@ where
 
 impl<T> Debug for ComponentCell<T>
 where
-    T: Debug + Serialize + ServerStateItemMessageIDs + Debug,
+    T: Debug + Serialize + ComponentMessageIDs + Debug,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ComponentCell")
@@ -51,7 +55,7 @@ where
 
 impl<T> Drop for ComponentCell<T>
 where
-    T: Serialize + ServerStateItemMessageIDs + Debug,
+    T: Serialize + ComponentMessageIDs + Debug,
 {
     fn drop(&mut self) {
         log::debug!(
@@ -85,7 +89,7 @@ where
 
 impl<T> ComponentCell<T>
 where
-    T: Serialize + ServerStateItemMessageIDs + Debug,
+    T: Serialize + ComponentMessageIDs + Debug,
 {
     /// Obtain the ID of the managed component
     pub fn id(&self) -> NooID {
@@ -119,7 +123,7 @@ where
 
 pub struct ComponentCellGuard<'a, T>
 where
-    T: Serialize + ServerStateItemMessageIDs + Debug,
+    T: Serialize + ComponentMessageIDs + Debug,
 {
     guard: Ref<'a, ServerComponentList<T>>,
     id: NooID,
@@ -127,7 +131,7 @@ where
 
 impl<'a, T> std::ops::Deref for ComponentCellGuard<'a, T>
 where
-    T: Serialize + ServerStateItemMessageIDs + Debug,
+    T: Serialize + ComponentMessageIDs + Debug,
 {
     type Target = T;
 
@@ -138,7 +142,7 @@ where
 
 pub struct ComponentCellGuardMut<'a, T>
 where
-    T: Serialize + ServerStateItemMessageIDs + Debug,
+    T: Serialize + ComponentMessageIDs + Debug,
 {
     guard: RefMut<'a, ServerComponentList<T>>,
     id: NooID,
@@ -146,7 +150,7 @@ where
 
 impl<'a, T> std::ops::Deref for ComponentCellGuardMut<'a, T>
 where
-    T: Serialize + ServerStateItemMessageIDs + Debug,
+    T: Serialize + ComponentMessageIDs + Debug,
 {
     type Target = T;
 
@@ -157,7 +161,7 @@ where
 
 impl<'a, T> std::ops::DerefMut for ComponentCellGuardMut<'a, T>
 where
-    T: Serialize + ServerStateItemMessageIDs + Debug,
+    T: Serialize + ComponentMessageIDs + Debug,
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.guard.get_data_mut(self.id).unwrap()
@@ -171,11 +175,11 @@ where
 #[derive(Debug)]
 struct ComponentPtr<T>(Rc<ComponentCell<T>>)
 where
-    T: Serialize + ServerStateItemMessageIDs + Debug;
+    T: Serialize + ComponentMessageIDs + Debug;
 
 impl<T> Serialize for ComponentPtr<T>
 where
-    T: Serialize + ServerStateItemMessageIDs + Debug,
+    T: Serialize + ComponentMessageIDs + Debug,
 {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -187,7 +191,7 @@ where
 
 impl<T> Clone for ComponentPtr<T>
 where
-    T: Serialize + ServerStateItemMessageIDs + Debug,
+    T: Serialize + ComponentMessageIDs + Debug,
 {
     fn clone(&self) -> Self {
         Self(self.0.clone())
@@ -201,7 +205,7 @@ where
 /// Also included is a sink for broadcast messages, and a list of free ids for recycling.
 struct ServerComponentList<T>
 where
-    T: Serialize + ServerStateItemMessageIDs + Debug,
+    T: Serialize + ComponentMessageIDs + Debug,
 {
     // this list HAS to be sorted at the moment.
     // as in most cases parent object IDs are lower in the slot list.
@@ -213,7 +217,7 @@ where
     free_list: Vec<NooID>,
 }
 
-impl<T: Serialize + ServerStateItemMessageIDs + Debug> ServerComponentList<T> {
+impl<T: Serialize + ComponentMessageIDs + Debug> ServerComponentList<T> {
     fn new(tx: CallbackPtr) -> Self {
         Self {
             list: IndexMap::new(),
@@ -334,14 +338,14 @@ impl<T: Serialize + ServerStateItemMessageIDs + Debug> ServerComponentList<T> {
 /// Internally this is a shared pointer to our internal list, as our components need a reference to this list as well.
 pub struct PubUserCompList<T>
 where
-    T: Serialize + ServerStateItemMessageIDs + Debug,
+    T: Serialize + ComponentMessageIDs + Debug,
 {
     list: Rc<RefCell<ServerComponentList<T>>>,
 }
 
 impl<T> PubUserCompList<T>
 where
-    T: Serialize + ServerStateItemMessageIDs + Debug,
+    T: Serialize + ComponentMessageIDs + Debug,
 {
     /// Create a new list
     fn new(tx: CallbackPtr) -> Self {
@@ -405,7 +409,7 @@ pub struct ServerState {
 
     pub entities: PubUserCompList<ServerEntityState>,
 
-    comm: DocumentUpdate,
+    comm: ServerDocumentUpdate,
 }
 
 /// A dummy struct for use when we need a message with no content. Terrible.
@@ -474,7 +478,7 @@ impl ServerState {
     }
 
     /// Update the document's methods and signals
-    pub fn update_document(&mut self, update: DocumentUpdate) {
+    pub fn update_document(&mut self, update: ServerDocumentUpdate) {
         let msg_tuple = (ServerMessageIDs::MsgDocumentUpdate as u32, &update);
 
         let mut recorder = Recorder::default();
@@ -495,7 +499,7 @@ impl ServerState {
     pub fn issue_signal(
         &self,
         signals: ComponentReference<SignalState>,
-        context: Option<SignalInvokeObj>,
+        context: Option<ServerSignalInvokeObj>,
         arguments: Vec<value::Value>,
     ) {
         let msg_tuple = (
@@ -541,28 +545,17 @@ pub enum InvokeObj {
 }
 
 /// Helper enum to describe the target of a signal invocation
-pub enum SignalInvokeObj {
-    Entity(ComponentReference<ServerEntityState>),
-    Table(ComponentReference<ServerTableState>),
-    Plot(ComponentReference<ServerPlotState>),
-}
+pub type ServerSignalInvokeObj = SignalInvokeObj<
+    ComponentReference<ServerEntityState>,
+    ComponentReference<ServerTableState>,
+    ComponentReference<ServerPlotState>,
+>;
 
-impl Serialize for SignalInvokeObj {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let mut s = serializer.serialize_struct("InvokeIDType", 1)?;
-        match self {
-            SignalInvokeObj::Entity(e) => {
-                s.serialize_field("entity", &e.id())?
-            }
-            SignalInvokeObj::Table(e) => s.serialize_field("table", &e.id())?,
-            SignalInvokeObj::Plot(e) => s.serialize_field("plot", &e.id())?,
-        }
-        s.end()
-    }
-}
+pub type ServerMessageSignalInvoke = MessageSignalInvoke<
+    ComponentReference<ServerEntityState>,
+    ComponentReference<ServerTableState>,
+    ComponentReference<ServerPlotState>,
+>;
 
 /// The result of a method invocation.
 ///

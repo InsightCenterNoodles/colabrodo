@@ -1,7 +1,13 @@
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
 use serde_with;
 
-use crate::types::*;
+use crate::{common::ServerMessageIDs, types::*};
+
+pub trait ComponentMessageIDs {
+    fn create_message_id() -> ServerMessageIDs;
+    fn update_message_id() -> ServerMessageIDs;
+    fn delete_message_id() -> ServerMessageIDs;
+}
 
 // =============================================================================
 
@@ -21,6 +27,20 @@ pub struct MethodState {
     pub arg_doc: Vec<MethodArg>,
 }
 
+impl ComponentMessageIDs for MethodState {
+    fn update_message_id() -> ServerMessageIDs {
+        ServerMessageIDs::Unknown
+    }
+
+    fn create_message_id() -> ServerMessageIDs {
+        ServerMessageIDs::MsgMethodCreate
+    }
+
+    fn delete_message_id() -> ServerMessageIDs {
+        ServerMessageIDs::MsgMethodDelete
+    }
+}
+
 // =============================================================================
 
 #[serde_with::skip_serializing_none]
@@ -30,6 +50,20 @@ pub struct SignalState {
     pub doc: Option<String>,
     pub return_doc: Option<String>,
     pub arg_doc: Vec<MethodArg>,
+}
+
+impl ComponentMessageIDs for SignalState {
+    fn update_message_id() -> ServerMessageIDs {
+        ServerMessageIDs::Unknown
+    }
+
+    fn create_message_id() -> ServerMessageIDs {
+        ServerMessageIDs::MsgSignalCreate
+    }
+
+    fn delete_message_id() -> ServerMessageIDs {
+        ServerMessageIDs::MsgSignalDelete
+    }
 }
 
 // =============================================================================
@@ -93,6 +127,20 @@ impl BufferState {
     }
 }
 
+impl ComponentMessageIDs for BufferState {
+    fn update_message_id() -> ServerMessageIDs {
+        ServerMessageIDs::Unknown
+    }
+
+    fn create_message_id() -> ServerMessageIDs {
+        ServerMessageIDs::MsgBufferCreate
+    }
+
+    fn delete_message_id() -> ServerMessageIDs {
+        ServerMessageIDs::MsgBufferDelete
+    }
+}
+
 // =============================================================================
 
 #[derive(Debug, Serialize, Deserialize, Default)]
@@ -118,6 +166,20 @@ pub struct BufferViewState<BufferReference> {
 
     pub offset: u64,
     pub length: u64,
+}
+
+impl<BufferReference> ComponentMessageIDs for BufferViewState<BufferReference> {
+    fn update_message_id() -> ServerMessageIDs {
+        ServerMessageIDs::Unknown
+    }
+
+    fn create_message_id() -> ServerMessageIDs {
+        ServerMessageIDs::MsgBufferViewCreate
+    }
+
+    fn delete_message_id() -> ServerMessageIDs {
+        ServerMessageIDs::MsgBufferViewDelete
+    }
 }
 
 // =============================================================================
@@ -197,6 +259,22 @@ pub struct GeometryState<BufferViewRef, MaterialRef> {
     pub patches: Vec<GeometryPatch<BufferViewRef, MaterialRef>>,
 }
 
+impl<BufferViewRef, MaterialRef> ComponentMessageIDs
+    for GeometryState<BufferViewRef, MaterialRef>
+{
+    fn update_message_id() -> ServerMessageIDs {
+        ServerMessageIDs::Unknown
+    }
+
+    fn create_message_id() -> ServerMessageIDs {
+        ServerMessageIDs::MsgGeometryCreate
+    }
+
+    fn delete_message_id() -> ServerMessageIDs {
+        ServerMessageIDs::MsgGeometryDelete
+    }
+}
+
 // =============================================================================
 
 #[derive(Debug)]
@@ -233,6 +311,20 @@ pub struct ImageState<BufferViewRef> {
     pub source: ImageSource<BufferViewRef>,
 }
 
+impl<BufferViewRef> ComponentMessageIDs for ImageState<BufferViewRef> {
+    fn update_message_id() -> ServerMessageIDs {
+        ServerMessageIDs::Unknown
+    }
+
+    fn create_message_id() -> ServerMessageIDs {
+        ServerMessageIDs::MsgImageCreate
+    }
+
+    fn delete_message_id() -> ServerMessageIDs {
+        ServerMessageIDs::MsgImageDelete
+    }
+}
+
 // =============================================================================
 
 #[serde_with::skip_serializing_none]
@@ -243,6 +335,22 @@ pub struct TextureState<ImageStateRef, SamplerStateRef> {
     pub image: ImageStateRef,
 
     pub sampler: Option<SamplerStateRef>,
+}
+
+impl<ImageStateRef, SamplerStateRef> ComponentMessageIDs
+    for TextureState<ImageStateRef, SamplerStateRef>
+{
+    fn update_message_id() -> ServerMessageIDs {
+        ServerMessageIDs::Unknown
+    }
+
+    fn create_message_id() -> ServerMessageIDs {
+        ServerMessageIDs::MsgTextureCreate
+    }
+
+    fn delete_message_id() -> ServerMessageIDs {
+        ServerMessageIDs::MsgTextureDelete
+    }
 }
 
 // =============================================================================
@@ -285,6 +393,20 @@ pub struct SamplerState {
 
     pub wrap_s: Option<SamplerMode>,
     pub wrap_t: Option<SamplerMode>,
+}
+
+impl ComponentMessageIDs for SamplerState {
+    fn update_message_id() -> ServerMessageIDs {
+        ServerMessageIDs::Unknown
+    }
+
+    fn create_message_id() -> ServerMessageIDs {
+        ServerMessageIDs::MsgSamplerCreate
+    }
+
+    fn delete_message_id() -> ServerMessageIDs {
+        ServerMessageIDs::MsgSamplerDelete
+    }
 }
 
 // =============================================================================
@@ -343,6 +465,20 @@ pub struct MaterialState<TextureStateRef> {
 
     #[serde(flatten)]
     pub mutable: MaterialStateUpdatable<TextureStateRef>,
+}
+
+impl<TextureStateRef> ComponentMessageIDs for MaterialState<TextureStateRef> {
+    fn update_message_id() -> ServerMessageIDs {
+        ServerMessageIDs::MsgMaterialUpdate
+    }
+
+    fn create_message_id() -> ServerMessageIDs {
+        ServerMessageIDs::MsgMaterialCreate
+    }
+
+    fn delete_message_id() -> ServerMessageIDs {
+        ServerMessageIDs::MsgMaterialDelete
+    }
 }
 
 // =============================================================================
@@ -411,6 +547,20 @@ pub struct LightState {
     pub mutable: LightStateUpdatable,
 }
 
+impl ComponentMessageIDs for LightState {
+    fn update_message_id() -> ServerMessageIDs {
+        ServerMessageIDs::MsgLightUpdate
+    }
+
+    fn create_message_id() -> ServerMessageIDs {
+        ServerMessageIDs::MsgLightCreate
+    }
+
+    fn delete_message_id() -> ServerMessageIDs {
+        ServerMessageIDs::MsgLightDelete
+    }
+}
+
 // =============================================================================
 
 #[serde_with::skip_serializing_none]
@@ -429,6 +579,22 @@ pub struct PlotState<TableRef, MethodRef, SignalRef> {
 
     #[serde(flatten)]
     pub(crate) mutable: PlotStateUpdatable<TableRef, MethodRef, SignalRef>,
+}
+
+impl<TableRef, MethodRef, SignalRef> ComponentMessageIDs
+    for PlotState<TableRef, MethodRef, SignalRef>
+{
+    fn update_message_id() -> ServerMessageIDs {
+        ServerMessageIDs::MsgPlotUpdate
+    }
+
+    fn create_message_id() -> ServerMessageIDs {
+        ServerMessageIDs::MsgPlotCreate
+    }
+
+    fn delete_message_id() -> ServerMessageIDs {
+        ServerMessageIDs::MsgPlotDelete
+    }
 }
 
 // =============================================================================
@@ -565,6 +731,38 @@ pub struct EntityState<
         MethodRef,
         SignalRef,
     >,
+}
+
+impl<
+        EntityRef,
+        GeometryRef,
+        LightRef,
+        TableRef,
+        PlotRef,
+        MethodRef,
+        SignalRef,
+    > ComponentMessageIDs
+    for EntityState<
+        EntityRef,
+        GeometryRef,
+        LightRef,
+        TableRef,
+        PlotRef,
+        MethodRef,
+        SignalRef,
+    >
+{
+    fn update_message_id() -> ServerMessageIDs {
+        ServerMessageIDs::MsgEntityUpdate
+    }
+
+    fn create_message_id() -> ServerMessageIDs {
+        ServerMessageIDs::MsgEntityCreate
+    }
+
+    fn delete_message_id() -> ServerMessageIDs {
+        ServerMessageIDs::MsgEntityDelete
+    }
 }
 
 // =============================================================================

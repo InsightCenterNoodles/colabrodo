@@ -1,3 +1,4 @@
+use colabrodo_common::server_communication::DocumentUpdate;
 use colabrodo_macros::UpdatableStateItem;
 use core::fmt::Debug;
 use serde::Serialize;
@@ -14,19 +15,13 @@ pub use colabrodo_common::components::{
     GeometryIndex, MethodArg, MethodState, PrimitiveType, SignalState,
 };
 
-use crate::server_state::{ComponentCell, SignalInvokeObj};
+use crate::server_state::ComponentCell;
 
 // Traits ==============================================
 
 pub trait UpdatableStateItem {
     type HostState;
     fn patch(self, m: &mut Self::HostState);
-}
-
-pub trait ServerStateItemMessageIDs {
-    fn create_message_id() -> common::ServerMessageIDs;
-    fn update_message_id() -> common::ServerMessageIDs;
-    fn delete_message_id() -> common::ServerMessageIDs;
 }
 
 #[derive(Debug, Serialize)]
@@ -39,11 +34,11 @@ pub(crate) struct CommonDeleteMessage {
 #[derive(Debug)]
 pub struct ComponentReference<T>(pub(crate) Rc<ComponentCell<T>>)
 where
-    T: Serialize + ServerStateItemMessageIDs + Debug;
+    T: Serialize + ComponentMessageIDs + Debug;
 
 impl<T> ComponentReference<T>
 where
-    T: Serialize + ServerStateItemMessageIDs + Debug,
+    T: Serialize + ComponentMessageIDs + Debug,
 {
     pub fn new(ptr: Rc<ComponentCell<T>>) -> Self {
         Self(ptr)
@@ -60,7 +55,7 @@ where
 
 impl<T> Clone for ComponentReference<T>
 where
-    T: Serialize + ServerStateItemMessageIDs + Debug,
+    T: Serialize + ComponentMessageIDs + Debug,
 {
     fn clone(&self) -> Self {
         Self(self.0.clone())
@@ -69,7 +64,7 @@ where
 
 impl<T> serde::Serialize for ComponentReference<T>
 where
-    T: Serialize + ServerStateItemMessageIDs + Debug,
+    T: Serialize + ComponentMessageIDs + Debug,
 {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -83,7 +78,7 @@ where
 
 impl<T> core::hash::Hash for ComponentReference<T>
 where
-    T: Serialize + ServerStateItemMessageIDs + Debug,
+    T: Serialize + ComponentMessageIDs + Debug,
 {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         std::ptr::hash(&*self.0, state);
@@ -92,7 +87,7 @@ where
 
 impl<T> PartialEq for ComponentReference<T>
 where
-    T: Serialize + ServerStateItemMessageIDs + Debug,
+    T: Serialize + ComponentMessageIDs + Debug,
 {
     fn eq(&self, other: &Self) -> bool {
         Rc::ptr_eq(&self.0, &other.0)
@@ -100,7 +95,7 @@ where
 }
 
 impl<T> Eq for ComponentReference<T> where
-    T: Serialize + ServerStateItemMessageIDs + Debug
+    T: Serialize + ComponentMessageIDs + Debug
 {
 }
 
@@ -122,38 +117,6 @@ pub struct Recorder {
 }
 
 // Messages ==============================================
-
-impl ServerStateItemMessageIDs for MethodState {
-    fn update_message_id() -> common::ServerMessageIDs {
-        common::ServerMessageIDs::Unknown
-    }
-
-    fn create_message_id() -> common::ServerMessageIDs {
-        common::ServerMessageIDs::MsgMethodCreate
-    }
-
-    fn delete_message_id() -> common::ServerMessageIDs {
-        common::ServerMessageIDs::MsgMethodDelete
-    }
-}
-
-// =============================================================================
-
-impl ServerStateItemMessageIDs for SignalState {
-    fn update_message_id() -> common::ServerMessageIDs {
-        common::ServerMessageIDs::Unknown
-    }
-
-    fn create_message_id() -> common::ServerMessageIDs {
-        common::ServerMessageIDs::MsgSignalCreate
-    }
-
-    fn delete_message_id() -> common::ServerMessageIDs {
-        common::ServerMessageIDs::MsgSignalDelete
-    }
-}
-
-// ========================================================================
 
 pub type ServerRenderRepresentation =
     RenderRepresentation<ComponentReference<ServerGeometryState>>;
@@ -192,7 +155,7 @@ pub struct ServerEntityState {
     pub mutable: ServerEntityStateUpdatable,
 }
 
-impl ServerStateItemMessageIDs for ServerEntityState {
+impl ComponentMessageIDs for ServerEntityState {
     fn update_message_id() -> common::ServerMessageIDs {
         common::ServerMessageIDs::MsgEntityUpdate
     }
@@ -224,22 +187,6 @@ pub type ServerGeometryState = GeometryState<
     ComponentReference<ServerMaterialState>,
 >;
 
-impl<BufferViewRef, MaterialRef> ServerStateItemMessageIDs
-    for GeometryState<BufferViewRef, MaterialRef>
-{
-    fn update_message_id() -> common::ServerMessageIDs {
-        common::ServerMessageIDs::Unknown
-    }
-
-    fn create_message_id() -> common::ServerMessageIDs {
-        common::ServerMessageIDs::MsgGeometryCreate
-    }
-
-    fn delete_message_id() -> common::ServerMessageIDs {
-        common::ServerMessageIDs::MsgGeometryDelete
-    }
-}
-
 // ========================================================================
 
 #[serde_with::skip_serializing_none]
@@ -259,7 +206,7 @@ pub struct ServerTableState {
     pub mutable: ServerTableStateUpdatable,
 }
 
-impl ServerStateItemMessageIDs for ServerTableState {
+impl ComponentMessageIDs for ServerTableState {
     fn update_message_id() -> common::ServerMessageIDs {
         common::ServerMessageIDs::MsgTableUpdate
     }
@@ -293,7 +240,7 @@ pub struct ServerPlotState {
     pub(crate) mutable: ServerPlotStateUpdatable,
 }
 
-impl ServerStateItemMessageIDs for ServerPlotState {
+impl ComponentMessageIDs for ServerPlotState {
     fn update_message_id() -> common::ServerMessageIDs {
         common::ServerMessageIDs::MsgPlotUpdate
     }
@@ -309,38 +256,10 @@ impl ServerStateItemMessageIDs for ServerPlotState {
 
 // ========================================================================
 
-impl ServerStateItemMessageIDs for BufferState {
-    fn update_message_id() -> common::ServerMessageIDs {
-        common::ServerMessageIDs::Unknown
-    }
-
-    fn create_message_id() -> common::ServerMessageIDs {
-        common::ServerMessageIDs::MsgBufferCreate
-    }
-
-    fn delete_message_id() -> common::ServerMessageIDs {
-        common::ServerMessageIDs::MsgBufferDelete
-    }
-}
-
 // ========================================================================
 
 pub type ServerBufferViewState =
     BufferViewState<ComponentReference<BufferState>>;
-
-impl ServerStateItemMessageIDs for ServerBufferViewState {
-    fn update_message_id() -> common::ServerMessageIDs {
-        common::ServerMessageIDs::Unknown
-    }
-
-    fn create_message_id() -> common::ServerMessageIDs {
-        common::ServerMessageIDs::MsgBufferViewCreate
-    }
-
-    fn delete_message_id() -> common::ServerMessageIDs {
-        common::ServerMessageIDs::MsgBufferViewDelete
-    }
-}
 
 pub trait BufferViewStateHelpers {
     fn new_from_whole_buffer(buffer: ComponentReference<BufferState>) -> Self;
@@ -391,7 +310,7 @@ pub struct ServerMaterialState {
     pub mutable: ServerMaterialStateUpdatable,
 }
 
-impl ServerStateItemMessageIDs for ServerMaterialState {
+impl ComponentMessageIDs for ServerMaterialState {
     fn update_message_id() -> common::ServerMessageIDs {
         common::ServerMessageIDs::MsgMaterialUpdate
     }
@@ -436,20 +355,6 @@ impl ImageStateHelpers for ServerImageState {
     }
 }
 
-impl ServerStateItemMessageIDs for ServerImageState {
-    fn update_message_id() -> common::ServerMessageIDs {
-        common::ServerMessageIDs::Unknown
-    }
-
-    fn create_message_id() -> common::ServerMessageIDs {
-        common::ServerMessageIDs::MsgImageCreate
-    }
-
-    fn delete_message_id() -> common::ServerMessageIDs {
-        common::ServerMessageIDs::MsgImageDelete
-    }
-}
-
 // ========================================================================
 
 pub type ServerTextureState = TextureState<
@@ -477,35 +382,7 @@ impl TextureStateHelpers for ServerTextureState {
     }
 }
 
-impl ServerStateItemMessageIDs for ServerTextureState {
-    fn update_message_id() -> common::ServerMessageIDs {
-        common::ServerMessageIDs::Unknown
-    }
-
-    fn create_message_id() -> common::ServerMessageIDs {
-        common::ServerMessageIDs::MsgTextureCreate
-    }
-
-    fn delete_message_id() -> common::ServerMessageIDs {
-        common::ServerMessageIDs::MsgTextureDelete
-    }
-}
-
 // ========================================================================
-
-impl ServerStateItemMessageIDs for SamplerState {
-    fn update_message_id() -> common::ServerMessageIDs {
-        common::ServerMessageIDs::Unknown
-    }
-
-    fn create_message_id() -> common::ServerMessageIDs {
-        common::ServerMessageIDs::MsgSamplerCreate
-    }
-
-    fn delete_message_id() -> common::ServerMessageIDs {
-        common::ServerMessageIDs::MsgSamplerDelete
-    }
-}
 
 // ========================================================================
 
@@ -527,7 +404,7 @@ pub struct ServerLightState {
     pub mutable: LightStateUpdatable,
 }
 
-impl ServerStateItemMessageIDs for ServerLightState {
+impl ComponentMessageIDs for ServerLightState {
     fn update_message_id() -> common::ServerMessageIDs {
         common::ServerMessageIDs::MsgLightUpdate
     }
@@ -541,49 +418,9 @@ impl ServerStateItemMessageIDs for ServerLightState {
     }
 }
 
-// ========================================================================
-// One off messages
+// =============================================================================
 
-#[serde_with::skip_serializing_none]
-#[derive(Debug, Default, Serialize)]
-pub struct DocumentUpdate {
-    pub methods_list: Option<Vec<ComponentReference<MethodState>>>,
-    pub signals_list: Option<Vec<ComponentReference<SignalState>>>,
-}
-
-#[serde_with::skip_serializing_none]
-#[derive(Serialize)]
-pub struct MessageSignalInvoke {
-    pub id: NooID,
-    pub context: Option<SignalInvokeObj>,
-    pub signal_data: Vec<ciborium::value::Value>,
-}
-
-#[serde_with::skip_serializing_none]
-#[derive(Debug, Default, Serialize)]
-pub struct MethodException {
-    pub code: i32,
-    pub message: Option<String>,
-    pub data: Option<ciborium::value::Value>,
-}
-
-impl MethodException {
-    pub fn method_not_found(optional_info: Option<String>) -> Self {
-        Self {
-            code: ExceptionCodes::MethodNotFound as i32,
-            message: optional_info,
-            ..Default::default()
-        }
-    }
-}
-
-pub enum ExceptionCodes {
-    MethodNotFound = -32601,
-}
-#[serde_with::skip_serializing_none]
-#[derive(Debug, Default, Serialize)]
-pub struct MessageMethodReply {
-    pub invoke_id: String,
-    pub result: Option<ciborium::value::Value>,
-    pub method_exception: Option<MethodException>,
-}
+pub type ServerDocumentUpdate = DocumentUpdate<
+    ComponentReference<MethodState>,
+    ComponentReference<SignalState>,
+>;
