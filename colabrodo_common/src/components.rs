@@ -132,6 +132,7 @@ impl<'de> Visitor<'de> for BufferRepresentationVisitor {
                 Ok(BufferRepresentation::Inline(map.next_value()?))
             }
             "uri_bytes" => Ok(BufferRepresentation::URI(map.next_value()?)),
+            _ => Err(Error::missing_field("buffer representation")),
         }
     }
 }
@@ -375,7 +376,7 @@ impl<BufferViewRef> ComponentMessageIDs for ImageState<BufferViewRef> {
 // =============================================================================
 
 #[serde_with::skip_serializing_none]
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct TextureState<ImageStateRef, SamplerStateRef> {
     pub name: Option<String>,
 
@@ -402,7 +403,7 @@ impl<ImageStateRef, SamplerStateRef> ComponentMessageIDs
 
 // =============================================================================
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum MagFilter {
     #[serde(rename = "NEAREST")]
     Nearest,
@@ -410,7 +411,7 @@ pub enum MagFilter {
     Linear,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum MinFilter {
     #[serde(rename = "NEAREST")]
     Nearest,
@@ -420,7 +421,7 @@ pub enum MinFilter {
     LinearMipmapLinear,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum SamplerMode {
     #[serde(rename = "CLAMP_TO_EDGE")]
     Clamp,
@@ -431,7 +432,7 @@ pub enum SamplerMode {
 }
 
 #[serde_with::skip_serializing_none]
-#[derive(Debug, Serialize, Default)]
+#[derive(Debug, Serialize, Default, Deserialize)]
 pub struct SamplerState {
     pub name: Option<String>,
 
@@ -459,7 +460,7 @@ impl ComponentMessageIDs for SamplerState {
 // =============================================================================
 
 #[serde_with::skip_serializing_none]
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct TextureRef<TextureStateRef> {
     pub texture: TextureStateRef,
     pub transform: Option<Mat3>,
@@ -467,7 +468,7 @@ pub struct TextureRef<TextureStateRef> {
 }
 
 #[serde_with::skip_serializing_none]
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct PBRInfo<TextureStateRef> {
     pub base_color: RGBA,
     pub base_color_texture: Option<TextureRef<TextureStateRef>>,
@@ -489,7 +490,7 @@ impl<TextureStateRef> Default for PBRInfo<TextureStateRef> {
 }
 
 #[serde_with::skip_serializing_none]
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct MaterialStateUpdatable<TextureStateRef> {
     pub pbr_info: Option<PBRInfo<TextureStateRef>>,
     pub normal_texture: Option<TextureRef<TextureStateRef>>,
@@ -506,7 +507,7 @@ pub struct MaterialStateUpdatable<TextureStateRef> {
 }
 
 #[serde_with::skip_serializing_none]
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct MaterialState<TextureStateRef> {
     pub name: Option<String>,
 
@@ -530,19 +531,19 @@ impl<TextureStateRef> ComponentMessageIDs for MaterialState<TextureStateRef> {
 
 // =============================================================================
 
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct PointLight {
     range: f32,
 }
 
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct SpotLight {
     range: f32,
     inner_cone_angle_rad: f32,
     outer_cone_angle_rad: f32,
 }
 
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct DirectionalLight {
     range: f32,
 }
@@ -575,15 +576,52 @@ impl serde::Serialize for LightType {
     }
 }
 
+struct LightTypeVisitor;
+
+impl<'de> Visitor<'de> for LightTypeVisitor {
+    type Value = LightType;
+
+    fn expecting(
+        &self,
+        formatter: &mut std::fmt::Formatter,
+    ) -> std::fmt::Result {
+        write!(formatter, "One of 'point', 'spot' or 'directional'")
+    }
+
+    fn visit_map<A>(self, map: A) -> Result<Self::Value, A::Error>
+    where
+        A: MapAccess<'de>,
+    {
+        let key: String = map
+            .next_key()?
+            .ok_or_else(|| Error::missing_field("missing light field"))?;
+
+        match key.as_str() {
+            "point" => Ok(LightType::Point(map.next_value()?)),
+            "spot" => Ok(LightType::Spot(map.next_value()?)),
+            "directional" => Ok(LightType::Sun(map.next_value()?)),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for LightType {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        deserializer.deserialize_seq(LightTypeVisitor)
+    }
+}
+
 #[serde_with::skip_serializing_none]
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct LightStateUpdatable {
     pub color: Option<RGB>,
     pub intensity: Option<f32>,
 }
 
 #[serde_with::skip_serializing_none]
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct LightState {
     pub name: Option<String>,
 
@@ -611,7 +649,7 @@ impl ComponentMessageIDs for LightState {
 // =============================================================================
 
 #[serde_with::skip_serializing_none]
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct PlotStateUpdatable<TableRef, MethodRef, SignalRef> {
     pub table: Option<TableRef>,
 
@@ -620,7 +658,7 @@ pub struct PlotStateUpdatable<TableRef, MethodRef, SignalRef> {
 }
 
 #[serde_with::skip_serializing_none]
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct PlotState<TableRef, MethodRef, SignalRef> {
     name: Option<String>,
 
@@ -647,7 +685,7 @@ impl<TableRef, MethodRef, SignalRef> ComponentMessageIDs
 // =============================================================================
 
 #[serde_with::skip_serializing_none]
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct TableStateUpdatable<MethodRef, SignalRef> {
     pub meta: Option<String>,
     pub methods_list: Option<Vec<MethodRef>>,
@@ -655,7 +693,7 @@ pub struct TableStateUpdatable<MethodRef, SignalRef> {
 }
 
 #[serde_with::skip_serializing_none]
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct TableState<MethodRef, SignalRef> {
     name: Option<String>,
 
@@ -666,7 +704,7 @@ pub struct TableState<MethodRef, SignalRef> {
 // =============================================================================
 
 #[serde_with::skip_serializing_none]
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct TextRepresentation {
     pub txt: String,
     pub font: Option<String>,
@@ -675,7 +713,7 @@ pub struct TextRepresentation {
 }
 
 #[serde_with::skip_serializing_none]
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct WebRepresentation {
     pub source: Url,
     pub height: Option<f32>,
@@ -683,11 +721,11 @@ pub struct WebRepresentation {
 }
 
 #[serde_with::skip_serializing_none]
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct InstanceSource {}
 
 #[serde_with::skip_serializing_none]
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct RenderRepresentation<GeometryRef> {
     pub mesh: GeometryRef,
     pub instances: Option<InstanceSource>,
@@ -700,6 +738,7 @@ pub enum EntityRepresentation<GeometryRef> {
     Web(WebRepresentation),
     Render(RenderRepresentation<GeometryRef>),
 }
+
 impl<GeometryRef> serde::Serialize for EntityRepresentation<GeometryRef>
 where
     GeometryRef: serde::Serialize,
@@ -725,8 +764,66 @@ where
     }
 }
 
+struct EntityRepresentationVisitor<GeometryRef>
+where
+    GeometryRef: Serialize + for<'a> Deserialize<'a>,
+{
+    phantom1: std::marker::PhantomData<GeometryRef>,
+}
+
+impl<'de, GeometryRef> Visitor<'de> for EntityRepresentationVisitor<GeometryRef>
+where
+    GeometryRef: Serialize + for<'a> Deserialize<'a>,
+{
+    type Value = EntityRepresentation<GeometryRef>;
+
+    fn expecting(
+        &self,
+        formatter: &mut std::fmt::Formatter,
+    ) -> std::fmt::Result {
+        write!(
+            formatter,
+            "One of 'null_rep', 'text_rep', 'web_rep' or 'render_rep'"
+        )
+    }
+
+    fn visit_map<A>(self, map: A) -> Result<Self::Value, A::Error>
+    where
+        A: MapAccess<'de>,
+    {
+        let key: Option<String> = map.next_key()?;
+
+        if key.is_none() {
+            return Ok(EntityRepresentation::Null);
+        }
+
+        match key.unwrap().as_str() {
+            "null_rep" => Ok(EntityRepresentation::Null),
+            "text_rep" => Ok(EntityRepresentation::Text(map.next_value()?)),
+            "web_rep" => Ok(EntityRepresentation::Web(map.next_value()?)),
+            "render_rep" => Ok(EntityRepresentation::Render(map.next_value()?)),
+        }
+    }
+}
+
+impl<'de, GeometryRef> Deserialize<'de> for EntityRepresentation<GeometryRef>
+where
+    GeometryRef: Serialize + for<'a> Deserialize<'a>,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        deserializer.deserialize_seq(
+            EntityRepresentationVisitor::<GeometryRef> {
+                phantom1: std::marker::PhantomData,
+            },
+        )
+    }
+}
+
 #[serde_with::skip_serializing_none]
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct EntityStateUpdatable<
     EntityRef,
     GeometryRef,
@@ -756,7 +853,7 @@ pub struct EntityStateUpdatable<
 }
 
 #[serde_with::skip_serializing_none]
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct EntityState<
     EntityRef,
     GeometryRef,

@@ -1,4 +1,5 @@
 use ciborium::tag::Required;
+use serde::de::Error;
 use serde::{de::Visitor, Deserialize, Serialize};
 
 use crate::nooid::NooID;
@@ -74,28 +75,31 @@ impl<'de> Visitor<'de> for ByteBuffVisitor {
         write!(formatter, "Byte buffer")
     }
 
-    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+    fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
     where
-        A: serde::de::MapAccess<'de>,
+        E: Error,
     {
-        let key: String = map
-            .next_key()?
-            .ok_or_else(|| Error::missing_field("buffer representation"))?;
+        let mut copy = Vec::new();
+        copy.copy_from_slice(&v);
+        Ok(ByteBuff { bytes: copy })
+    }
+}
 
-        match key.as_str() {
-            "inline_bytes" => {
-                Ok(BufferRepresentation::Inline(map.next_value()?))
-            }
-            "uri_bytes" => Ok(BufferRepresentation::URI(map.next_value()?)),
-        }
+impl<'de> Deserialize<'de> for ByteBuff {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        deserializer.deserialize_seq(ByteBuffVisitor)
     }
 }
 
 // =============================================================================
 
 /// A struct to represent a URL, for proper serialization to CBOR
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Url {
+    #[serde(flatten)]
     url: Required<String, 32>,
 }
 
@@ -110,18 +114,49 @@ impl Url {
     }
 }
 
-impl Serialize for Url {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        self.url.serialize(serializer)
-    }
-}
+// impl Serialize for Url {
+//     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+//     where
+//         S: serde::Serializer,
+//     {
+//         self.url.serialize(serializer)
+//     }
+// }
+
+// struct UrlVisitor;
+
+// impl<'de> Visitor<'de> for UrlVisitor {
+//     type Value = Url;
+
+//     fn expecting(
+//         &self,
+//         formatter: &mut std::fmt::Formatter,
+//     ) -> std::fmt::Result {
+//         write!(formatter, "URL")
+//     }
+
+//     fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
+//     where
+//         E: Error,
+//     {
+//         let copy = Vec::new();
+//         copy.copy_from_slice(v);
+//         Ok(ByteBuff { bytes: copy })
+//     }
+// }
+
+// impl<'de> Deserialize<'de> for ByteBuff {
+//     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+//     where
+//         D: serde::Deserializer<'de>,
+//     {
+//         deserializer.deserialize_seq(ByteBuffVisitor)
+//     }
+// }
 
 // =============================================================================
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct CommonDeleteMessage {
     pub id: NooID,
 }
