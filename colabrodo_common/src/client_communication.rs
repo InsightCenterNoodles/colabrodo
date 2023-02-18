@@ -90,6 +90,8 @@ impl<'de> Deserialize<'de> for InvokeIDType {
     }
 }
 
+// ============================================================================
+
 #[serde_with::skip_serializing_none]
 #[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct ClientInvokeMessage {
@@ -104,6 +106,8 @@ impl ClientMessageID for ClientInvokeMessage {
         1
     }
 }
+
+// ============================================================================
 
 pub enum AllClientMessages {
     Intro(ClientIntroductionMessage),
@@ -196,6 +200,7 @@ impl<'de> Deserialize<'de> for ClientRootMessage {
     }
 }
 
+// ============================================================================
 #[cfg(test)]
 mod tests {
     use super::*;

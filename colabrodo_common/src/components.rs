@@ -1,5 +1,10 @@
-use serde::{ser::SerializeStruct, Deserialize, Serialize};
+use serde::de::Error;
+use serde::{
+    de::MapAccess, de::Visitor, ser::SerializeStruct, Deserialize, Serialize,
+};
 use serde_with;
+
+use colabrodo_macros::DeltaPatch;
 
 use crate::{common::ServerMessageIDs, types::*};
 
@@ -9,17 +14,21 @@ pub trait ComponentMessageIDs {
     fn delete_message_id() -> ServerMessageIDs;
 }
 
+pub trait DeltaPatch {
+    fn patch(&mut self, other: Self);
+}
+
 // =============================================================================
 
 #[serde_with::skip_serializing_none]
-#[derive(Debug, Serialize, Default)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct MethodArg {
     pub name: String,
     pub doc: Option<String>,
 }
 
 #[serde_with::skip_serializing_none]
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct MethodState {
     pub name: String,
     pub doc: Option<String>,
@@ -44,7 +53,7 @@ impl ComponentMessageIDs for MethodState {
 // =============================================================================
 
 #[serde_with::skip_serializing_none]
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct SignalState {
     pub name: String,
     pub doc: Option<String>,
@@ -98,8 +107,46 @@ impl serde::Serialize for BufferRepresentation {
     }
 }
 
+struct BufferRepresentationVisitor;
+
+impl<'de> Visitor<'de> for BufferRepresentationVisitor {
+    type Value = BufferRepresentation;
+
+    fn expecting(
+        &self,
+        formatter: &mut std::fmt::Formatter,
+    ) -> std::fmt::Result {
+        write!(formatter, "One of 'inline_bytes' or 'uri_bytes'.")
+    }
+
+    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+    where
+        A: serde::de::MapAccess<'de>,
+    {
+        let key: String = map
+            .next_key()?
+            .ok_or_else(|| Error::missing_field("buffer representation"))?;
+
+        match key.as_str() {
+            "inline_bytes" => {
+                Ok(BufferRepresentation::Inline(map.next_value()?))
+            }
+            "uri_bytes" => Ok(BufferRepresentation::URI(map.next_value()?)),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for BufferRepresentation {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        deserializer.deserialize_seq(BufferRepresentationVisitor)
+    }
+}
+
 #[serde_with::skip_serializing_none]
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct BufferState {
     pub name: Option<String>,
 
@@ -184,7 +231,7 @@ impl<BufferReference> ComponentMessageIDs for BufferViewState<BufferReference> {
 
 // =============================================================================
 
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub enum AttributeSemantic {
     #[default]
     #[serde(rename = "POSITION")]
@@ -200,7 +247,7 @@ pub enum AttributeSemantic {
 }
 
 #[serde_with::skip_serializing_none]
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct GeometryAttribute<BufferViewRef> {
     pub view: BufferViewRef,
     pub semantic: AttributeSemantic,
@@ -214,7 +261,7 @@ pub struct GeometryAttribute<BufferViewRef> {
 }
 
 #[serde_with::skip_serializing_none]
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct GeometryIndex<BufferViewRef> {
     pub view: BufferViewRef,
     pub count: u32,
@@ -223,7 +270,7 @@ pub struct GeometryIndex<BufferViewRef> {
     pub format: Format,
 }
 
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub enum PrimitiveType {
     #[default]
     #[serde(rename = "POINTS")]
@@ -241,7 +288,7 @@ pub enum PrimitiveType {
 }
 
 #[serde_with::skip_serializing_none]
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct GeometryPatch<BufferViewRef, MaterialRef> {
     pub attributes: Vec<GeometryAttribute<BufferViewRef>>,
     pub vertex_count: u64,
@@ -252,7 +299,7 @@ pub struct GeometryPatch<BufferViewRef, MaterialRef> {
 }
 
 #[serde_with::skip_serializing_none]
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct GeometryState<BufferViewRef, MaterialRef> {
     pub name: Option<String>,
 

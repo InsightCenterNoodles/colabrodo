@@ -1,5 +1,7 @@
 use ciborium::tag::Required;
-use serde::{Deserialize, Serialize};
+use serde::{de::Visitor, Deserialize, Serialize};
+
+use crate::nooid::NooID;
 
 #[derive(Debug, Deserialize, Serialize, Default)]
 pub enum Format {
@@ -60,6 +62,35 @@ impl Serialize for ByteBuff {
     }
 }
 
+struct ByteBuffVisitor;
+
+impl<'de> Visitor<'de> for ByteBuffVisitor {
+    type Value = ByteBuff;
+
+    fn expecting(
+        &self,
+        formatter: &mut std::fmt::Formatter,
+    ) -> std::fmt::Result {
+        write!(formatter, "Byte buffer")
+    }
+
+    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+    where
+        A: serde::de::MapAccess<'de>,
+    {
+        let key: String = map
+            .next_key()?
+            .ok_or_else(|| Error::missing_field("buffer representation"))?;
+
+        match key.as_str() {
+            "inline_bytes" => {
+                Ok(BufferRepresentation::Inline(map.next_value()?))
+            }
+            "uri_bytes" => Ok(BufferRepresentation::URI(map.next_value()?)),
+        }
+    }
+}
+
 // =============================================================================
 
 /// A struct to represent a URL, for proper serialization to CBOR
@@ -89,3 +120,8 @@ impl Serialize for Url {
 }
 
 // =============================================================================
+
+#[derive(Debug, Serialize)]
+pub struct CommonDeleteMessage {
+    pub id: NooID,
+}

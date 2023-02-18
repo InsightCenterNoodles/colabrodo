@@ -12,7 +12,8 @@ use colabrodo_common::components::*;
 
 pub use colabrodo_common::components::{
     AttributeSemantic, BufferRepresentation, BufferState, BufferViewType,
-    GeometryIndex, MethodArg, MethodState, PrimitiveType, SignalState,
+    GeometryIndex, MethodArg, MethodState, PrimitiveType, SamplerState,
+    SignalState,
 };
 
 use crate::server_state::ComponentCell;
@@ -22,11 +23,6 @@ use crate::server_state::ComponentCell;
 pub trait UpdatableStateItem {
     type HostState;
     fn patch(self, m: &mut Self::HostState);
-}
-
-#[derive(Debug, Serialize)]
-pub(crate) struct CommonDeleteMessage {
-    pub id: NooID,
 }
 
 // Component Refs ==============================================

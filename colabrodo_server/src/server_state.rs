@@ -66,7 +66,7 @@ where
         // write the delete message
         let write_tuple = (
             T::delete_message_id(),
-            crate::server_messages::CommonDeleteMessage { id: self.id },
+            colabrodo_common::types::CommonDeleteMessage { id: self.id },
         );
 
         let mut recorder = Recorder::default();

@@ -1,9 +1,4 @@
-use thiserror::Error;
-
-use ciborium::value;
 use num_derive::FromPrimitive;
-
-use crate::nooid::NooID;
 
 /// The type of noodles component being operated on
 #[derive(Debug, Default, Clone, Copy)]
@@ -195,31 +190,6 @@ impl ServerMessageIDs {
             _ => ComponentType::None,
         }
     }
-}
-
-pub type NooValueMap = Vec<(value::Value, value::Value)>;
-
-#[derive(Error, Debug)]
-pub enum ValueMapLookupError {
-    #[error("ID is missing from message map")]
-    IDMissing,
-}
-
-pub fn lookup<'a>(
-    v: &value::Value,
-    map: &'a NooValueMap,
-) -> Result<&'a value::Value, ValueMapLookupError> {
-    for e in map {
-        if &e.0 == v {
-            return Ok(&e.1);
-        }
-    }
-    Err(ValueMapLookupError::IDMissing)
-}
-
-pub fn id_for_message(map: &NooValueMap) -> Option<NooID> {
-    let id_name = value::Value::Text(String::from("id"));
-    NooID::from_value(lookup(&id_name, map).ok()?)
 }
 
 pub mod strings {

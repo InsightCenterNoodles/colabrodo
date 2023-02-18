@@ -1,99 +1,106 @@
-use thiserror::Error;
+use std::collections::HashMap;
 
-use num_traits::FromPrimitive;
-
-pub use ciborium;
-
-use colabrodo_common::common::{NooValueMap, ServerMessageIDs};
+use crate::components::*;
 use colabrodo_common::nooid::NooID;
 
-#[derive(Error, Debug)]
-pub enum ClientError {
-    #[error("Decode error")]
-    DecodeError(String),
-    #[error("Root message is not valid")]
-    InvalidRootMessage(String),
+pub trait ComponentList<State> {
+    fn on_create(&mut self, id: NooID, state: State);
+    fn on_delete(&mut self, id: NooID);
 }
 
-#[derive(Debug)]
-pub enum UserError {
-    InternalError,
+pub trait UpdatableComponentList<State>: ComponentList<State> {
+    type UpdatePart;
+    fn on_update(&mut self, id: NooID, update: Self::UpdatePart);
+}
+
+// impl<State> ComponentList<State> {
+//     fn insert(
+//         &mut self,
+//         tid: ComponentType,
+//         id: NooID,
+//         values: NooValueMap,
+//     ) -> Option<()> {
+//         let mut converted_map = convert(values);
+
+//         converted_map
+//             .entry("name".to_string())
+//             .or_insert(Value::Text(format!("{tid} {id}")));
+
+//         let ret = self.components.insert(id, converted_map);
+//         if ret.is_some() {
+//             // we clobbered a key
+//             warn!("Overwrote a component. This could be bad.")
+//         }
+
+//         Some(())
+//     }
+//     fn delete(&mut self, id: NooID, _: NooValueMap) -> Option<()> {
+//         let ret = self.components.remove(&id);
+//         if ret.is_none() {
+//             error!("Asked to delete a component that does not exist!");
+//             return None;
+//         }
+//         Some(())
+//     }
+//     fn clear(&mut self) {
+//         self.components.clear();
+//     }
+
+//     fn find(&self, id: NooID) -> Option<&NooHashMap> {
+//         self.components.get(&id)
+//     }
+// }
+
+pub struct DefaultComponentList<State> {
+    components: HashMap<NooID, State>,
+}
+
+impl<State> ComponentList<State> for DefaultComponentList<State> {
+    fn on_create(&mut self, id: NooID, state: State) {
+        self.components.insert(id, state);
+    }
+
+    fn on_delete(&mut self, id: NooID) {
+        self.components.remove(&id);
+    }
 }
 
 pub trait UserClientState {
-    fn handle_message(
-        &mut self,
-        message: ServerMessageIDs,
-        content: &NooValueMap,
-    ) -> Result<(), UserError>;
-}
+    type MethodL: ComponentList<MethodState>;
+    type SignalL: ComponentList<SignalState>;
 
-/// Handle a CBOR message from a server, sanitize, and then pass it along to
-/// some state
-///
-pub fn handle_next<U: UserClientState>(
-    root: &ciborium::value::Value,
-    state: &mut U,
-) -> Result<(), ClientError> {
-    if !root.is_array() {
-        return Err(ClientError::InvalidRootMessage(
-            "Root is not an array".to_string(),
-        ));
-    }
+    type BufferL: ComponentList<BufferState>;
+    type BufferViewL: ComponentList<ClientBufferViewState>;
 
-    let array = root.as_array().unwrap();
+    type SamplerL: ComponentList<SamplerState>;
+    type ImageL: ComponentList<ClientImageState>;
+    type TextureL: ComponentList<ClientTextureState>;
 
-    if array.len() % 2 != 0 {
-        return Err(ClientError::InvalidRootMessage(
-            "Root array is not a multiple of 2".to_string(),
-        ));
-    }
+    type MaterialL: ComponentList<ClientMaterialState>;
+    type GeometryL: ComponentList<ClientGeometryState>;
 
-    for i in (0..array.len()).step_by(2) {
-        let mid = array[i].as_integer();
+    type TableL: UpdatableComponentList<ClientTableState>;
+    type PlotL: UpdatableComponentList<ClientPlotState>;
 
-        if mid.is_none() {
-            return Err(ClientError::InvalidRootMessage(
-                "Missing message id value".to_string(),
-            ));
-        }
+    type EntityL: UpdatableComponentList<ClientEntityState>;
 
-        let mid = u32::try_from(mid.unwrap()).unwrap();
+    fn method_list(&mut self) -> &mut Self::MethodL;
+    fn signal_list(&mut self) -> &mut Self::SignalL;
 
-        let msg: Option<ServerMessageIDs> = FromPrimitive::from_u32(mid);
+    fn buffer_list(&mut self) -> &mut Self::BufferL;
+    fn buffer_view_list(&mut self) -> &mut Self::BufferViewL;
 
-        if msg.is_none() {
-            return Err(ClientError::InvalidRootMessage(
-                format!("Message id was decoded as {mid}, but this does not correspond with a known message type."),
-            ));
-        }
+    fn sampler_list(&mut self) -> &mut Self::SamplerL;
+    fn image_list(&mut self) -> &mut Self::ImageL;
+    fn texture_list(&mut self) -> &mut Self::TextureL;
 
-        let content = array[i + 1].as_map();
+    fn material_list(&mut self) -> &mut Self::MaterialL;
+    fn geometry_list(&mut self) -> &mut Self::GeometryL;
 
-        if content.is_none() {
-            return Err(ClientError::InvalidRootMessage(
-                format!("Message id was decoded as {mid}, but the message content is missing."),
-            ));
-        }
+    fn table_list(&mut self) -> &mut Self::TableL;
+    fn plot_list(&mut self) -> &mut Self::PlotL;
 
-        let content = content.unwrap();
+    fn entity_list(&mut self) -> &mut Self::EntityL;
 
-        state.handle_message(msg.unwrap(), content).unwrap();
-    }
-
-    Ok(())
-}
-
-pub trait ComponentListHandler {
-    fn insert(id: NooID, values: NooValueMap);
-    fn update(id: NooID, values: NooValueMap);
-    fn delete(id: NooID, values: NooValueMap);
-}
-
-pub struct EmptyList {}
-
-impl ComponentListHandler for EmptyList {
-    fn insert(_id: NooID, _values: NooValueMap) {}
-    fn update(_id: NooID, _values: NooValueMap) {}
-    fn delete(_id: NooID, _values: NooValueMap) {}
+    fn document_update(&mut self, update: ClientDocumentUpdate);
 }

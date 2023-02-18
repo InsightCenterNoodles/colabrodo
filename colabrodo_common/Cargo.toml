@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+colabrodo_macros = { path = "../colabrodo_macros" }
 ciborium = "0.2.0"
 ciborium-io = { version = "0.2.0", features = ["alloc"] }
 serde = "1.0.152"

@@ -3,14 +3,15 @@ use std::io::Write;
 use std::process::abort;
 use std::sync::{Arc, Mutex};
 
-use colabrodo_client::client::ciborium::{de, ser, value};
-use colabrodo_client::client::{self, handle_next, UserClientState};
+use colabrodo_client::mapped_client::ciborium::{de, ser, value};
+use colabrodo_client::mapped_client::{
+    self, handle_next, id_for_message, lookup, MappedNoodlesClient, NooValueMap,
+};
 use colabrodo_common::client_communication::{
     ClientIntroductionMessage, ClientInvokeMessage, ClientMessageID,
 };
 use colabrodo_common::common::{
-    id_for_message, lookup, ComponentType, MessageArchType, NooValueMap,
-    ServerMessageIDs,
+    ComponentType, MessageArchType, ServerMessageIDs,
 };
 
 use colabrodo_common::nooid::NooID;
@@ -19,7 +20,7 @@ use futures_util::{future, pin_mut, SinkExt, StreamExt};
 use tokio::runtime;
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 
-use colabrodo_client::client::ciborium::value::Value;
+use colabrodo_client::mapped_client::ciborium::value::Value;
 
 use clap::Parser;
 
@@ -216,12 +217,12 @@ impl CLIState {
     }
 }
 
-impl UserClientState for CLIState {
+impl MappedNoodlesClient for CLIState {
     fn handle_message(
         &mut self,
         message: ServerMessageIDs,
         content: &NooValueMap,
-    ) -> Result<(), client::UserError> {
+    ) -> Result<(), mapped_client::UserError> {
         debug!("Message from server {}: {:?}", message, content);
 
         let ret = match message.component_type() {
@@ -235,7 +236,7 @@ impl UserClientState for CLIState {
         };
 
         if ret.is_none() {
-            return Err(client::UserError::InternalError);
+            return Err(mapped_client::UserError::InternalError);
         }
 
         Ok(())
@@ -565,7 +566,8 @@ fn call_method(
 
         let mut buffer = Vec::<u8>::new();
 
-        client::ciborium::ser::into_writer(&content, &mut buffer).unwrap();
+        mapped_client::ciborium::ser::into_writer(&content, &mut buffer)
+            .unwrap();
 
         // record this message
 

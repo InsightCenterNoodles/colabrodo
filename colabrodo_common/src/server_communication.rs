@@ -44,6 +44,10 @@ pub struct DocumentUpdate<MethodRef, SignalRef> {
     pub signals_list: Option<Vec<SignalRef>>,
 }
 
+#[serde_with::skip_serializing_none]
+#[derive(Debug, Serialize)]
+pub struct DocumentReset {}
+
 impl<MethodRef, SignalRef> Default for DocumentUpdate<MethodRef, SignalRef> {
     fn default() -> Self {
         Self {
@@ -58,6 +62,12 @@ impl<MethodRef, SignalRef> ServerMessageID
 {
     fn message_id() -> u32 {
         ServerMessageIDs::MsgDocumentUpdate as u32
+    }
+}
+
+impl ServerMessageID for DocumentReset {
+    fn message_id() -> u32 {
+        ServerMessageIDs::MsgDocumentReset as u32
     }
 }
 
@@ -113,5 +123,17 @@ pub struct MessageMethodReply {
 impl ServerMessageID for MessageMethodReply {
     fn message_id() -> u32 {
         ServerMessageIDs::MsgMethodReply as u32
+    }
+}
+
+// =============================================================================
+
+#[serde_with::skip_serializing_none]
+#[derive(Debug, Serialize)]
+pub struct DocumentInit {}
+
+impl ServerMessageID for DocumentInit {
+    fn message_id() -> u32 {
+        ServerMessageIDs::MsgDocumentInitialized as u32
     }
 }
