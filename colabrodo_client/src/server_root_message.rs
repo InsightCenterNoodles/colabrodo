@@ -182,6 +182,7 @@ impl<'de> Deserialize<'de> for ServerRootMessage {
 
 // ============================================================================
 
+#[allow(clippy::enum_variant_names)] // These all start wtih Msg to match spec
 pub enum FromServer {
     MsgMethodCreate(MethodState),
     MsgMethodDelete(CommonDeleteMessage),

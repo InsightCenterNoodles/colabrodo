@@ -318,7 +318,7 @@ impl AssetServerLink {
         match reply {
             AssetServerReply::Registered(rid, url) => {
                 assert_eq!(rid, id);
-                return url;
+                url
             }
             _ => {
                 panic!("Unexpected message!");
@@ -338,7 +338,7 @@ impl AssetServerLink {
         match reply {
             AssetServerReply::Registered(rid, url) => {
                 assert_eq!(rid, id);
-                return url;
+                url
             }
             _ => {
                 panic!("Unexpected message!");
@@ -363,9 +363,7 @@ impl AssetServerLink {
         let reply = self.send_command(AssetServerCommand::Shutdown);
 
         match reply {
-            AssetServerReply::ShuttingDown => {
-                return;
-            }
+            AssetServerReply::ShuttingDown => {}
             _ => {
                 panic!("Unexpected message!");
             }
@@ -376,9 +374,7 @@ impl AssetServerLink {
         let reply = self.send_command_async(AssetServerCommand::Shutdown).await;
 
         match reply {
-            AssetServerReply::ShuttingDown => {
-                return;
-            }
+            AssetServerReply::ShuttingDown => {}
             _ => {
                 panic!("Unexpected message!");
             }

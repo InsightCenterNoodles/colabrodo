@@ -78,7 +78,7 @@ impl<'de> Visitor<'de> for ByteBuffVisitor {
         E: Error,
     {
         let mut vec = Vec::new();
-        vec.extend_from_slice(&v);
+        vec.extend_from_slice(v);
         Ok(ByteBuff::new(vec))
     }
 

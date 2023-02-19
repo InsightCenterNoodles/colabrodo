@@ -24,7 +24,7 @@ fn check_exclusion<const N: usize>(v: &[bool; N]) -> bool {
     for x in v {
         sum += *x as u32;
     }
-    return sum == 1;
+    sum == 1
 }
 
 // =============================================================================
