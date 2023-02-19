@@ -2,7 +2,6 @@ use crate::components::*;
 use colabrodo_common::{
     common::ServerMessageIDs,
     components::{LightState, LightStateUpdatable},
-    nooid::NooID,
     server_communication::{DocumentInit, DocumentReset, MessageMethodReply},
     types::CommonDeleteMessage,
 };
@@ -10,7 +9,7 @@ use num_traits::FromPrimitive;
 use serde::{de::Visitor, Deserialize};
 
 struct ServerRootMessage {
-    list: Vec<FromServer>,
+    pub list: Vec<FromServer>,
 }
 
 struct ServerRootMessageVisitor;
@@ -151,12 +150,20 @@ impl<'de> Visitor<'de> for ServerRootMessageVisitor {
         loop {
             let id: Option<u32> = seq.next_element()?;
 
-            if let Some(id) = id {
-                let id: Option<ServerMessageIDs> = FromPrimitive::from_u32(id);
+            if id.is_none() {
+                break;
+            }
 
-                if let Some(id) = id {
-                    push_next(id, &mut seq);
-                }
+            let id: ServerMessageIDs =
+                match <ServerMessageIDs as FromPrimitive>::from_u32(id.unwrap())
+                {
+                    Some(x) => x,
+                    None => break,
+                };
+
+            match push_next(id, &mut seq) {
+                Some(x) => ret.list.push(x),
+                None => break,
             }
         }
 

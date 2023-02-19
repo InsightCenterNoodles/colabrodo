@@ -1,10 +1,9 @@
 use serde::de::Error;
-use serde::{
-    de::MapAccess, de::Visitor, ser::SerializeStruct, Deserialize, Serialize,
-};
+use serde::Deserializer;
+use serde::{Deserialize, Serialize};
 use serde_with;
 
-use colabrodo_macros::DeltaPatch;
+//use colabrodo_macros::DeltaPatch;
 
 use crate::{common::ServerMessageIDs, types::*};
 
@@ -16,6 +15,16 @@ pub trait ComponentMessageIDs {
 
 pub trait DeltaPatch {
     fn patch(&mut self, other: Self);
+}
+
+// =============================================================================
+
+fn check_exclusion<const N: usize>(v: &[bool; N]) -> bool {
+    let mut sum: u32 = 0;
+    for x in v {
+        sum += *x as u32;
+    }
+    return sum == 1;
 }
 
 // =============================================================================
@@ -77,84 +86,52 @@ impl ComponentMessageIDs for SignalState {
 
 // =============================================================================
 
-#[derive(Debug)]
-pub enum BufferRepresentation {
-    Inline(ByteBuff),
-    URI(Url),
+#[serde_with::skip_serializing_none]
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+pub struct BufferRepresentation {
+    inline_bytes: Option<ByteBuff>,
+    uri_bytes: Option<Url>,
 }
 
-impl Default for BufferRepresentation {
-    fn default() -> Self {
-        Self::Inline(ByteBuff::default())
-    }
-}
-
-impl serde::Serialize for BufferRepresentation {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let mut s = serializer.serialize_struct("Representation", 1)?;
-        match self {
-            BufferRepresentation::Inline(i) => {
-                s.serialize_field("inline_bytes", i)?
-            }
-            BufferRepresentation::URI(t) => {
-                s.serialize_field("uri_bytes", t)?
-            }
-        }
-        s.end()
-    }
-}
-
-struct BufferRepresentationVisitor;
-
-impl<'de> Visitor<'de> for BufferRepresentationVisitor {
-    type Value = BufferRepresentation;
-
-    fn expecting(
-        &self,
-        formatter: &mut std::fmt::Formatter,
-    ) -> std::fmt::Result {
-        write!(formatter, "One of 'inline_bytes' or 'uri_bytes'.")
-    }
-
-    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
-    where
-        A: serde::de::MapAccess<'de>,
-    {
-        let key: String = map
-            .next_key()?
-            .ok_or_else(|| Error::missing_field("buffer representation"))?;
-
-        match key.as_str() {
-            "inline_bytes" => {
-                Ok(BufferRepresentation::Inline(map.next_value()?))
-            }
-            "uri_bytes" => Ok(BufferRepresentation::URI(map.next_value()?)),
-            _ => Err(Error::missing_field("buffer representation")),
+impl BufferRepresentation {
+    pub fn new_from_bytes(bytes: Vec<u8>) -> Self {
+        Self {
+            inline_bytes: Some(ByteBuff::new(bytes)),
+            uri_bytes: None,
         }
     }
-}
 
-impl<'de> Deserialize<'de> for BufferRepresentation {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        deserializer.deserialize_seq(BufferRepresentationVisitor)
+    pub fn new_from_url(url: &str) -> Self {
+        Self {
+            inline_bytes: None,
+            uri_bytes: Some(Url::new_from_slice(url)),
+        }
     }
 }
 
 #[serde_with::skip_serializing_none]
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct BufferState {
     pub name: Option<String>,
 
     pub size: u64,
 
-    #[serde(flatten)]
+    #[serde(flatten, deserialize_with = "deserialize_buffer_state")]
     pub representation: BufferRepresentation,
+}
+
+fn deserialize_buffer_state<'de, D>(
+    deserializer: D,
+) -> Result<BufferRepresentation, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let ret = BufferRepresentation::deserialize(deserializer)?;
+    if !check_exclusion(&[ret.inline_bytes.is_some(), ret.uri_bytes.is_some()])
+    {
+        return Err(Error::duplicate_field("duplicate buffer representation"));
+    }
+    Ok(ret)
 }
 
 impl BufferState {
@@ -162,7 +139,10 @@ impl BufferState {
         Self {
             name: None,
             size: bytes.len() as u64,
-            representation: BufferRepresentation::Inline(ByteBuff::new(bytes)),
+            representation: BufferRepresentation {
+                inline_bytes: Some(ByteBuff::new(bytes)),
+                uri_bytes: None,
+            },
         }
     }
 
@@ -170,7 +150,10 @@ impl BufferState {
         Self {
             name: None,
             size: buffer_size,
-            representation: BufferRepresentation::URI(Url::new_from_slice(url)),
+            representation: BufferRepresentation {
+                inline_bytes: None,
+                uri_bytes: Some(Url::new_from_slice(url)),
+            },
         }
     }
 }
@@ -325,33 +308,31 @@ impl<BufferViewRef, MaterialRef> ComponentMessageIDs
 
 // =============================================================================
 
-#[derive(Debug)]
-pub enum ImageSource<BufferViewRef> {
-    Buffer(BufferViewRef),
-    URI(Url),
+#[serde_with::skip_serializing_none]
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+pub struct ImageSource<BufferViewRef> {
+    buffer_source: Option<BufferViewRef>,
+    uri_source: Option<Url>,
 }
 
-impl<BufferViewRef> serde::Serialize for ImageSource<BufferViewRef>
-where
-    BufferViewRef: serde::Serialize,
-{
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let mut s = serializer.serialize_struct("ImageSource", 1)?;
-        match self {
-            ImageSource::Buffer(buffer) => {
-                s.serialize_field("buffer_source", buffer)?
-            }
-            ImageSource::URI(uri) => s.serialize_field("uri_source", uri)?,
+impl<BufferViewRef> ImageSource<BufferViewRef> {
+    pub fn new_buffer(buffer: BufferViewRef) -> Self {
+        Self {
+            buffer_source: Some(buffer),
+            uri_source: None,
         }
-        s.end()
+    }
+
+    pub fn new_uri(uri: Url) -> Self {
+        Self {
+            buffer_source: None,
+            uri_source: Some(uri),
+        }
     }
 }
 
 #[serde_with::skip_serializing_none]
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ImageState<BufferViewRef> {
     pub name: Option<String>,
 
@@ -548,69 +529,12 @@ pub struct DirectionalLight {
     range: f32,
 }
 
-#[derive(Debug)]
-pub enum LightType {
-    Point(PointLight),
-    Spot(SpotLight),
-    Sun(DirectionalLight),
-}
-
-impl Default for LightType {
-    fn default() -> Self {
-        LightType::Point(PointLight::default())
-    }
-}
-
-impl serde::Serialize for LightType {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let mut s = serializer.serialize_struct("LightType", 1)?;
-        match self {
-            LightType::Point(point) => s.serialize_field("point", point)?,
-            LightType::Spot(spot) => s.serialize_field("spot", spot)?,
-            LightType::Sun(sun) => s.serialize_field("directional", sun)?,
-        }
-        s.end()
-    }
-}
-
-struct LightTypeVisitor;
-
-impl<'de> Visitor<'de> for LightTypeVisitor {
-    type Value = LightType;
-
-    fn expecting(
-        &self,
-        formatter: &mut std::fmt::Formatter,
-    ) -> std::fmt::Result {
-        write!(formatter, "One of 'point', 'spot' or 'directional'")
-    }
-
-    fn visit_map<A>(self, map: A) -> Result<Self::Value, A::Error>
-    where
-        A: MapAccess<'de>,
-    {
-        let key: String = map
-            .next_key()?
-            .ok_or_else(|| Error::missing_field("missing light field"))?;
-
-        match key.as_str() {
-            "point" => Ok(LightType::Point(map.next_value()?)),
-            "spot" => Ok(LightType::Spot(map.next_value()?)),
-            "directional" => Ok(LightType::Sun(map.next_value()?)),
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for LightType {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        deserializer.deserialize_seq(LightTypeVisitor)
-    }
+#[serde_with::skip_serializing_none]
+#[derive(Debug, Serialize, Deserialize)]
+pub struct LightType {
+    point: Option<PointLight>,
+    spot: Option<SpotLight>,
+    directional: Option<DirectionalLight>,
 }
 
 #[serde_with::skip_serializing_none]
@@ -621,7 +545,7 @@ pub struct LightStateUpdatable {
 }
 
 #[serde_with::skip_serializing_none]
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct LightState {
     pub name: Option<String>,
 
@@ -731,94 +655,54 @@ pub struct RenderRepresentation<GeometryRef> {
     pub instances: Option<InstanceSource>,
 }
 
-#[derive(Debug)]
-pub enum EntityRepresentation<GeometryRef> {
-    Null,
-    Text(TextRepresentation),
-    Web(WebRepresentation),
-    Render(RenderRepresentation<GeometryRef>),
+#[serde_with::skip_serializing_none]
+#[derive(Debug, Serialize, Deserialize)]
+pub struct NullRepresentation;
+
+#[serde_with::skip_serializing_none]
+#[derive(Debug, Serialize, Deserialize)]
+pub struct EntityRepresentation<GeometryRef> {
+    null_rep: Option<NullRepresentation>,
+    text_rep: Option<TextRepresentation>,
+    web_rep: Option<WebRepresentation>,
+    render_rep: Option<RenderRepresentation<GeometryRef>>,
 }
 
-impl<GeometryRef> serde::Serialize for EntityRepresentation<GeometryRef>
-where
-    GeometryRef: serde::Serialize,
-{
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let mut s = serializer.serialize_struct("Representation", 1)?;
-        match self {
-            EntityRepresentation::Null => {
-                s.serialize_field("null_rep", "null")?
-            }
-            EntityRepresentation::Text(t) => {
-                s.serialize_field("text_rep", t)?
-            }
-            EntityRepresentation::Web(w) => s.serialize_field("web_rep", w)?,
-            EntityRepresentation::Render(r) => {
-                s.serialize_field("render_rep", r)?
-            }
-        }
-        s.end()
-    }
-}
-
-struct EntityRepresentationVisitor<GeometryRef>
-where
-    GeometryRef: Serialize + for<'a> Deserialize<'a>,
-{
-    phantom1: std::marker::PhantomData<GeometryRef>,
-}
-
-impl<'de, GeometryRef> Visitor<'de> for EntityRepresentationVisitor<GeometryRef>
-where
-    GeometryRef: Serialize + for<'a> Deserialize<'a>,
-{
-    type Value = EntityRepresentation<GeometryRef>;
-
-    fn expecting(
-        &self,
-        formatter: &mut std::fmt::Formatter,
-    ) -> std::fmt::Result {
-        write!(
-            formatter,
-            "One of 'null_rep', 'text_rep', 'web_rep' or 'render_rep'"
-        )
-    }
-
-    fn visit_map<A>(self, map: A) -> Result<Self::Value, A::Error>
-    where
-        A: MapAccess<'de>,
-    {
-        let key: Option<String> = map.next_key()?;
-
-        if key.is_none() {
-            return Ok(EntityRepresentation::Null);
-        }
-
-        match key.unwrap().as_str() {
-            "null_rep" => Ok(EntityRepresentation::Null),
-            "text_rep" => Ok(EntityRepresentation::Text(map.next_value()?)),
-            "web_rep" => Ok(EntityRepresentation::Web(map.next_value()?)),
-            "render_rep" => Ok(EntityRepresentation::Render(map.next_value()?)),
+impl<GeometryRef> EntityRepresentation<GeometryRef> {
+    pub fn new_null() -> Self {
+        Self {
+            null_rep: Some(NullRepresentation),
+            text_rep: None,
+            web_rep: None,
+            render_rep: None,
         }
     }
-}
 
-impl<'de, GeometryRef> Deserialize<'de> for EntityRepresentation<GeometryRef>
-where
-    GeometryRef: Serialize + for<'a> Deserialize<'a>,
-{
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        deserializer.deserialize_seq(
-            EntityRepresentationVisitor::<GeometryRef> {
-                phantom1: std::marker::PhantomData,
-            },
-        )
+    pub fn new_text(t: TextRepresentation) -> Self {
+        Self {
+            null_rep: None,
+            text_rep: Some(t),
+            web_rep: None,
+            render_rep: None,
+        }
+    }
+
+    pub fn new_web(t: WebRepresentation) -> Self {
+        Self {
+            null_rep: None,
+            text_rep: None,
+            web_rep: Some(t),
+            render_rep: None,
+        }
+    }
+
+    pub fn new_render(t: RenderRepresentation<GeometryRef>) -> Self {
+        Self {
+            null_rep: None,
+            text_rep: None,
+            web_rep: None,
+            render_rep: Some(t),
+        }
     }
 }
 
@@ -910,3 +794,46 @@ impl<
 }
 
 // =============================================================================
+// =============================================================================
+// =============================================================================
+
+#[cfg(test)]
+mod tests {
+    use crate::components::{BufferRepresentation, BufferState};
+
+    #[test]
+    fn buffer_state_serde() {
+        let rep = BufferState::new_from_bytes(vec![10, 11, 12]);
+
+        let mut pack = Vec::<u8>::new();
+
+        ciborium::ser::into_writer(&rep, &mut pack).expect("Pack");
+
+        let other: BufferState =
+            ciborium::de::from_reader(pack.as_slice()).unwrap();
+
+        assert_eq!(rep, other);
+    }
+
+    #[test]
+    #[should_panic]
+    fn bad_buffer_state_serde() {
+        let rep = BufferState {
+            name: Some("Test".to_string()),
+            size: 1024,
+            representation: BufferRepresentation {
+                inline_bytes: None,
+                uri_bytes: None,
+            },
+        };
+
+        let mut pack = Vec::<u8>::new();
+
+        ciborium::ser::into_writer(&rep, &mut pack).expect("Pack");
+
+        let other: BufferState =
+            ciborium::de::from_reader(pack.as_slice()).unwrap();
+
+        assert_eq!(rep, other);
+    }
+}

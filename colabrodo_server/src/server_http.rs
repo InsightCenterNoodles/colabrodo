@@ -429,7 +429,7 @@ mod tests {
 
     async fn simple_structure_main() {
         let (asset_server, mut link) = make_asset_server(AssetServerOptions {
-            host: "127.0.0.1".to_string(),
+            host: "127.0.0.1:50001".to_string(),
             ..Default::default()
         });
 

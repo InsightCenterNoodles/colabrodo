@@ -1,6 +1,5 @@
 //! An example NOODLES server that provides cube geometry for clients.
 
-use colabrodo_common::types::Url;
 use colabrodo_server::{
     server::{AsyncServer, DefaultCommand, ServerOptions},
     server_bufferbuilder,
@@ -91,9 +90,7 @@ fn make_cube(
                 Asset::new_from_slice(data.as_slice()),
             );
             println!("Cube asset URL is at {url}");
-            colabrodo_server::server_messages::BufferRepresentation::URI(
-                Url::new(url),
-            )
+            colabrodo_server::server_messages::BufferRepresentation::new_from_url(&url)
         },
     );
 
@@ -176,12 +173,14 @@ impl AsyncServer for CubeServer {
                 mutable: ServerEntityStateUpdatable {
                     parent: None,
                     transform: None,
-                    representation: Some(ServerEntityRepresentation::Render(
-                        ServerRenderRepresentation {
-                            mesh: geom,
-                            instances: None,
-                        },
-                    )),
+                    representation: Some(
+                        ServerEntityRepresentation::new_render(
+                            ServerRenderRepresentation {
+                                mesh: geom,
+                                instances: None,
+                            },
+                        ),
+                    ),
                     ..Default::default()
                 },
             }));

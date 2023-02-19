@@ -248,8 +248,6 @@ pub fn create_mesh(
     source: VertexSource,
 ) -> IntermediateGeometryPatch {
     create_mesh_with(server_state, source, |data| {
-        crate::server_messages::BufferRepresentation::Inline(ByteBuff {
-            bytes: data,
-        })
+        crate::server_messages::BufferRepresentation::new_from_bytes(data)
     })
 }

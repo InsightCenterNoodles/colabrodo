@@ -151,12 +151,14 @@ impl AsyncServer for CubeServer {
                 mutable: ServerEntityStateUpdatable {
                     parent: None,
                     transform: None,
-                    representation: Some(ServerEntityRepresentation::Render(
-                        ServerRenderRepresentation {
-                            mesh: geom,
-                            instances: None,
-                        },
-                    )),
+                    representation: Some(
+                        ServerEntityRepresentation::new_render(
+                            ServerRenderRepresentation {
+                                mesh: geom,
+                                instances: None,
+                            },
+                        ),
+                    ),
                     ..Default::default()
                 },
             }));

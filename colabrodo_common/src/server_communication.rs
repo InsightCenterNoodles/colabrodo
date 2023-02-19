@@ -1,4 +1,8 @@
-use serde::{ser::SerializeStruct, Deserialize, Serialize};
+use serde::{
+    de::{Error, MapAccess, Visitor},
+    ser::SerializeStruct,
+    Deserialize, Serialize,
+};
 use serde_with;
 
 use crate::{common::ServerMessageIDs, nooid::NooID};
@@ -35,17 +39,81 @@ where
     }
 }
 
+struct SignalInvokeObjVisitor<EntityRef, TableRef, PlotRef> {
+    phantom0: std::marker::PhantomData<EntityRef>,
+    phantom1: std::marker::PhantomData<TableRef>,
+    phantom2: std::marker::PhantomData<PlotRef>,
+}
+
+impl<'de, EntityRef, TableRef, PlotRef> Visitor<'de>
+    for SignalInvokeObjVisitor<EntityRef, TableRef, PlotRef>
+where
+    EntityRef: Deserialize<'de>,
+    TableRef: Deserialize<'de>,
+    PlotRef: Deserialize<'de>,
+{
+    type Value = SignalInvokeObj<EntityRef, TableRef, PlotRef>;
+
+    fn expecting(
+        &self,
+        formatter: &mut std::fmt::Formatter,
+    ) -> std::fmt::Result {
+        write!(formatter, "invoke context field")
+    }
+
+    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+    where
+        A: MapAccess<'de>,
+    {
+        let key: Option<String> = map.next_key()?;
+
+        if key.is_none() {
+            return Err(Error::missing_field("invoke context field"));
+        }
+
+        match key.unwrap().as_str() {
+            "entity" => Ok(Self::Value::Entity(map.next_value()?)),
+            "table" => Ok(Self::Value::Table(map.next_value()?)),
+            "plot" => Ok(Self::Value::Plot(map.next_value()?)),
+            _ => Err(Error::missing_field("missing context field")),
+        }
+    }
+}
+
+impl<'de, EntityRef, TableRef, PlotRef> Deserialize<'de>
+    for SignalInvokeObj<EntityRef, TableRef, PlotRef>
+where
+    EntityRef: Deserialize<'de>,
+    TableRef: Deserialize<'de>,
+    PlotRef: Deserialize<'de>,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        deserializer.deserialize_seq(SignalInvokeObjVisitor::<
+            EntityRef,
+            TableRef,
+            PlotRef,
+        > {
+            phantom0: std::marker::PhantomData,
+            phantom1: std::marker::PhantomData,
+            phantom2: std::marker::PhantomData,
+        })
+    }
+}
+
 // =============================================================================
 
 #[serde_with::skip_serializing_none]
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct DocumentUpdate<MethodRef, SignalRef> {
     pub methods_list: Option<Vec<MethodRef>>,
     pub signals_list: Option<Vec<SignalRef>>,
 }
 
 #[serde_with::skip_serializing_none]
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct DocumentReset {}
 
 impl<MethodRef, SignalRef> Default for DocumentUpdate<MethodRef, SignalRef> {
@@ -74,7 +142,7 @@ impl ServerMessageID for DocumentReset {
 // =============================================================================
 
 #[serde_with::skip_serializing_none]
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct MessageSignalInvoke<EntityRef, TableRef, PlotRef> {
     pub id: NooID,
     pub context: Option<SignalInvokeObj<EntityRef, TableRef, PlotRef>>,
@@ -92,7 +160,7 @@ impl<EntityRef, TableRef, PlotRef> ServerMessageID
 // =============================================================================
 
 #[serde_with::skip_serializing_none]
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct MethodException {
     pub code: i32,
     pub message: Option<String>,
@@ -113,7 +181,7 @@ pub enum ExceptionCodes {
     MethodNotFound = -32601,
 }
 #[serde_with::skip_serializing_none]
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct MessageMethodReply {
     pub invoke_id: String,
     pub result: Option<ciborium::value::Value>,
@@ -129,7 +197,7 @@ impl ServerMessageID for MessageMethodReply {
 // =============================================================================
 
 #[serde_with::skip_serializing_none]
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct DocumentInit {}
 
 impl ServerMessageID for DocumentInit {

@@ -90,7 +90,7 @@ pub trait AsyncServer: UserServerState {
 ///
 /// # Example
 /// Users should define a type that conforms to UserServerState + AsyncServer and pass it in like:
-/// ```
+/// ```rust,ignore
 /// struct MyServer {
 ///     state: ServerState,
 ///     // your state
@@ -106,7 +106,7 @@ pub trait AsyncServer: UserServerState {
 /// }
 ///
 /// let opts = ServerOptions::default();
-/// colabrodo_core::server_tokio::server_main::<MyServer>(opts);
+/// colabrodo_common::server_tokio::server_main::<MyServer>(opts);
 ///
 /// ```
 pub async fn server_main<T>(opts: ServerOptions, init: T::InitType)

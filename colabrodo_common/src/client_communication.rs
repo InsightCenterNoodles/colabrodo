@@ -235,11 +235,11 @@ mod tests {
 
         ciborium::ser::into_writer(&m, &mut buffer).unwrap();
 
-        //println!("{buffer:02X?}");
-
         let read: ClientInvokeMessage =
             ciborium::de::from_reader(buffer.as_slice()).unwrap();
 
-        assert!(m == read);
+        println!("{read:?}");
+
+        assert_eq!(m, read);
     }
 }

@@ -339,14 +339,14 @@ impl ImageStateHelpers for ServerImageState {
     ) -> Self {
         Self {
             name: None,
-            source: ImageSource::Buffer(buffer),
+            source: ImageSource::new_buffer(buffer),
         }
     }
 
     fn new_from_url(url: &str) -> Self {
         Self {
             name: None,
-            source: ImageSource::URI(Url::new_from_slice(url)),
+            source: ImageSource::new_uri(Url::new_from_slice(url)),
         }
     }
 }
@@ -389,7 +389,7 @@ pub struct ServerLightStateUpdatable {
     pub intensity: Option<f32>,
 }
 #[serde_with::skip_serializing_none]
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Serialize)]
 pub struct ServerLightState {
     pub name: Option<String>,
 

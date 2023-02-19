@@ -43,14 +43,12 @@ pub struct BoundingBox {
 // =============================================================================
 
 /// A struct to represent an array of bytes, for proper serialization to CBOR
-#[derive(Debug, Default)]
-pub struct ByteBuff {
-    pub bytes: Vec<u8>,
-}
+#[derive(Debug, Default, PartialEq)]
+pub struct ByteBuff(Vec<u8>);
 
 impl ByteBuff {
     pub fn new(data: Vec<u8>) -> Self {
-        Self { bytes: data }
+        Self(data)
     }
 }
 
@@ -59,7 +57,7 @@ impl Serialize for ByteBuff {
     where
         S: serde::Serializer,
     {
-        serializer.serialize_bytes(self.bytes.as_slice())
+        serializer.serialize_bytes(self.0.as_slice())
     }
 }
 
@@ -72,16 +70,23 @@ impl<'de> Visitor<'de> for ByteBuffVisitor {
         &self,
         formatter: &mut std::fmt::Formatter,
     ) -> std::fmt::Result {
-        write!(formatter, "Byte buffer")
+        write!(formatter, "byte buffer")
     }
 
     fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
     where
         E: Error,
     {
-        let mut copy = Vec::new();
-        copy.copy_from_slice(&v);
-        Ok(ByteBuff { bytes: copy })
+        let mut vec = Vec::new();
+        vec.extend_from_slice(&v);
+        Ok(ByteBuff::new(vec))
+    }
+
+    fn visit_byte_buf<E>(self, v: Vec<u8>) -> Result<Self::Value, E>
+    where
+        E: Error,
+    {
+        Ok(ByteBuff::new(v))
     }
 }
 
@@ -90,27 +95,22 @@ impl<'de> Deserialize<'de> for ByteBuff {
     where
         D: serde::Deserializer<'de>,
     {
-        deserializer.deserialize_seq(ByteBuffVisitor)
+        deserializer.deserialize_byte_buf(ByteBuffVisitor)
     }
 }
 
 // =============================================================================
 
 /// A struct to represent a URL, for proper serialization to CBOR
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Url {
-    #[serde(flatten)]
-    url: Required<String, 32>,
-}
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct Url(Required<String, 32>);
 
 impl Url {
     pub fn new(url: String) -> Self {
-        Self { url: Required(url) }
+        Self(Required(url))
     }
     pub fn new_from_slice(url: &str) -> Self {
-        Self {
-            url: Required(url.to_string()),
-        }
+        Self(Required(url.to_string()))
     }
 }
 
@@ -159,4 +159,57 @@ impl Url {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CommonDeleteMessage {
     pub id: NooID,
+}
+
+#[cfg(test)]
+mod tests {
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    struct TestBytesStruct {
+        bytes: super::ByteBuff,
+    }
+
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    struct TestUrlStruct {
+        data: super::Url,
+    }
+
+    #[test]
+    fn bytes_serde() {
+        let to_pack = TestBytesStruct {
+            bytes: super::ByteBuff::new(vec![10, 11, 12]),
+        };
+
+        let mut pack = Vec::<u8>::new();
+
+        ciborium::ser::into_writer(&to_pack, &mut pack).expect("Pack");
+
+        let other: TestBytesStruct =
+            match ciborium::de::from_reader(pack.as_slice()) {
+                Ok(x) => x,
+                Err(x) => panic!("Unpack failed: {x:?}"),
+            };
+
+        assert_eq!(to_pack, other);
+    }
+
+    #[test]
+    fn url_serde() {
+        let to_pack = TestUrlStruct {
+            data: super::Url::new("http://google.com".to_string()),
+        };
+
+        let mut pack = Vec::<u8>::new();
+
+        ciborium::ser::into_writer(&to_pack, &mut pack).expect("Pack");
+
+        let other: TestUrlStruct =
+            match ciborium::de::from_reader(pack.as_slice()) {
+                Ok(x) => x,
+                Err(x) => panic!("Unpack failed: {x:?}"),
+            };
+
+        assert_eq!(to_pack, other);
+    }
 }
