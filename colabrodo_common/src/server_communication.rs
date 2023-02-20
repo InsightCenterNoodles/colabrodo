@@ -1,3 +1,4 @@
+use colabrodo_macros::DeltaPatch;
 use serde::{
     de::{Error, MapAccess, Visitor},
     ser::SerializeStruct,
@@ -5,13 +6,14 @@ use serde::{
 };
 use serde_with;
 
+use crate::components::{DeltaPatch, UpdatableWith};
 use crate::{common::ServerMessageIDs, nooid::NooID};
 
 pub trait ServerMessageID {
     fn message_id() -> u32;
 }
 
-//
+#[derive(Debug)]
 pub enum SignalInvokeObj<EntityRef, TableRef, PlotRef> {
     Entity(EntityRef),
     Table(TableRef),
@@ -106,10 +108,21 @@ where
 // =============================================================================
 
 #[serde_with::skip_serializing_none]
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, DeltaPatch)]
+#[patch_generic(MethodRef, SignalRef)]
 pub struct DocumentUpdate<MethodRef, SignalRef> {
     pub methods_list: Option<Vec<MethodRef>>,
     pub signals_list: Option<Vec<SignalRef>>,
+}
+
+impl<MethodRef, SignalRef> UpdatableWith
+    for DocumentUpdate<MethodRef, SignalRef>
+{
+    type Substate = DocumentUpdate<MethodRef, SignalRef>;
+
+    fn update(&mut self, s: Self::Substate) {
+        self.patch(s);
+    }
 }
 
 #[serde_with::skip_serializing_none]
@@ -142,7 +155,7 @@ impl ServerMessageID for DocumentReset {
 // =============================================================================
 
 #[serde_with::skip_serializing_none]
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct MessageSignalInvoke<EntityRef, TableRef, PlotRef> {
     pub id: NooID,
     pub context: Option<SignalInvokeObj<EntityRef, TableRef, PlotRef>>,

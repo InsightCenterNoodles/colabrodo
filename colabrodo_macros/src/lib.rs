@@ -3,7 +3,7 @@ use std::str::FromStr;
 use proc_macro::TokenStream;
 
 use quote::quote;
-use syn::{self, DeriveInput};
+use syn::{self, parse::Parse, parse2, DeriveInput};
 
 #[proc_macro_derive(UpdatableStateItem)]
 pub fn emit_optional_patch_function(input: TokenStream) -> TokenStream {
@@ -78,9 +78,55 @@ pub fn emit_optional_patch_function(input: TokenStream) -> TokenStream {
     return TokenStream::from_str(ret_impl.as_str()).unwrap();
 }
 
-#[proc_macro_derive(DeltaPatch)]
+struct PatchParams {
+    tys: Vec<syn::Ident>,
+}
+
+impl Parse for PatchParams {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let content;
+        syn::parenthesized!(content in input);
+
+        let mut ret = Vec::<syn::Ident>::new();
+        while let Ok(p) = content.parse() {
+            ret.push(p);
+
+            let comma = content.parse::<syn::Token![,]>();
+            if comma.is_err() {
+                break;
+            }
+        }
+        Ok(PatchParams { tys: ret })
+    }
+}
+
+#[proc_macro_derive(DeltaPatch, attributes(patch_generic))]
 pub fn emit_delta(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as DeriveInput);
+
+    let generics = input
+        .attrs
+        .iter()
+        .filter(|a| {
+            a.path.segments.len() == 1
+                && a.path.segments[0].ident == "patch_generic"
+        })
+        .nth(0);
+
+    let generics = match generics {
+        None => String::new(),
+        Some(this_attr) => {
+            let parts: PatchParams = parse2(this_attr.tokens.clone()).unwrap();
+
+            let v: Vec<String> = parts
+                .tys
+                .iter()
+                .map(|x: &syn::Ident| x.to_string())
+                .collect();
+
+            format!("<{}>", v.join(","))
+        }
+    };
 
     let struct_name = input.ident;
 
@@ -88,7 +134,7 @@ pub fn emit_delta(input: TokenStream) -> TokenStream {
 
     let mut ret_impl = format!(
         "
-        impl DeltaPatch for {struct_name_string} {{
+        impl{generics} DeltaPatch for {struct_name_string}{generics} {{
             fn patch(&mut self, other: Self){{
         "
     );

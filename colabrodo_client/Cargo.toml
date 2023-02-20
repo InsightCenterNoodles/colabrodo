@@ -15,6 +15,9 @@ serde_with = "2.2.0"
 tokio = { version = "1", features = ["full"] }
 tokio-tungstenite = "*"
 log = "0.4"
+url = "2.2"
+futures-util = "0.3.24"
+futures-channel = "0.3.24"
 
 [dependencies.uuid]
 version = "1.2"
@@ -23,3 +26,8 @@ features = [
     "fast-rng",          
     "macro-diagnostics", 
 ]
+
+
+[dev-dependencies]
+clap = { version = "4.1", features = ["derive"] }
+env_logger = "0.10.0"

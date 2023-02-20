@@ -2,13 +2,14 @@ use crate::components::*;
 use colabrodo_common::{
     common::ServerMessageIDs,
     components::{LightState, LightStateUpdatable},
+    nooid,
     server_communication::{DocumentInit, DocumentReset, MessageMethodReply},
     types::CommonDeleteMessage,
 };
 use num_traits::FromPrimitive;
 use serde::{de::Visitor, Deserialize};
 
-struct ServerRootMessage {
+pub struct ServerRootMessage {
     pub list: Vec<FromServer>,
 }
 
@@ -182,38 +183,46 @@ impl<'de> Deserialize<'de> for ServerRootMessage {
 
 // ============================================================================
 
+#[derive(Debug, Deserialize)]
+pub struct ClientCommonTagged<Nested> {
+    pub id: nooid::NooID,
+
+    #[serde(flatten)]
+    pub content: Nested,
+}
+
 #[allow(clippy::enum_variant_names)] // These all start wtih Msg to match spec
 pub enum FromServer {
-    MsgMethodCreate(MethodState),
+    MsgMethodCreate(ClientCommonTagged<MethodState>),
     MsgMethodDelete(CommonDeleteMessage),
-    MsgSignalCreate(SignalState),
+    MsgSignalCreate(ClientCommonTagged<SignalState>),
     MsgSignalDelete(CommonDeleteMessage),
-    MsgEntityCreate(ClientEntityState),
-    MsgEntityUpdate(ClientEntityUpdate),
+    MsgEntityCreate(ClientCommonTagged<ClientEntityState>),
+    MsgEntityUpdate(ClientCommonTagged<ClientEntityUpdate>),
     MsgEntityDelete(CommonDeleteMessage),
-    MsgPlotCreate(ClientPlotState),
-    MsgPlotUpdate(ClientPlotUpdate),
+    MsgPlotCreate(ClientCommonTagged<ClientPlotState>),
+    MsgPlotUpdate(ClientCommonTagged<ClientPlotUpdate>),
     MsgPlotDelete(CommonDeleteMessage),
-    MsgBufferCreate(BufferState),
+    MsgBufferCreate(ClientCommonTagged<BufferState>),
     MsgBufferDelete(CommonDeleteMessage),
-    MsgBufferViewCreate(ClientBufferViewState),
+    MsgBufferViewCreate(ClientCommonTagged<ClientBufferViewState>),
     MsgBufferViewDelete(CommonDeleteMessage),
-    MsgMaterialCreate(ClientMaterialState),
-    MsgMaterialUpdate(ClientMaterialUpdate),
+    MsgMaterialCreate(ClientCommonTagged<ClientMaterialState>),
+    MsgMaterialUpdate(ClientCommonTagged<ClientMaterialUpdate>),
     MsgMaterialDelete(CommonDeleteMessage),
-    MsgImageCreate(ClientImageState),
+    MsgImageCreate(ClientCommonTagged<ClientImageState>),
     MsgImageDelete(CommonDeleteMessage),
-    MsgTextureCreate(ClientTextureState),
+    MsgTextureCreate(ClientCommonTagged<ClientTextureState>),
     MsgTextureDelete(CommonDeleteMessage),
-    MsgSamplerCreate(SamplerState),
+    MsgSamplerCreate(ClientCommonTagged<SamplerState>),
     MsgSamplerDelete(CommonDeleteMessage),
-    MsgLightCreate(LightState),
-    MsgLightUpdate(LightStateUpdatable),
-    MsgLightDelete(CommonDeleteMessage),
-    MsgGeometryCreate(ClientGeometryState),
+    MsgLightCreate(ClientCommonTagged<LightState>),
+    MsgLightUpdate(ClientCommonTagged<LightStateUpdatable>),
+    MsgLightDelete(ClientCommonTagged<CommonDeleteMessage>),
+    MsgGeometryCreate(ClientCommonTagged<ClientGeometryState>),
     MsgGeometryDelete(CommonDeleteMessage),
-    MsgTableCreate(ClientTableState),
-    MsgTableUpdate(ClientTableUpdate),
+    MsgTableCreate(ClientCommonTagged<ClientTableState>),
+    MsgTableUpdate(ClientCommonTagged<ClientTableUpdate>),
     MsgTableDelete(CommonDeleteMessage),
     MsgDocumentUpdate(ClientDocumentUpdate),
     MsgDocumentReset(DocumentReset),

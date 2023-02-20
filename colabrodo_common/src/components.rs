@@ -1,3 +1,4 @@
+use colabrodo_macros::DeltaPatch;
 use serde::de::Error;
 use serde::Deserializer;
 use serde::{Deserialize, Serialize};
@@ -15,6 +16,11 @@ pub trait ComponentMessageIDs {
 
 pub trait DeltaPatch {
     fn patch(&mut self, other: Self);
+}
+
+pub trait UpdatableWith {
+    type Substate;
+    fn update(&mut self, s: Self::Substate);
 }
 
 // =============================================================================
@@ -471,7 +477,8 @@ impl<TextureStateRef> Default for PBRInfo<TextureStateRef> {
 }
 
 #[serde_with::skip_serializing_none]
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize, DeltaPatch)]
+#[patch_generic(TextureStateRef)]
 pub struct MaterialStateUpdatable<TextureStateRef> {
     pub pbr_info: Option<PBRInfo<TextureStateRef>>,
     pub normal_texture: Option<TextureRef<TextureStateRef>>,
@@ -494,6 +501,14 @@ pub struct MaterialState<TextureStateRef> {
 
     #[serde(flatten)]
     pub mutable: MaterialStateUpdatable<TextureStateRef>,
+}
+
+impl<TextureStateRef> UpdatableWith for MaterialState<TextureStateRef> {
+    type Substate = MaterialStateUpdatable<TextureStateRef>;
+
+    fn update(&mut self, s: Self::Substate) {
+        self.mutable.patch(s);
+    }
 }
 
 impl<TextureStateRef> ComponentMessageIDs for MaterialState<TextureStateRef> {
@@ -538,7 +553,7 @@ pub struct LightType {
 }
 
 #[serde_with::skip_serializing_none]
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize, DeltaPatch)]
 pub struct LightStateUpdatable {
     pub color: Option<RGB>,
     pub intensity: Option<f32>,
@@ -554,6 +569,14 @@ pub struct LightState {
 
     #[serde(flatten)]
     pub mutable: LightStateUpdatable,
+}
+
+impl UpdatableWith for LightState {
+    type Substate = LightStateUpdatable;
+
+    fn update(&mut self, s: Self::Substate) {
+        self.mutable.patch(s);
+    }
 }
 
 impl ComponentMessageIDs for LightState {
@@ -573,7 +596,8 @@ impl ComponentMessageIDs for LightState {
 // =============================================================================
 
 #[serde_with::skip_serializing_none]
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize, DeltaPatch)]
+#[patch_generic(TableRef, MethodRef, SignalRef)]
 pub struct PlotStateUpdatable<TableRef, MethodRef, SignalRef> {
     pub table: Option<TableRef>,
 
@@ -588,6 +612,15 @@ pub struct PlotState<TableRef, MethodRef, SignalRef> {
 
     #[serde(flatten)]
     pub(crate) mutable: PlotStateUpdatable<TableRef, MethodRef, SignalRef>,
+}
+
+impl<TableRef, MethodRef, SignalRef> UpdatableWith
+    for PlotState<TableRef, MethodRef, SignalRef>
+{
+    type Substate = PlotStateUpdatable<TableRef, MethodRef, SignalRef>;
+    fn update(&mut self, s: Self::Substate) {
+        self.mutable.patch(s);
+    }
 }
 
 impl<TableRef, MethodRef, SignalRef> ComponentMessageIDs
@@ -609,7 +642,8 @@ impl<TableRef, MethodRef, SignalRef> ComponentMessageIDs
 // =============================================================================
 
 #[serde_with::skip_serializing_none]
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize, DeltaPatch)]
+#[patch_generic(MethodRef, SignalRef)]
 pub struct TableStateUpdatable<MethodRef, SignalRef> {
     pub meta: Option<String>,
     pub methods_list: Option<Vec<MethodRef>>,
@@ -623,6 +657,13 @@ pub struct TableState<MethodRef, SignalRef> {
 
     #[serde(flatten)]
     pub mutable: TableStateUpdatable<MethodRef, SignalRef>,
+}
+
+impl<MethodRef, SignalRef> UpdatableWith for TableState<MethodRef, SignalRef> {
+    type Substate = TableStateUpdatable<MethodRef, SignalRef>;
+    fn update(&mut self, s: Self::Substate) {
+        self.mutable.patch(s);
+    }
 }
 
 // =============================================================================
@@ -706,8 +747,19 @@ impl<GeometryRef> EntityRepresentation<GeometryRef> {
     }
 }
 
+// This class is just terrible...
+
 #[serde_with::skip_serializing_none]
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize, DeltaPatch)]
+#[patch_generic(
+    EntityRef,
+    GeometryRef,
+    LightRef,
+    TableRef,
+    PlotRef,
+    MethodRef,
+    SignalRef
+)]
 pub struct EntityStateUpdatable<
     EntityRef,
     GeometryRef,
@@ -759,6 +811,39 @@ pub struct EntityState<
         MethodRef,
         SignalRef,
     >,
+}
+
+impl<
+        EntityRef,
+        GeometryRef,
+        LightRef,
+        TableRef,
+        PlotRef,
+        MethodRef,
+        SignalRef,
+    > UpdatableWith
+    for EntityState<
+        EntityRef,
+        GeometryRef,
+        LightRef,
+        TableRef,
+        PlotRef,
+        MethodRef,
+        SignalRef,
+    >
+{
+    type Substate = EntityStateUpdatable<
+        EntityRef,
+        GeometryRef,
+        LightRef,
+        TableRef,
+        PlotRef,
+        MethodRef,
+        SignalRef,
+    >;
+    fn update(&mut self, s: Self::Substate) {
+        self.mutable.patch(s);
+    }
 }
 
 impl<

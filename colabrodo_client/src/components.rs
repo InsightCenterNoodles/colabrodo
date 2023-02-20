@@ -4,8 +4,8 @@ use colabrodo_common::{components::*, server_communication::DocumentUpdate};
 
 pub use colabrodo_common::components::{
     AttributeSemantic, BufferRepresentation, BufferState, BufferViewType,
-    GeometryIndex, MethodArg, MethodState, PrimitiveType, SamplerState,
-    SignalState,
+    GeometryIndex, LightState, MethodArg, MethodState, PrimitiveType,
+    SamplerState, SignalState,
 };
 
 pub type ClientRenderRepresentation = RenderRepresentation<NooID>;

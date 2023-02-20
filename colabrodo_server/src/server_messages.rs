@@ -12,8 +12,8 @@ use colabrodo_common::components::*;
 
 pub use colabrodo_common::components::{
     AttributeSemantic, BufferRepresentation, BufferState, BufferViewType,
-    GeometryIndex, MethodArg, MethodState, PrimitiveType, SamplerState,
-    SignalState,
+    GeometryIndex, LightState, MethodArg, MethodState, PrimitiveType,
+    SamplerState, SignalState,
 };
 
 use crate::server_state::ComponentCell;
