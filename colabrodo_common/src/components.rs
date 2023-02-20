@@ -608,7 +608,7 @@ pub struct PlotStateUpdatable<TableRef, MethodRef, SignalRef> {
 #[serde_with::skip_serializing_none]
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct PlotState<TableRef, MethodRef, SignalRef> {
-    name: Option<String>,
+    pub name: Option<String>,
 
     #[serde(flatten)]
     pub(crate) mutable: PlotStateUpdatable<TableRef, MethodRef, SignalRef>,
@@ -653,7 +653,7 @@ pub struct TableStateUpdatable<MethodRef, SignalRef> {
 #[serde_with::skip_serializing_none]
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct TableState<MethodRef, SignalRef> {
-    name: Option<String>,
+    pub name: Option<String>,
 
     #[serde(flatten)]
     pub mutable: TableStateUpdatable<MethodRef, SignalRef>,

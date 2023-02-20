@@ -11,7 +11,7 @@ use colabrodo_common::{
 pub use colabrodo_common::{components::UpdatableWith, nooid::NooID};
 use futures_util::{stream::SplitSink, SinkExt, StreamExt};
 use log::{debug, info};
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Debug};
 use thiserror::Error;
 use tokio::net::TcpStream;
 use tokio_tungstenite::{connect_async, tungstenite::Message, WebSocketStream};
@@ -31,24 +31,61 @@ where
 }
 
 #[derive(Debug)]
-pub struct BasicComponentList<State> {
+pub struct BasicComponentList<State>
+where
+    State: NamedComponent,
+{
+    name_map: HashMap<String, NooID>,
     components: HashMap<NooID, State>,
 }
 
-impl<State> Default for BasicComponentList<State> {
+impl<State> BasicComponentList<State>
+where
+    State: NamedComponent,
+{
+    pub fn search_id(&self, name: &str) -> Option<&NooID> {
+        self.name_map.get(name)
+    }
+
+    pub fn search(&self, name: &str) -> Option<&State> {
+        self.find(self.name_map.get(name)?)
+    }
+
+    pub fn find_name(&self, id: &NooID) -> Option<&String> {
+        self.find(&id)?.name()
+    }
+}
+
+impl<State> Default for BasicComponentList<State>
+where
+    State: NamedComponent,
+{
     fn default() -> Self {
         Self {
+            name_map: HashMap::new(),
             components: HashMap::new(),
         }
     }
 }
 
-impl<State> ComponentList<State> for BasicComponentList<State> {
+impl<State> ComponentList<State> for BasicComponentList<State>
+where
+    State: NamedComponent,
+{
     fn on_create(&mut self, id: NooID, state: State) {
+        if let Some(n) = state.name() {
+            self.name_map.insert(n.clone(), id);
+        }
+
         self.components.insert(id, state);
     }
 
     fn on_delete(&mut self, id: NooID) {
+        if let Some(n) = self.find_name(&id) {
+            let n = n.clone();
+            self.name_map.remove(&n);
+        }
+
         self.components.remove(&id);
     }
 
@@ -95,7 +132,7 @@ where
     }
 }
 
-pub trait UserClientState {
+pub trait UserClientState: Debug {
     type MethodL: ComponentList<MethodState>;
     type SignalL: ComponentList<SignalState>;
 
@@ -165,7 +202,7 @@ pub fn handle_next<U: UserClientState>(
     state: &mut U,
     message: &[u8],
 ) -> Result<(), UserClientNext> {
-    debug!("Handling next message...");
+    debug!("Handling next message array");
     let root: ServerRootMessage = ciborium::de::from_reader(message)
         .map_err(|x| UserClientNext::DecodeError(x.to_string()))?;
 
@@ -180,6 +217,7 @@ fn handle_next_message<U: UserClientState>(
     state: &mut U,
     m: FromServer,
 ) -> Result<(), UserClientNext> {
+    debug!("Handling next message...");
     match m {
         FromServer::MsgMethodCreate(x) => {
             state.method_list().on_create(x.id, x.content);
@@ -263,33 +301,38 @@ fn handle_next_message<U: UserClientState>(
 #[derive(Error, Debug)]
 pub enum UserClientError {
     #[error("Invalid Host")]
-    InvalidHost,
+    InvalidHost(String),
 
     #[error("Connection Error")]
     ConnectionError(tungstenite::Error),
 }
 
+#[derive(Debug)]
 pub enum IncomingMessage<T: UserClientState> {
     NetworkMessage(Vec<u8>),
     Command(T::CommandType),
 }
 
+#[derive(Debug)]
 pub enum OutgoingMessage {
+    Close,
     MethodInvoke(ClientInvokeMessage),
 }
 
 pub async fn start_client<T>(
-    host: String,
+    url: String,
     name: String,
     a: T::ArgumentType,
 ) -> Result<(), UserClientError>
 where
-    T: UserClientState + 'static,
-    T::CommandType: std::marker::Send,
+    T: UserClientState + 'static + std::fmt::Debug,
+    T::CommandType: std::marker::Send + std::fmt::Debug,
     T::ArgumentType: std::marker::Send,
 {
-    let url =
-        url::Url::parse(&host).map_err(|_| UserClientError::InvalidHost)?;
+    //let url = url::Url::parse(&host)
+    //    .map_err(|x| UserClientError::InvalidHost(x.to_string()))?;
+
+    let (stop_tx, mut stop_rx) = tokio::sync::broadcast::channel::<u8>(1);
 
     info!("Connecting to {url}...");
 
@@ -297,20 +340,32 @@ where
         .await
         .map_err(|x| UserClientError::ConnectionError(x))?;
 
+    info!("Connecting to {url}...");
+
     let (to_client_thread_tx, to_client_thread_rx) = std::sync::mpsc::channel();
     let (from_client_thread_tx, from_client_thread_rx) =
         tokio::sync::mpsc::channel(16);
 
-    let temp_tx_handle = from_client_thread_tx.clone();
+    let (inter_channel_tx, inter_channel_rx) = tokio::sync::mpsc::channel(16);
 
     let h1 = std::thread::spawn(move || {
         debug!("Creating client worker thread...");
-        client_worker_thread::<T>(to_client_thread_rx, temp_tx_handle, a)
+        client_worker_thread::<T>(
+            to_client_thread_rx,
+            from_client_thread_tx.clone(),
+            a,
+        )
     });
+
+    let to_c_handle = tokio::spawn(to_client_task::<T>(
+        inter_channel_rx,
+        to_client_thread_tx,
+        stop_tx.subscribe(),
+    ));
 
     let (ws_stream, _) = conn_result;
 
-    let (mut socket_tx, socket_rx) = ws_stream.split();
+    let (mut socket_tx, mut socket_rx) = ws_stream.split();
 
     {
         let content = (
@@ -325,44 +380,93 @@ where
         socket_tx.send(Message::Binary(buffer)).await.unwrap();
     }
 
-    tokio::spawn(forward_task(from_client_thread_rx, socket_tx));
+    let fhandle = tokio::spawn(forward_task(
+        from_client_thread_rx,
+        socket_tx,
+        stop_tx.clone(),
+        stop_tx.subscribe(),
+    ));
 
-    socket_rx
-        .for_each(|msg| async {
-            let data = msg.unwrap().into_data();
+    loop {
+        tokio::select! {
+            _ = stop_rx.recv() => break,
+            msg = socket_rx.next() => {
+                let data = msg.unwrap().unwrap().into_data();
 
-            to_client_thread_tx
-                .send(IncomingMessage::NetworkMessage(data))
-                .unwrap();
-        })
-        .await;
+                inter_channel_tx
+                    .send(IncomingMessage::NetworkMessage(data))
+                    .await
+                    .unwrap();
+            }
+        }
+    }
 
     info!("Closing client to {url}...");
+
+    let join_res = tokio::join!(fhandle, to_c_handle);
+
+    join_res.0.unwrap();
+    join_res.1.unwrap();
 
     h1.join().unwrap();
 
     Ok(())
 }
 
+async fn to_client_task<T>(
+    mut input: tokio::sync::mpsc::Receiver<IncomingMessage<T>>,
+    output: std::sync::mpsc::Sender<IncomingMessage<T>>,
+    mut stopper: tokio::sync::broadcast::Receiver<u8>,
+) where
+    T: UserClientState + 'static,
+{
+    debug!("Starting to-client task");
+    loop {
+        tokio::select! {
+            _ = stopper.recv() => break,
+            Some(msg) = input.recv() => output.send(msg).unwrap()
+        }
+    }
+    // while let Some(msg) = input.recv().await {
+    //     output.send(msg).unwrap();
+    // }
+    debug!("Ending to-client task");
+}
+
 async fn forward_task(
     mut input: tokio::sync::mpsc::Receiver<OutgoingMessage>,
     mut output: SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>,
+    stopper_tx: tokio::sync::broadcast::Sender<u8>,
+    mut stopper: tokio::sync::broadcast::Receiver<u8>,
 ) {
     debug!("Starting thread forwarding task");
-    while let Some(msg) = input.recv().await {
-        let mut buffer = Vec::<u8>::new();
 
-        match msg {
-            OutgoingMessage::MethodInvoke(x) => {
-                ciborium::ser::into_writer(&x, &mut buffer).unwrap()
+    loop {
+        tokio::select! {
+            _ = stopper.recv() => break,
+            Some(msg) = input.recv() => {
+                let mut buffer = Vec::<u8>::new();
+
+                match msg {
+                    OutgoingMessage::Close => {
+                        output.close().await.unwrap();
+                        stopper_tx.send(1).unwrap();
+                        break;
+                    }
+                    OutgoingMessage::MethodInvoke(x) => {
+                        let tuple = (ClientInvokeMessage::message_id(), x);
+                        ciborium::ser::into_writer(&tuple, &mut buffer).unwrap()
+                    }
+                }
+
+                output
+                    .send(tokio_tungstenite::tungstenite::Message::Binary(buffer))
+                    .await
+                    .unwrap();
             }
         }
-
-        output
-            .send(tokio_tungstenite::tungstenite::Message::Binary(buffer))
-            .await
-            .unwrap();
     }
+    debug!("Ending thread forwarding task");
 }
 
 fn client_worker_thread<T>(
@@ -374,6 +478,7 @@ fn client_worker_thread<T>(
     T::CommandType: std::marker::Send,
     T::ArgumentType: std::marker::Send,
 {
+    debug!("Starting client worker thread");
     let mut t = T::new(a, output);
 
     while let Ok(x) = input.recv() {
@@ -384,6 +489,7 @@ fn client_worker_thread<T>(
             IncomingMessage::Command(c) => t.on_command(c),
         }
     }
+    debug!("Ending client worker thread");
 }
 
 //pub fn make_invoke_message

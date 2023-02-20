@@ -27,7 +27,12 @@ use std::rc::{Rc, Weak};
 use std::sync::mpsc::Sender;
 use thiserror::Error;
 
-pub type CallbackPtr = Sender<Vec<u8>>;
+pub enum Output {
+    Broadcast(Vec<u8>),
+    Shutdown,
+}
+
+pub type CallbackPtr = Sender<Output>;
 
 // =============================================================================
 
@@ -79,7 +84,9 @@ where
 
         {
             let mut h = self.host.borrow_mut();
-            h.broadcast.send(recorder.data).unwrap();
+            if let Ok(_) = h.broadcast.send(Output::Broadcast(recorder.data)) {
+                // not sending a message could just mean that the broadcast pipe has been shut down.
+            }
             _holder = h.return_id(self.id);
         }
 
@@ -229,7 +236,7 @@ impl<T: Serialize + ComponentMessageIDs + Debug> ServerComponentList<T> {
 
     /// Send a CBOR message to the broadcast sink
     fn send_to_broadcast(&self, rec: Recorder) {
-        self.broadcast.send(rec.data).unwrap();
+        self.broadcast.send(Output::Broadcast(rec.data)).unwrap();
     }
 
     /// Obtain a new id. Either generates a new ID if there are no free slots. If there are free slots, reuse and bump the generation.
@@ -477,6 +484,10 @@ impl ServerState {
         }
     }
 
+    pub fn output(&self) -> CallbackPtr {
+        self.tx.clone()
+    }
+
     /// Update the document's methods and signals
     pub fn update_document(&mut self, update: ServerDocumentUpdate) {
         let msg_tuple = (ServerMessageIDs::MsgDocumentUpdate as u32, &update);
@@ -485,7 +496,7 @@ impl ServerState {
 
         ciborium::ser::into_writer(&msg_tuple, &mut recorder.data).unwrap();
 
-        self.tx.send(recorder.data).unwrap();
+        self.tx.send(Output::Broadcast(recorder.data)).unwrap();
 
         self.comm = update;
     }
@@ -515,7 +526,7 @@ impl ServerState {
 
         ciborium::ser::into_writer(&msg_tuple, &mut recorder.data).unwrap();
 
-        self.tx.send(recorder.data).unwrap();
+        self.tx.send(Output::Broadcast(recorder.data)).unwrap();
     }
 
     /// A helper function for serialization, returns the count of all components
@@ -678,6 +689,7 @@ pub fn handle_next<F>(
 where
     F: Fn(Vec<u8>),
 {
+    log::debug!("Handling next message...");
     // extract a typed message from the input stream
     let root_message = ciborium::de::from_reader(msg.as_slice());
 
@@ -699,6 +711,7 @@ where
                 write(recorder.data);
             }
             AllClientMessages::Invoke(invoke) => {
+                log::debug!("Next message is invoke...");
                 // copy the reply ident
                 let reply_id = invoke.invoke_id.clone();
 
@@ -871,6 +884,11 @@ mod tests {
         while let Ok(msg) = rx.try_recv() {
             //println!("{msg:02X?}");
             let truth = messages.pop_front().unwrap();
+
+            let msg = match msg {
+                Output::Broadcast(x) => x,
+                _ => panic!("Wrong message"),
+            };
 
             assert_eq!(
                 decode(&truth),

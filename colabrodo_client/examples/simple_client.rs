@@ -24,12 +24,12 @@ fn get_type_name<T>() -> String {
 }
 
 #[derive(Debug)]
-struct ExampleComponentList<State> {
+struct ExampleComponentList<State: NamedComponent> {
     ty: String,
     list: BasicComponentList<State>,
 }
 
-impl<State> Default for ExampleComponentList<State> {
+impl<State: NamedComponent> Default for ExampleComponentList<State> {
     fn default() -> Self {
         Self {
             ty: get_type_name::<State>(),
@@ -38,7 +38,7 @@ impl<State> Default for ExampleComponentList<State> {
     }
 }
 
-impl<State> ComponentList<State> for ExampleComponentList<State>
+impl<State: NamedComponent> ComponentList<State> for ExampleComponentList<State>
 where
     State: Debug,
 {
@@ -127,6 +127,8 @@ struct ExampleState {
 }
 
 struct ExampleStateArgument {}
+
+#[derive(Debug)]
 struct ExampleStateCommand {}
 
 impl UserClientState for ExampleState {
