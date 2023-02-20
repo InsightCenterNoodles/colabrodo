@@ -185,8 +185,11 @@ pub trait UserClientState: Debug {
 
     fn document_reset(&mut self) {}
 
-    fn on_signal_invoke(&mut self, _signal: ClientMessageSignalInvoke) {}
-    fn on_method_reply(&mut self, _method_reply: MessageMethodReply) {}
+    #[allow(unused_variables)]
+    fn on_signal_invoke(&mut self, signal: ClientMessageSignalInvoke) {}
+    #[allow(unused_variables)]
+    fn on_method_reply(&mut self, method_reply: MessageMethodReply) {}
+
     fn on_document_ready(&mut self) {}
 
     fn on_command(&mut self, _c: Self::CommandType) {}
@@ -290,10 +293,14 @@ fn handle_next_message<U: UserClientState>(
         FromServer::MsgTableDelete(x) => state.method_list().on_delete(x.id),
         FromServer::MsgDocumentUpdate(x) => state.document_update(x),
         FromServer::MsgDocumentReset(_) => state.document_reset(),
-        FromServer::MsgSignalInvoke(x) => state.on_signal_invoke(x),
+        FromServer::MsgSignalInvoke(x) => {
+            log::debug!("Signal from server");
+            state.on_signal_invoke(x)
+        }
         FromServer::MsgMethodReply(x) => state.on_method_reply(x),
         FromServer::MsgDocumentInitialized(_) => state.on_document_ready(),
     }
+    debug!("Handling next message...Done");
 
     Ok(())
 }

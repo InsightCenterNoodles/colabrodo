@@ -72,7 +72,6 @@ impl ComponentMessageIDs for MethodState {
 pub struct SignalState {
     pub name: String,
     pub doc: Option<String>,
-    pub return_doc: Option<String>,
     pub arg_doc: Vec<MethodArg>,
 }
 

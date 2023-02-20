@@ -506,15 +506,15 @@ impl ServerState {
     /// Takes a signal to issue, the context on which the signal operates, and the arguments to be sent
     ///
     /// # Panics
-    /// This will panic if the broadcast queue is unable to accempt more content.
+    /// This will panic if the broadcast queue is unable to accept more content.
     pub fn issue_signal(
         &self,
-        signals: ComponentReference<SignalState>,
+        signals: &ComponentReference<SignalState>,
         context: Option<ServerSignalInvokeObj>,
         arguments: Vec<value::Value>,
     ) {
         let msg_tuple = (
-            ServerMessageIDs::MsgDocumentUpdate as u32,
+            ServerMessageIDs::MsgSignalInvoke as u32,
             MessageSignalInvoke {
                 id: signals.id(),
                 context,

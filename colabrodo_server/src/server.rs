@@ -174,16 +174,16 @@ pub async fn server_main_with_command_queue<T>(
     }
 
     let state_handle = thread::spawn(move || {
-        server_state_loop::<T>(from_server_send, init, to_server_recv)
+        server_state_loop::<T>(
+            from_server_send,
+            init,
+            to_server_recv,
+            stop_tx.clone(),
+        )
     });
 
-    server_message_pump(
-        bcast_send,
-        from_server_recv,
-        stop_tx.clone(),
-        to_server_send.clone(),
-    )
-    .await;
+    server_message_pump(bcast_send, from_server_recv, to_server_send.clone())
+        .await;
 
     h1.await.unwrap();
 
@@ -248,7 +248,6 @@ async fn client_connect_task<T>(
 async fn server_message_pump<T>(
     bcast_send: broadcast::Sender<Vec<u8>>,
     from_server_recv: std::sync::mpsc::Receiver<Output>,
-    stop_tx: broadcast::Sender<u8>,
     to_server_send: std::sync::mpsc::Sender<ToServerMessage<T>>,
 ) where
     T: AsyncServer + 'static,
@@ -266,7 +265,7 @@ async fn server_message_pump<T>(
                 }
             }
             Output::Shutdown => {
-                stop_tx.send(1).unwrap();
+                log::debug!("Server sent a shutdown, broadcasting stop.");
                 to_server_send.send(ToServerMessage::Shutdown).unwrap();
                 break;
             }
@@ -281,6 +280,7 @@ fn server_state_loop<T>(
     tx: server_state::CallbackPtr,
     init: T::InitType,
     from_world: std::sync::mpsc::Receiver<ToServerMessage<T>>,
+    stop_tx: tokio::sync::broadcast::Sender<u8>,
 ) where
     T: AsyncServer,
     T::CommandType: std::marker::Send,
@@ -320,6 +320,7 @@ fn server_state_loop<T>(
                 server_state.client_disconnected();
             }
             ToServerMessage::Shutdown => {
+                stop_tx.send(1).unwrap();
                 break;
             }
             ToServerMessage::Command(comm_msg) => {
@@ -423,8 +424,10 @@ where
 
     to_server_send.send(ToServerMessage::ClientClosed).unwrap();
 
-    h1.abort();
-    h2.abort();
+    log::info!("Closing client, waiting for tasks...");
+
+    h1.await.unwrap();
+    h2.await.unwrap();
 
     log::info!("Client closed.");
 

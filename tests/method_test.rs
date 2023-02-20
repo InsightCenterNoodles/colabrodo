@@ -10,7 +10,11 @@ use colabrodo_server::server_state::*;
 use colabrodo_server::server::ciborium::value;
 
 use log;
+use log::info;
+use std::backtrace::Backtrace;
 use std::collections::HashMap;
+use std::panic;
+use std::process::abort;
 use std::time::Duration;
 
 type Function = fn(
@@ -23,6 +27,7 @@ struct PingPongServer {
     state: ServerState,
 
     method_list: HashMap<ComponentReference<MethodState>, Function>,
+    test_signal: ComponentReference<SignalState>,
 }
 
 fn ping_pong(
@@ -30,6 +35,14 @@ fn ping_pong(
     _context: &InvokeObj,
     args: Vec<ciborium::value::Value>,
 ) -> MethodResult {
+    info!("Sending signal...");
+    _state.state().issue_signal(
+        &_state.test_signal,
+        None,
+        vec![value::Value::Text("Hi there".to_string())],
+    );
+
+    info!("Sending reply...");
     Ok(ciborium::value::Value::Array(args))
 }
 
@@ -61,9 +74,21 @@ impl AsyncServer for PingPongServer {
         tx: colabrodo_server::server_state::CallbackPtr,
         _init: NoInit,
     ) -> Self {
+        let mut state = ServerState::new(tx.clone());
+
+        let sig = state.signals.new_component(SignalState {
+            name: "test_signal".to_string(),
+            doc: Some("This is a test signal".to_string()),
+            arg_doc: vec![MethodArg {
+                name: "value".to_string(),
+                doc: Some("Some value for testing".to_string()),
+            }],
+        });
+
         Self {
-            state: ServerState::new(tx.clone()),
+            state,
             method_list: Default::default(),
+            test_signal: sig,
         }
     }
 
@@ -98,6 +123,7 @@ impl AsyncServer for PingPongServer {
     }
 
     fn client_disconnected(&mut self) {
+        log::debug!("Last client left, shutting down...");
         self.state.output().send(Output::Shutdown).unwrap();
     }
 }
@@ -123,6 +149,20 @@ struct ExampleState {
     entities: BasicUpdatableList<ClientEntityState>,
 
     doc: ClientDocumentUpdate,
+
+    counter: i32,
+}
+
+impl ExampleState {
+    fn decrement(&mut self) {
+        self.counter -= 1;
+
+        if self.counter <= 0 {
+            self.sender.blocking_send(OutgoingMessage::Close).unwrap();
+
+            log::info!("Closing connection to server.");
+        }
+    }
 }
 
 struct ExampleStateArgument {}
@@ -169,6 +209,7 @@ impl UserClientState for ExampleState {
             plots: Default::default(),
             entities: Default::default(),
             doc: Default::default(),
+            counter: 2,
         }
     }
 
@@ -229,7 +270,14 @@ impl UserClientState for ExampleState {
     }
 
     fn on_signal_invoke(&mut self, signal: ClientMessageSignalInvoke) {
-        println!("Signal invoked {signal:?}")
+        log::info!("Signal invoked {signal:?}");
+
+        let _ = match self.signals.find(&signal.id) {
+            Some(sig) => sig,
+            None => abort(),
+        };
+
+        self.decrement()
     }
     fn on_method_reply(&mut self, method_reply: MessageMethodReply) {
         log::info!("Method reply: {method_reply:?}");
@@ -245,9 +293,7 @@ impl UserClientState for ExampleState {
             "This is specific text"
         );
 
-        self.sender.blocking_send(OutgoingMessage::Close).unwrap();
-
-        log::info!("Closing connection to server.");
+        self.decrement();
     }
     fn on_document_ready(&mut self) {
         log::info!("Document is ready, calling method...");
@@ -324,6 +370,12 @@ fn main() {
     // for some reason using one runtime causes a stall.
     // in the meantime, test with threads
     env_logger::init();
+
+    panic::set_hook(Box::new(|info| {
+        let stack = Backtrace::force_capture();
+        println!("Got panic: Info:{info} \n\n Trace: {stack}");
+        std::process::abort();
+    }));
 
     let h1 = std::thread::spawn(|| do_server());
 
