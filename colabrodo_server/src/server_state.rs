@@ -84,7 +84,7 @@ where
 
         {
             let mut h = self.host.borrow_mut();
-            if let Ok(_) = h.broadcast.send(Output::Broadcast(recorder.data)) {
+            if h.broadcast.send(Output::Broadcast(recorder.data)).is_ok() {
                 // not sending a message could just mean that the broadcast pipe has been shut down.
             }
             _holder = h.return_id(self.id);

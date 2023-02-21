@@ -52,7 +52,7 @@ where
     }
 
     pub fn find_name(&self, id: &NooID) -> Option<&String> {
-        self.find(&id)?.name()
+        self.find(id)?.name()
     }
 }
 
@@ -90,7 +90,7 @@ where
     }
 
     fn find(&self, id: &NooID) -> Option<&State> {
-        self.components.get(&id)
+        self.components.get(id)
     }
 }
 
@@ -117,7 +117,7 @@ impl<State> ComponentList<State> for BasicUpdatableList<State> {
     }
 
     fn find(&self, id: &NooID) -> Option<&State> {
-        self.components.get(&id)
+        self.components.get(id)
     }
 }
 
@@ -345,7 +345,7 @@ where
 
     let conn_result = connect_async(&url)
         .await
-        .map_err(|x| UserClientError::ConnectionError(x))?;
+        .map_err(UserClientError::ConnectionError)?;
 
     info!("Connecting to {url}...");
 

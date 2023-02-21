@@ -174,12 +174,7 @@ pub async fn server_main_with_command_queue<T>(
     }
 
     let state_handle = thread::spawn(move || {
-        server_state_loop::<T>(
-            from_server_send,
-            init,
-            to_server_recv,
-            stop_tx.clone(),
-        )
+        server_state_loop::<T>(from_server_send, init, to_server_recv, stop_tx)
     });
 
     server_message_pump(bcast_send, from_server_recv, to_server_send.clone())

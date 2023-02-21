@@ -104,14 +104,10 @@ impl Parse for PatchParams {
 pub fn emit_delta(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as DeriveInput);
 
-    let generics = input
-        .attrs
-        .iter()
-        .filter(|a| {
-            a.path.segments.len() == 1
-                && a.path.segments[0].ident == "patch_generic"
-        })
-        .nth(0);
+    let generics = input.attrs.iter().find(|a| {
+        a.path.segments.len() == 1
+            && a.path.segments[0].ident == "patch_generic"
+    });
 
     let generics = match generics {
         None => String::new(),
