@@ -4,7 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-colabrodo_core = { path = "../colabrodo_core" }
+colabrodo_client = { path = "../colabrodo_client" }
+colabrodo_server = { path = "../colabrodo_server" }
+colabrodo_common = { path = "../colabrodo_common" }
 clap = { version = "4.0", features = ["derive"] }
 log = "0.4"
 simplelog = "0.12"

@@ -3,23 +3,24 @@ use std::io::Write;
 use std::process::abort;
 use std::sync::{Arc, Mutex};
 
-use colabrodo_core::client::ciborium::{de, ser, value};
-use colabrodo_core::client::{self, handle_next, UserClientState};
-use colabrodo_core::client_messages::{
-    ClientIntroductionMessage, ClientInvokeMessage, NoodlesClientMessageID,
+use colabrodo_client::mapped_client::ciborium::{de, ser, value};
+use colabrodo_client::mapped_client::{
+    self, handle_next, id_for_message, lookup, MappedNoodlesClient, NooValueMap,
 };
-use colabrodo_core::common::{
-    id_for_message, lookup, ComponentType, MessageArchType, NooValueMap,
-    ServerMessages,
+use colabrodo_common::client_communication::{
+    ClientIntroductionMessage, ClientInvokeMessage, ClientMessageID,
+};
+use colabrodo_common::common::{
+    ComponentType, MessageArchType, ServerMessageIDs,
 };
 
-use colabrodo_core::nooid::NooID;
+use colabrodo_common::nooid::NooID;
 use futures_util::{future, pin_mut, SinkExt, StreamExt};
 
 use tokio::runtime;
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 
-use colabrodo_core::client::ciborium::value::Value;
+use colabrodo_client::mapped_client::ciborium::value::Value;
 
 use clap::Parser;
 
@@ -136,7 +137,7 @@ impl CLIState {
 
     fn handle_component_message(
         &mut self,
-        message: &ServerMessages,
+        message: &ServerMessageIDs,
         content: NooValueMap,
     ) -> Option<()> {
         let index = message.component_type() as usize;
@@ -166,15 +167,15 @@ impl CLIState {
 
     fn handle_document_message(
         &mut self,
-        message: &ServerMessages,
+        message: &ServerMessageIDs,
         content: &NooValueMap,
     ) -> Option<()> {
         match message {
-            ServerMessages::MsgDocumentReset => {
+            ServerMessageIDs::MsgDocumentReset => {
                 self.clear();
                 Some(())
             }
-            ServerMessages::MsgDocumentUpdate => {
+            ServerMessageIDs::MsgDocumentUpdate => {
                 merge_values(content.to_vec(), &mut self.document);
                 Some(())
             }
@@ -184,15 +185,15 @@ impl CLIState {
 
     fn handle_special_message(
         &mut self,
-        message: &ServerMessages,
+        message: &ServerMessageIDs,
         content: &NooValueMap,
     ) -> Option<()> {
         match message {
-            ServerMessages::MsgSignalInvoke => {}
-            ServerMessages::MsgMethodReply => {
+            ServerMessageIDs::MsgSignalInvoke => {}
+            ServerMessageIDs::MsgMethodReply => {
                 self.handle_method_reply(content)?
             }
-            ServerMessages::MsgDocumentInitialized => {}
+            ServerMessageIDs::MsgDocumentInitialized => {}
             _ => {}
         }
 
@@ -216,12 +217,12 @@ impl CLIState {
     }
 }
 
-impl UserClientState for CLIState {
+impl MappedNoodlesClient for CLIState {
     fn handle_message(
         &mut self,
-        message: ServerMessages,
+        message: ServerMessageIDs,
         content: &NooValueMap,
-    ) -> Result<(), client::UserError> {
+    ) -> Result<(), mapped_client::UserError> {
         debug!("Message from server {}: {:?}", message, content);
 
         let ret = match message.component_type() {
@@ -235,7 +236,7 @@ impl UserClientState for CLIState {
         };
 
         if ret.is_none() {
-            return Err(client::UserError::InternalError);
+            return Err(mapped_client::UserError::InternalError);
         }
 
         Ok(())
@@ -565,7 +566,8 @@ fn call_method(
 
         let mut buffer = Vec::<u8>::new();
 
-        client::ciborium::ser::into_writer(&content, &mut buffer).unwrap();
+        mapped_client::ciborium::ser::into_writer(&content, &mut buffer)
+            .unwrap();
 
         // record this message
 

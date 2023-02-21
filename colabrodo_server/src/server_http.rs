@@ -1,5 +1,6 @@
 //! Tools to serve binary assets over http
 
+use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::{collections::HashMap, sync::Mutex};
@@ -136,12 +137,14 @@ async fn handle_request(
 
 /// Options for the asset server
 pub struct AssetServerOptions {
-    port: u16,
+    host: String,
 }
 
 impl Default for AssetServerOptions {
     fn default() -> Self {
-        Self { port: 50001 }
+        Self {
+            host: "0.0.0.0:50001".to_string(),
+        }
     }
 }
 
@@ -172,9 +175,9 @@ pub async fn run_asset_server(
     command_stream: mpsc::Receiver<AssetServerCommand>,
     command_replies: mpsc::Sender<AssetServerReply>,
 ) {
-    let addr = ([127, 0, 0, 1], options.port).into();
+    let addr: SocketAddr = options.host.parse().unwrap();
 
-    let state = Arc::new(Mutex::new(AssetStore::new(options.port)));
+    let state = Arc::new(Mutex::new(AssetStore::new(addr.port())));
 
     {
         let state = state.lock().unwrap();
@@ -315,7 +318,7 @@ impl AssetServerLink {
         match reply {
             AssetServerReply::Registered(rid, url) => {
                 assert_eq!(rid, id);
-                return url;
+                url
             }
             _ => {
                 panic!("Unexpected message!");
@@ -335,7 +338,7 @@ impl AssetServerLink {
         match reply {
             AssetServerReply::Registered(rid, url) => {
                 assert_eq!(rid, id);
-                return url;
+                url
             }
             _ => {
                 panic!("Unexpected message!");
@@ -360,9 +363,7 @@ impl AssetServerLink {
         let reply = self.send_command(AssetServerCommand::Shutdown);
 
         match reply {
-            AssetServerReply::ShuttingDown => {
-                return;
-            }
+            AssetServerReply::ShuttingDown => {}
             _ => {
                 panic!("Unexpected message!");
             }
@@ -373,9 +374,7 @@ impl AssetServerLink {
         let reply = self.send_command_async(AssetServerCommand::Shutdown).await;
 
         match reply {
-            AssetServerReply::ShuttingDown => {
-                return;
-            }
+            AssetServerReply::ShuttingDown => {}
             _ => {
                 panic!("Unexpected message!");
             }
@@ -425,8 +424,10 @@ mod tests {
     }
 
     async fn simple_structure_main() {
-        let (asset_server, mut link) =
-            make_asset_server(AssetServerOptions::default());
+        let (asset_server, mut link) = make_asset_server(AssetServerOptions {
+            host: "127.0.0.1:50001".to_string(),
+            ..Default::default()
+        });
 
         let new_id = create_asset_id();
 

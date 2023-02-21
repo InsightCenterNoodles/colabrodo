@@ -1,4 +1,5 @@
 use crate::{server_messages::*, server_state::ServerState};
+use colabrodo_common::types::*;
 
 #[derive(Debug, Default)]
 pub struct VertexSource {
@@ -45,9 +46,9 @@ where
 }
 
 pub struct IntermediateGeometryPatch {
-    pub attributes: Vec<GeometryAttribute>,
+    pub attributes: Vec<ServerGeometryAttribute>,
     pub vertex_count: u64,
-    pub indices: Option<GeometryIndex>,
+    pub indices: Option<ServerGeometryIndex>,
     pub patch_type: PrimitiveType,
 }
 
@@ -132,13 +133,15 @@ where
     });
 
     let vertex_view =
-        server_state.buffer_views.new_component(BufferViewState {
-            name: None,
-            source_buffer: buffer.clone(),
-            view_type: BufferViewType::Geometry,
-            offset: 0,
-            length: (v_byte_size * v_count) as u64,
-        });
+        server_state
+            .buffer_views
+            .new_component(ServerBufferViewState {
+                name: None,
+                source_buffer: buffer.clone(),
+                view_type: BufferViewType::Geometry,
+                offset: 0,
+                length: (v_byte_size * v_count) as u64,
+            });
 
     let mut ret = IntermediateGeometryPatch {
         attributes: Vec::default(),
@@ -151,7 +154,7 @@ where
 
     {
         // add in position
-        ret.attributes.push(GeometryAttribute {
+        ret.attributes.push(ServerGeometryAttribute {
             view: vertex_view.clone(),
             semantic: AttributeSemantic::Position,
             channel: None,
@@ -168,7 +171,7 @@ where
         let normal_offset = cursor;
         cursor += 3 * 4;
 
-        ret.attributes.push(GeometryAttribute {
+        ret.attributes.push(ServerGeometryAttribute {
             view: vertex_view.clone(),
             semantic: AttributeSemantic::Normal,
             channel: None,
@@ -185,7 +188,7 @@ where
         let texture_offset = cursor;
         cursor += 4;
 
-        ret.attributes.push(GeometryAttribute {
+        ret.attributes.push(ServerGeometryAttribute {
             view: vertex_view.clone(),
             semantic: AttributeSemantic::Texture,
             channel: None,
@@ -202,7 +205,7 @@ where
         let color_offset = cursor;
         //cursor += 1;
 
-        ret.attributes.push(GeometryAttribute {
+        ret.attributes.push(ServerGeometryAttribute {
             view: vertex_view,
             semantic: AttributeSemantic::Color,
             channel: None,
@@ -217,13 +220,16 @@ where
 
     // add in indicies
     if i_count != 0 {
-        let view = server_state.buffer_views.new_component(BufferViewState {
-            name: None,
-            source_buffer: buffer,
-            view_type: BufferViewType::Geometry,
-            offset: v_total_bytes as u64,
-            length: i_total_bytes as u64,
-        });
+        let view =
+            server_state
+                .buffer_views
+                .new_component(ServerBufferViewState {
+                    name: None,
+                    source_buffer: buffer,
+                    view_type: BufferViewType::Geometry,
+                    offset: v_total_bytes as u64,
+                    length: i_total_bytes as u64,
+                });
 
         ret.indices = Some(GeometryIndex {
             view,
@@ -242,8 +248,6 @@ pub fn create_mesh(
     source: VertexSource,
 ) -> IntermediateGeometryPatch {
     create_mesh_with(server_state, source, |data| {
-        crate::server_messages::BufferRepresentation::Inline(ByteBuff {
-            bytes: data,
-        })
+        crate::server_messages::BufferRepresentation::new_from_bytes(data)
     })
 }

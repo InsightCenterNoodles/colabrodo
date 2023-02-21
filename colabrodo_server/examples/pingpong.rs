@@ -1,8 +1,8 @@
-use colabrodo_core::server::{
+use colabrodo_server::server::{
     AsyncServer, DefaultCommand, NoInit, ServerOptions,
 };
-use colabrodo_core::server_messages::{ComponentReference, MethodArg};
-use colabrodo_core::{
+use colabrodo_server::server_messages::{ComponentReference, MethodArg};
+use colabrodo_server::{
     server_messages::MethodState,
     server_state::{InvokeObj, MethodResult, ServerState, UserServerState},
 };
@@ -43,7 +43,7 @@ impl UserServerState for PingPongServer {
     fn invoke(
         &mut self,
         method: ComponentReference<MethodState>,
-        context: colabrodo_core::server_state::InvokeObj,
+        context: colabrodo_server::server_state::InvokeObj,
         args: Vec<ciborium::value::Value>,
     ) -> MethodResult {
         let function = self.method_list.get(&method).unwrap();
@@ -57,7 +57,7 @@ impl AsyncServer for PingPongServer {
     type InitType = NoInit;
 
     fn new(
-        tx: colabrodo_core::server_state::CallbackPtr,
+        tx: colabrodo_server::server_state::CallbackPtr,
         _init: NoInit,
     ) -> Self {
         Self {
@@ -84,7 +84,7 @@ impl AsyncServer for PingPongServer {
         self.method_list.insert(ptr.clone(), ping_pong);
 
         self.state.update_document(
-            colabrodo_core::server_messages::DocumentUpdate {
+            colabrodo_server::server_messages::ServerDocumentUpdate {
                 methods_list: Some(vec![ptr]),
                 ..Default::default()
             },
@@ -101,6 +101,6 @@ impl AsyncServer for PingPongServer {
 async fn main() {
     println!("Connect clients to localhost:50000");
     let opts = ServerOptions::default();
-    colabrodo_core::server::server_main::<PingPongServer>(opts, NoInit {})
+    colabrodo_server::server::server_main::<PingPongServer>(opts, NoInit {})
         .await;
 }

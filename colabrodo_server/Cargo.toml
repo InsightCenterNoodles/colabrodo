@@ -1,12 +1,11 @@
 [package]
-name = "colabrodo_core"
+name = "colabrodo_server"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 colabrodo_macros = { path = "../colabrodo_macros" }
+colabrodo_common = { path = "../colabrodo_common" }
 thiserror = "1.0"
 ciborium = "0.2.0"
 ciborium-io = { version = "0.2.0", features = ["alloc"] }

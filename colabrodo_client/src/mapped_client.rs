@@ -1,11 +1,11 @@
+use ciborium::value;
 use thiserror::Error;
 
 use num_traits::FromPrimitive;
 
 pub use ciborium;
 
-use crate::common::{NooValueMap, ServerMessages};
-use crate::nooid::NooID;
+use colabrodo_common::{common::ServerMessageIDs, nooid::NooID};
 
 #[derive(Error, Debug)]
 pub enum ClientError {
@@ -20,10 +20,35 @@ pub enum UserError {
     InternalError,
 }
 
-pub trait UserClientState {
+pub type NooValueMap = Vec<(value::Value, value::Value)>;
+
+#[derive(Error, Debug)]
+pub enum ValueMapLookupError {
+    #[error("ID is missing from message map")]
+    IDMissing,
+}
+
+pub fn lookup<'a>(
+    v: &value::Value,
+    map: &'a NooValueMap,
+) -> Result<&'a value::Value, ValueMapLookupError> {
+    for e in map {
+        if &e.0 == v {
+            return Ok(&e.1);
+        }
+    }
+    Err(ValueMapLookupError::IDMissing)
+}
+
+pub fn id_for_message(map: &NooValueMap) -> Option<NooID> {
+    let id_name = value::Value::Text(String::from("id"));
+    NooID::from_value(lookup(&id_name, map).ok()?)
+}
+
+pub trait MappedNoodlesClient {
     fn handle_message(
         &mut self,
-        message: ServerMessages,
+        message: ServerMessageIDs,
         content: &NooValueMap,
     ) -> Result<(), UserError>;
 }
@@ -31,7 +56,7 @@ pub trait UserClientState {
 /// Handle a CBOR message from a server, sanitize, and then pass it along to
 /// some state
 ///
-pub fn handle_next<U: UserClientState>(
+pub fn handle_next<U: MappedNoodlesClient>(
     root: &ciborium::value::Value,
     state: &mut U,
 ) -> Result<(), ClientError> {
@@ -60,7 +85,7 @@ pub fn handle_next<U: UserClientState>(
 
         let mid = u32::try_from(mid.unwrap()).unwrap();
 
-        let msg: Option<ServerMessages> = FromPrimitive::from_u32(mid);
+        let msg: Option<ServerMessageIDs> = FromPrimitive::from_u32(mid);
 
         if msg.is_none() {
             return Err(ClientError::InvalidRootMessage(
@@ -82,18 +107,4 @@ pub fn handle_next<U: UserClientState>(
     }
 
     Ok(())
-}
-
-pub trait ComponentListHandler {
-    fn insert(id: NooID, values: NooValueMap);
-    fn update(id: NooID, values: NooValueMap);
-    fn delete(id: NooID, values: NooValueMap);
-}
-
-pub struct EmptyList {}
-
-impl ComponentListHandler for EmptyList {
-    fn insert(_id: NooID, _values: NooValueMap) {}
-    fn update(_id: NooID, _values: NooValueMap) {}
-    fn delete(_id: NooID, _values: NooValueMap) {}
 }

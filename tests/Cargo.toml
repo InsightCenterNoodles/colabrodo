@@ -1,0 +1,16 @@
+[package]
+name = "tests"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dev-dependencies]
+colabrodo_client = { path = "../colabrodo_client" }
+colabrodo_server = { path = "../colabrodo_server" }
+colabrodo_common = { path = "../colabrodo_common" }
+log = "0.4"
+env_logger = "0.10.0"
+
+[[test]]
+name = "method_test"
+path = "method_test.rs"
