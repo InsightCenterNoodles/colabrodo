@@ -297,7 +297,7 @@ fn server_state_loop<T>(
                 // handle a message from a client, and write any replies
                 // to the client's output queue
                 if log_enabled!(log::Level::Debug) {
-                    print!("RECV:");
+                    log::debug!("RECV:");
                     debug_cbor(&client_msg.1);
                 }
                 let result = server_state::handle_next(
@@ -305,7 +305,7 @@ fn server_state_loop<T>(
                     client_msg.1,
                     |out| {
                         if log_enabled!(log::Level::Debug) {
-                            print!("SEND TO CLIENT:");
+                            log::debug!("SEND TO CLIENT:");
                             debug_cbor(&out);
                         }
                         client_msg.0.blocking_send(out).unwrap();

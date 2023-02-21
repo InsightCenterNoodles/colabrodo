@@ -238,7 +238,7 @@ mod tests {
         let read: ClientInvokeMessage =
             ciborium::de::from_reader(buffer.as_slice()).unwrap();
 
-        println!("{read:?}");
+        //println!("{read:?}");
 
         assert_eq!(m, read);
     }
