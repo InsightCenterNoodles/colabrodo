@@ -47,8 +47,8 @@ fn ping_pong(
 }
 
 impl UserServerState for PingPongServer {
-    fn mut_state(&mut self) -> &ServerState {
-        return &self.state;
+    fn mut_state(&mut self) -> &mut ServerState {
+        return &mut self.state;
     }
 
     fn state(&self) -> &ServerState {

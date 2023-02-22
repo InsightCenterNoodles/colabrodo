@@ -577,7 +577,7 @@ pub type MethodResult = Result<value::Value, MethodException>;
 ///
 /// Users should have their own struct that conforms to this specification, as it is required for message handling (see [`handle_next`]).
 pub trait UserServerState {
-    fn mut_state(&mut self) -> &ServerState;
+    fn mut_state(&mut self) -> &mut ServerState;
     fn state(&self) -> &ServerState;
     fn invoke(
         &mut self,

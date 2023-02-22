@@ -117,8 +117,8 @@ struct CubeServer {
 /// All server states should use this trait...
 impl UserServerState for CubeServer {
     /// Some code will need mutable access to the core server state
-    fn mut_state(&mut self) -> &ServerState {
-        &self.state
+    fn mut_state(&mut self) -> &mut ServerState {
+        &mut self.state
     }
 
     /// Some code will need non-mutable access to the core server state

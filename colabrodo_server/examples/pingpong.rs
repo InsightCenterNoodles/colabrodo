@@ -32,8 +32,8 @@ fn ping_pong(
 
 /// All server states should use this trait...
 impl UserServerState for PingPongServer {
-    fn mut_state(&mut self) -> &ServerState {
-        return &self.state;
+    fn mut_state(&mut self) -> &mut ServerState {
+        return &mut self.state;
     }
 
     fn state(&self) -> &ServerState {
