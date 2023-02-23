@@ -1,0 +1,16 @@
+[package]
+name = "colabrodo_common"
+version = "0.2.0"
+edition = "2021"
+
+[dependencies]
+colabrodo_macros = { path = "../colabrodo_macros" }
+ciborium = "0.2.0"
+ciborium-io = { version = "0.2.0", features = ["alloc"] }
+serde = "1.0.152"
+serde_with = "2.2.0"
+log = "0.4"
+thiserror = "1.0"
+num-traits = "0.2"
+num-derive = "0.3"
+

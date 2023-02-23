@@ -1,0 +1,232 @@
+use crate::components::*;
+use colabrodo_common::{
+    common::ServerMessageIDs,
+    components::{LightState, LightStateUpdatable},
+    nooid,
+    server_communication::{DocumentInit, DocumentReset, MessageMethodReply},
+    types::CommonDeleteMessage,
+};
+use num_traits::FromPrimitive;
+use serde::{de::Visitor, Deserialize};
+
+pub struct ServerRootMessage {
+    pub list: Vec<FromServer>,
+}
+
+struct ServerRootMessageVisitor;
+
+fn push_next<'de, A>(id: ServerMessageIDs, seq: &mut A) -> Option<FromServer>
+where
+    A: serde::de::SeqAccess<'de>,
+{
+    match id {
+        ServerMessageIDs::MsgMethodCreate => {
+            Some(FromServer::MsgMethodCreate(seq.next_element().ok()??))
+        }
+        ServerMessageIDs::MsgMethodDelete => {
+            Some(FromServer::MsgMethodDelete(seq.next_element().ok()??))
+        }
+        ServerMessageIDs::MsgSignalCreate => {
+            Some(FromServer::MsgSignalCreate(seq.next_element().ok()??))
+        }
+        ServerMessageIDs::MsgSignalDelete => {
+            Some(FromServer::MsgSignalDelete(seq.next_element().ok()??))
+        }
+        ServerMessageIDs::MsgEntityCreate => {
+            Some(FromServer::MsgEntityCreate(seq.next_element().ok()??))
+        }
+        ServerMessageIDs::MsgEntityUpdate => {
+            Some(FromServer::MsgEntityUpdate(seq.next_element().ok()??))
+        }
+        ServerMessageIDs::MsgEntityDelete => {
+            Some(FromServer::MsgEntityDelete(seq.next_element().ok()??))
+        }
+        ServerMessageIDs::MsgPlotCreate => {
+            Some(FromServer::MsgPlotCreate(seq.next_element().ok()??))
+        }
+        ServerMessageIDs::MsgPlotUpdate => {
+            Some(FromServer::MsgPlotUpdate(seq.next_element().ok()??))
+        }
+        ServerMessageIDs::MsgPlotDelete => {
+            Some(FromServer::MsgPlotDelete(seq.next_element().ok()??))
+        }
+        ServerMessageIDs::MsgBufferCreate => {
+            Some(FromServer::MsgBufferCreate(seq.next_element().ok()??))
+        }
+        ServerMessageIDs::MsgBufferDelete => {
+            Some(FromServer::MsgBufferDelete(seq.next_element().ok()??))
+        }
+        ServerMessageIDs::MsgBufferViewCreate => {
+            Some(FromServer::MsgBufferViewCreate(seq.next_element().ok()??))
+        }
+        ServerMessageIDs::MsgBufferViewDelete => {
+            Some(FromServer::MsgBufferViewDelete(seq.next_element().ok()??))
+        }
+        ServerMessageIDs::MsgMaterialCreate => {
+            Some(FromServer::MsgMaterialCreate(seq.next_element().ok()??))
+        }
+        ServerMessageIDs::MsgMaterialUpdate => {
+            Some(FromServer::MsgMaterialUpdate(seq.next_element().ok()??))
+        }
+        ServerMessageIDs::MsgMaterialDelete => {
+            Some(FromServer::MsgMaterialDelete(seq.next_element().ok()??))
+        }
+        ServerMessageIDs::MsgImageCreate => {
+            Some(FromServer::MsgImageCreate(seq.next_element().ok()??))
+        }
+        ServerMessageIDs::MsgImageDelete => {
+            Some(FromServer::MsgImageDelete(seq.next_element().ok()??))
+        }
+        ServerMessageIDs::MsgTextureCreate => {
+            Some(FromServer::MsgTextureCreate(seq.next_element().ok()??))
+        }
+        ServerMessageIDs::MsgTextureDelete => {
+            Some(FromServer::MsgTextureDelete(seq.next_element().ok()??))
+        }
+        ServerMessageIDs::MsgSamplerCreate => {
+            Some(FromServer::MsgSamplerCreate(seq.next_element().ok()??))
+        }
+        ServerMessageIDs::MsgSamplerDelete => {
+            Some(FromServer::MsgSamplerDelete(seq.next_element().ok()??))
+        }
+        ServerMessageIDs::MsgLightCreate => {
+            Some(FromServer::MsgLightCreate(seq.next_element().ok()??))
+        }
+        ServerMessageIDs::MsgLightUpdate => {
+            Some(FromServer::MsgLightUpdate(seq.next_element().ok()??))
+        }
+        ServerMessageIDs::MsgLightDelete => {
+            Some(FromServer::MsgLightDelete(seq.next_element().ok()??))
+        }
+        ServerMessageIDs::MsgGeometryCreate => {
+            Some(FromServer::MsgGeometryCreate(seq.next_element().ok()??))
+        }
+        ServerMessageIDs::MsgGeometryDelete => {
+            Some(FromServer::MsgGeometryDelete(seq.next_element().ok()??))
+        }
+        ServerMessageIDs::MsgTableCreate => {
+            Some(FromServer::MsgTableCreate(seq.next_element().ok()??))
+        }
+        ServerMessageIDs::MsgTableUpdate => {
+            Some(FromServer::MsgTableUpdate(seq.next_element().ok()??))
+        }
+        ServerMessageIDs::MsgTableDelete => {
+            Some(FromServer::MsgTableDelete(seq.next_element().ok()??))
+        }
+        ServerMessageIDs::MsgDocumentUpdate => {
+            Some(FromServer::MsgDocumentUpdate(seq.next_element().ok()??))
+        }
+        ServerMessageIDs::MsgDocumentReset => {
+            Some(FromServer::MsgDocumentReset(seq.next_element().ok()??))
+        }
+        ServerMessageIDs::MsgSignalInvoke => {
+            Some(FromServer::MsgSignalInvoke(seq.next_element().ok()??))
+        }
+        ServerMessageIDs::MsgMethodReply => {
+            Some(FromServer::MsgMethodReply(seq.next_element().ok()??))
+        }
+        ServerMessageIDs::MsgDocumentInitialized => Some(
+            FromServer::MsgDocumentInitialized(seq.next_element().ok()??),
+        ),
+        ServerMessageIDs::Unknown => None,
+    }
+}
+
+impl<'de> Visitor<'de> for ServerRootMessageVisitor {
+    type Value = ServerRootMessage;
+
+    fn expecting(
+        &self,
+        formatter: &mut std::fmt::Formatter,
+    ) -> std::fmt::Result {
+        write!(formatter, "An interleaved array of id and content")
+    }
+
+    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+    where
+        A: serde::de::SeqAccess<'de>,
+    {
+        let mut ret = ServerRootMessage { list: Vec::new() };
+
+        loop {
+            let id: Option<u32> = seq.next_element()?;
+
+            if id.is_none() {
+                break;
+            }
+
+            let id: ServerMessageIDs =
+                match <ServerMessageIDs as FromPrimitive>::from_u32(id.unwrap())
+                {
+                    Some(x) => x,
+                    None => break,
+                };
+
+            match push_next(id, &mut seq) {
+                Some(x) => ret.list.push(x),
+                None => break,
+            }
+        }
+
+        Ok(ret)
+    }
+}
+
+impl<'de> Deserialize<'de> for ServerRootMessage {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        deserializer.deserialize_seq(ServerRootMessageVisitor)
+    }
+}
+
+// ============================================================================
+
+#[derive(Debug, Deserialize)]
+pub struct ClientCommonTagged<Nested> {
+    pub id: nooid::NooID,
+
+    #[serde(flatten)]
+    pub content: Nested,
+}
+
+#[allow(clippy::enum_variant_names)] // These all start wtih Msg to match spec
+pub enum FromServer {
+    MsgMethodCreate(ClientCommonTagged<MethodState>),
+    MsgMethodDelete(CommonDeleteMessage),
+    MsgSignalCreate(ClientCommonTagged<SignalState>),
+    MsgSignalDelete(CommonDeleteMessage),
+    MsgEntityCreate(ClientCommonTagged<ClientEntityState>),
+    MsgEntityUpdate(ClientCommonTagged<ClientEntityUpdate>),
+    MsgEntityDelete(CommonDeleteMessage),
+    MsgPlotCreate(ClientCommonTagged<ClientPlotState>),
+    MsgPlotUpdate(ClientCommonTagged<ClientPlotUpdate>),
+    MsgPlotDelete(CommonDeleteMessage),
+    MsgBufferCreate(ClientCommonTagged<BufferState>),
+    MsgBufferDelete(CommonDeleteMessage),
+    MsgBufferViewCreate(ClientCommonTagged<ClientBufferViewState>),
+    MsgBufferViewDelete(CommonDeleteMessage),
+    MsgMaterialCreate(ClientCommonTagged<ClientMaterialState>),
+    MsgMaterialUpdate(ClientCommonTagged<ClientMaterialUpdate>),
+    MsgMaterialDelete(CommonDeleteMessage),
+    MsgImageCreate(ClientCommonTagged<ClientImageState>),
+    MsgImageDelete(CommonDeleteMessage),
+    MsgTextureCreate(ClientCommonTagged<ClientTextureState>),
+    MsgTextureDelete(CommonDeleteMessage),
+    MsgSamplerCreate(ClientCommonTagged<SamplerState>),
+    MsgSamplerDelete(CommonDeleteMessage),
+    MsgLightCreate(ClientCommonTagged<LightState>),
+    MsgLightUpdate(ClientCommonTagged<LightStateUpdatable>),
+    MsgLightDelete(ClientCommonTagged<CommonDeleteMessage>),
+    MsgGeometryCreate(ClientCommonTagged<ClientGeometryState>),
+    MsgGeometryDelete(CommonDeleteMessage),
+    MsgTableCreate(ClientCommonTagged<ClientTableState>),
+    MsgTableUpdate(ClientCommonTagged<ClientTableUpdate>),
+    MsgTableDelete(CommonDeleteMessage),
+    MsgDocumentUpdate(ClientDocumentUpdate),
+    MsgDocumentReset(DocumentReset),
+    MsgSignalInvoke(ClientMessageSignalInvoke),
+    MsgMethodReply(MessageMethodReply),
+    MsgDocumentInitialized(DocumentInit),
+}

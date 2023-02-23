@@ -1,13 +1,15 @@
 [package]
 name = "colabrodo_cli"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 
 [dependencies]
-colabrodo_core = { path = "../colabrodo_core" }
+colabrodo_client = { path = "../colabrodo_client" }
+colabrodo_server = { path = "../colabrodo_server" }
+colabrodo_common = { path = "../colabrodo_common" }
 clap = { version = "4.0", features = ["derive"] }
 log = "0.4"
-simplelog = "0.12"
+env_logger = "0.10.0"
 requestty = "0.5.0"
 futures-util = "0.3.24"
 futures-channel = "0.3.24"

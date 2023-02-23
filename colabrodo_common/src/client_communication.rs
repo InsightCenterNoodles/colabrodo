@@ -4,7 +4,7 @@ use serde::{ser::SerializeStruct, Deserialize, Serialize};
 
 use crate::nooid::NooID;
 
-pub trait NoodlesClientMessageID {
+pub trait ClientMessageID {
     fn message_id() -> u32;
 }
 
@@ -13,7 +13,7 @@ pub struct ClientIntroductionMessage {
     pub client_name: String,
 }
 
-impl NoodlesClientMessageID for ClientIntroductionMessage {
+impl ClientMessageID for ClientIntroductionMessage {
     fn message_id() -> u32 {
         0
     }
@@ -90,6 +90,8 @@ impl<'de> Deserialize<'de> for InvokeIDType {
     }
 }
 
+// ============================================================================
+
 #[serde_with::skip_serializing_none]
 #[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct ClientInvokeMessage {
@@ -99,11 +101,13 @@ pub struct ClientInvokeMessage {
     pub args: Vec<Value>,
 }
 
-impl NoodlesClientMessageID for ClientInvokeMessage {
+impl ClientMessageID for ClientInvokeMessage {
     fn message_id() -> u32 {
         1
     }
 }
+
+// ============================================================================
 
 pub enum AllClientMessages {
     Intro(ClientIntroductionMessage),
@@ -196,6 +200,7 @@ impl<'de> Deserialize<'de> for ClientRootMessage {
     }
 }
 
+// ============================================================================
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -230,11 +235,11 @@ mod tests {
 
         ciborium::ser::into_writer(&m, &mut buffer).unwrap();
 
-        //println!("{buffer:02X?}");
-
         let read: ClientInvokeMessage =
             ciborium::de::from_reader(buffer.as_slice()).unwrap();
 
-        assert!(m == read);
+        //println!("{read:?}");
+
+        assert_eq!(m, read);
     }
 }

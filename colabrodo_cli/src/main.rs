@@ -1,34 +1,36 @@
 use std::collections::HashMap;
+use std::env;
 use std::io::Write;
 use std::process::abort;
 use std::sync::{Arc, Mutex};
 
-use colabrodo_core::client::ciborium::{de, ser, value};
-use colabrodo_core::client::{self, handle_next, UserClientState};
-use colabrodo_core::client_messages::{
-    ClientIntroductionMessage, ClientInvokeMessage, NoodlesClientMessageID,
+use colabrodo_client::mapped_client::ciborium::{de, ser, value};
+use colabrodo_client::mapped_client::{
+    self, handle_next, id_for_message, lookup, MappedNoodlesClient, NooValueMap,
 };
-use colabrodo_core::common::{
-    id_for_message, lookup, ComponentType, MessageArchType, NooValueMap,
-    ServerMessages,
+use colabrodo_common::client_communication::{
+    ClientIntroductionMessage, ClientInvokeMessage, ClientMessageID,
+};
+use colabrodo_common::common::{
+    ComponentType, MessageArchType, ServerMessageIDs,
 };
 
-use colabrodo_core::nooid::NooID;
+use colabrodo_common::nooid::NooID;
 use futures_util::{future, pin_mut, SinkExt, StreamExt};
 
 use tokio::runtime;
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 
-use colabrodo_core::client::ciborium::value::Value;
+use colabrodo_client::mapped_client::ciborium::value::Value;
 
 use clap::Parser;
 
+use env_logger;
 use log::{debug, error, info, warn};
-use simplelog::TermLogger;
 
 #[derive(Parser, Debug)]
 struct CLIArgs {
-    /// server
+    /// Server hostname
     url: String,
 
     /// Debug mode
@@ -38,6 +40,7 @@ struct CLIArgs {
 
 type NooHashMap = HashMap<String, Value>;
 
+/// Convert the linear representation of a dictionary to a mapped representation
 fn convert(v: NooValueMap) -> NooHashMap {
     let mut ret: NooHashMap = NooHashMap::new();
     for (key, value) in v {
@@ -50,6 +53,7 @@ fn convert(v: NooValueMap) -> NooHashMap {
     ret
 }
 
+/// A simple container for component data
 #[derive(Default)]
 struct ComponentList {
     components: HashMap<NooID, NooHashMap>,
@@ -85,7 +89,7 @@ impl ComponentList {
     fn delete(&mut self, id: NooID, _: NooValueMap) -> Option<()> {
         let ret = self.components.remove(&id);
         if ret.is_none() {
-            println!("Asked to delete a component that does not exist!");
+            error!("Asked to delete a component that does not exist!");
             return None;
         }
         Some(())
@@ -136,7 +140,7 @@ impl CLIState {
 
     fn handle_component_message(
         &mut self,
-        message: &ServerMessages,
+        message: &ServerMessageIDs,
         content: NooValueMap,
     ) -> Option<()> {
         let index = message.component_type() as usize;
@@ -145,7 +149,7 @@ impl CLIState {
 
         let id = id_for_message(&content).unwrap();
 
-        println!("Message: {message} on {id}");
+        debug!("Message: {message} on {id}");
 
         let result = match message.arch_type() {
             MessageArchType::Create => {
@@ -157,7 +161,7 @@ impl CLIState {
         };
 
         if result.is_none() {
-            println!("Unable to handle message: {message} on {id}");
+            debug!("Unable to handle message: {message} on {id}");
             abort()
         }
 
@@ -166,15 +170,15 @@ impl CLIState {
 
     fn handle_document_message(
         &mut self,
-        message: &ServerMessages,
+        message: &ServerMessageIDs,
         content: &NooValueMap,
     ) -> Option<()> {
         match message {
-            ServerMessages::MsgDocumentReset => {
+            ServerMessageIDs::MsgDocumentReset => {
                 self.clear();
                 Some(())
             }
-            ServerMessages::MsgDocumentUpdate => {
+            ServerMessageIDs::MsgDocumentUpdate => {
                 merge_values(content.to_vec(), &mut self.document);
                 Some(())
             }
@@ -184,15 +188,15 @@ impl CLIState {
 
     fn handle_special_message(
         &mut self,
-        message: &ServerMessages,
+        message: &ServerMessageIDs,
         content: &NooValueMap,
     ) -> Option<()> {
         match message {
-            ServerMessages::MsgSignalInvoke => {}
-            ServerMessages::MsgMethodReply => {
+            ServerMessageIDs::MsgSignalInvoke => {}
+            ServerMessageIDs::MsgMethodReply => {
                 self.handle_method_reply(content)?
             }
-            ServerMessages::MsgDocumentInitialized => {}
+            ServerMessageIDs::MsgDocumentInitialized => {}
             _ => {}
         }
 
@@ -200,8 +204,7 @@ impl CLIState {
     }
 
     fn handle_method_reply(&mut self, content: &NooValueMap) -> Option<()> {
-        let reply_id =
-            lookup(&Value::Text("invoke_id".to_string()), content).ok()?;
+        let reply_id = lookup(&Value::Text("invoke_id".to_string()), content)?;
         let reply_id = reply_id.as_text()?.to_string();
 
         let reply = &self.methods_in_flight.get(&reply_id);
@@ -216,12 +219,12 @@ impl CLIState {
     }
 }
 
-impl UserClientState for CLIState {
+impl MappedNoodlesClient for CLIState {
     fn handle_message(
         &mut self,
-        message: ServerMessages,
+        message: ServerMessageIDs,
         content: &NooValueMap,
-    ) -> Result<(), client::UserError> {
+    ) -> Result<(), mapped_client::UserError> {
         debug!("Message from server {}: {:?}", message, content);
 
         let ret = match message.component_type() {
@@ -235,7 +238,7 @@ impl UserClientState for CLIState {
         };
 
         if ret.is_none() {
-            return Err(client::UserError::InternalError);
+            return Err(mapped_client::UserError::InternalError);
         }
 
         Ok(())
@@ -245,16 +248,15 @@ impl UserClientState for CLIState {
 async fn cli_main() {
     let cli_args = CLIArgs::parse();
 
-    TermLogger::init(
-        match cli_args.debug {
-            false => log::LevelFilter::Info,
-            true => log::LevelFilter::Debug,
-        },
-        simplelog::Config::default(),
-        simplelog::TerminalMode::Mixed,
-        simplelog::ColorChoice::Auto,
-    )
-    .unwrap();
+    if env::var("RUST_LOG").is_err() {
+        env::set_var("RUST_LOG", "info")
+    }
+
+    if cli_args.debug {
+        env::set_var("RUST_LOG", "debug")
+    }
+
+    env_logger::init();
 
     let server = cli_args.url;
 
@@ -489,7 +491,7 @@ fn extract_method_arg_names(item: &NooHashMap) -> Option<Vec<String>> {
         };
 
         let name_value = match lookup(&name_name, arg_info) {
-            Ok(value) => value,
+            Some(value) => value,
             _ => continue,
         };
 
@@ -565,7 +567,8 @@ fn call_method(
 
         let mut buffer = Vec::<u8>::new();
 
-        client::ciborium::ser::into_writer(&content, &mut buffer).unwrap();
+        mapped_client::ciborium::ser::into_writer(&content, &mut buffer)
+            .unwrap();
 
         // record this message
 
