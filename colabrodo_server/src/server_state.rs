@@ -68,15 +68,6 @@ where
             std::any::type_name::<T>(),
             self.id
         );
-        // write the delete message
-        let write_tuple = (
-            T::delete_message_id(),
-            colabrodo_common::types::CommonDeleteMessage { id: self.id },
-        );
-
-        let mut recorder = Recorder::default();
-
-        ciborium::ser::into_writer(&write_tuple, &mut recorder.data).unwrap();
 
         // now inform the host list what has happened
         // this is tricky if, through our delete, we happen to trigger another delete from this list. so we want to move things out first, to release our borrow on the host. We can then let the T go out of scope outside of that borrow.
@@ -84,9 +75,6 @@ where
 
         {
             let mut h = self.host.borrow_mut();
-            if h.broadcast.send(Output::Broadcast(recorder.data)).is_ok() {
-                // not sending a message could just mean that the broadcast pipe has been shut down.
-            }
             _holder = h.return_id(self.id);
         }
 
@@ -253,6 +241,15 @@ impl<T: Serialize + ComponentMessageIDs + Debug> ServerComponentList<T> {
     ///
     /// The reason for this is if we delete an item from a list that triggers (through rc ptrs) a delete from the same list. We need to move the reference out of here so calling code can safely release their borrow before dropping again.
     fn return_id(&mut self, id: NooID) -> Option<T> {
+        // write the delete message
+        let recorder = Recorder::record(
+            T::delete_message_id() as u32,
+            &colabrodo_common::types::CommonDeleteMessage { id },
+        );
+
+        // not sending a message could just mean that the broadcast pipe has been shut down, so we ignore it
+        let _err = self.broadcast.send(Output::Broadcast(recorder.data));
+
         self.id_list.remove(&id);
         self.free_list.push(id);
         self.list.remove(&id)
@@ -274,17 +271,14 @@ impl<T: Serialize + ComponentMessageIDs + Debug> ServerComponentList<T> {
 
         // Use a pack here to encode the message id and the message.
         // TODO: Figure out a way we can pack many messages into one.
-        let write_tuple = (
+
+        let recorder = Recorder::record(
             T::create_message_id() as u32,
-            Bouncer {
+            &Bouncer {
                 id: new_id,
                 content: &new_t,
             },
         );
-
-        let mut recorder = Recorder::default();
-
-        ciborium::ser::into_writer(&write_tuple, &mut recorder.data).unwrap();
 
         self.send_to_broadcast(recorder);
 
@@ -321,6 +315,10 @@ impl<T: Serialize + ComponentMessageIDs + Debug> ServerComponentList<T> {
             None => None,
             Some(x) => x.upgrade().map(ComponentReference::new),
         }
+    }
+
+    pub fn inspect(&self, id: NooID) -> Option<&T> {
+        self.list.get(&id)
     }
 
     /// Function that only exists to help serialize all items in this list
@@ -371,6 +369,14 @@ where
     /// Discover a component by its ID. If the ID is invalid, returns None
     pub fn resolve(&self, id: NooID) -> Option<ComponentReference<T>> {
         self.list.borrow().resolve(id)
+    }
+
+    /// Inspect the contents of a component
+    pub fn inspect<F, R>(&self, id: NooID, f: F) -> Option<R>
+    where
+        F: FnOnce(&T) -> R,
+    {
+        self.list.borrow().inspect(id).map(f)
     }
 
     /// Ask how many components are in this list
@@ -490,11 +496,10 @@ impl ServerState {
 
     /// Update the document's methods and signals
     pub fn update_document(&mut self, update: ServerDocumentUpdate) {
-        let msg_tuple = (ServerMessageIDs::MsgDocumentUpdate as u32, &update);
-
-        let mut recorder = Recorder::default();
-
-        ciborium::ser::into_writer(&msg_tuple, &mut recorder.data).unwrap();
+        let recorder = Recorder::record(
+            ServerMessageIDs::MsgDocumentUpdate as u32,
+            &update,
+        );
 
         self.tx.send(Output::Broadcast(recorder.data)).unwrap();
 
@@ -513,18 +518,14 @@ impl ServerState {
         context: Option<ServerSignalInvokeObj>,
         arguments: Vec<value::Value>,
     ) {
-        let msg_tuple = (
+        let recorder = Recorder::record(
             ServerMessageIDs::MsgSignalInvoke as u32,
-            MessageSignalInvoke {
+            &MessageSignalInvoke {
                 id: signals.id(),
                 context,
                 signal_data: arguments,
             },
         );
-
-        let mut recorder = Recorder::default();
-
-        ciborium::ser::into_writer(&msg_tuple, &mut recorder.data).unwrap();
 
         self.tx.send(Output::Broadcast(recorder.data)).unwrap();
     }
@@ -703,12 +704,11 @@ where
                 // do the right thing here and make one big list of messages
                 // to send back
                 log::debug!("Client joined, providing initial state");
-                let mut recorder = Recorder::default();
+                let mut recorder = Vec::<u8>::new();
 
-                ciborium::ser::into_writer(&c.state(), &mut recorder.data)
-                    .unwrap();
+                ciborium::ser::into_writer(&c.state(), &mut recorder).unwrap();
 
-                write(recorder.data);
+                write(recorder);
             }
             AllClientMessages::Invoke(invoke) => {
                 log::debug!("Next message is invoke...");
@@ -737,12 +737,10 @@ where
                     }
 
                     // now send it back
-                    let msg = (ServerMessageIDs::MsgMethodReply, reply);
-
-                    let mut recorder = Recorder::default();
-
-                    ciborium::ser::into_writer(&msg, &mut recorder.data)
-                        .unwrap();
+                    let recorder = Recorder::record(
+                        ServerMessageIDs::MsgMethodReply as u32,
+                        &reply,
+                    );
 
                     write(recorder.data);
                 }
@@ -926,6 +924,28 @@ mod tests {
                 },
             });
         }
+
+        while let Ok(_msg) = rx.try_recv() {}
+    }
+
+    #[test]
+    fn check_lookup_inspect() {
+        let (tx, rx) = std::sync::mpsc::channel();
+
+        let mut state = ServerState::new(tx);
+
+        let a = state.entities.new_component(ServerEntityState {
+            name: Some("A".to_string()),
+            mutable: ServerEntityStateUpdatable {
+                tags: Some(vec!["item_a".to_string()]),
+                ..Default::default()
+            },
+        });
+
+        state.entities.inspect(a.id(), |e| {
+            assert_eq!(e.name.as_ref().unwrap(), "A");
+            assert_eq!(e.mutable.tags, Some(vec!["item_a".to_string()]));
+        });
 
         while let Ok(_msg) = rx.try_recv() {}
     }

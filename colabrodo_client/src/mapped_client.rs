@@ -1,3 +1,7 @@
+//! Library tooling for simple clients that operate only on hash maps.
+//!
+//! This kind of client is perfect for simple state inspection and manipulation.
+
 use ciborium::value;
 use thiserror::Error;
 
@@ -7,6 +11,7 @@ pub use ciborium;
 
 use colabrodo_common::{common::ServerMessageIDs, nooid::NooID};
 
+/// Error to represent a message processing error
 #[derive(Error, Debug)]
 pub enum ClientError {
     #[error("Decode error")]
@@ -20,31 +25,29 @@ pub enum UserError {
     InternalError,
 }
 
+/// Dictionaries are represented by the decoding library we use by a list of keys and values.
 pub type NooValueMap = Vec<(value::Value, value::Value)>;
 
-#[derive(Error, Debug)]
-pub enum ValueMapLookupError {
-    #[error("ID is missing from message map")]
-    IDMissing,
-}
-
+/// Look up a value in a map
 pub fn lookup<'a>(
     v: &value::Value,
     map: &'a NooValueMap,
-) -> Result<&'a value::Value, ValueMapLookupError> {
+) -> Option<&'a value::Value> {
     for e in map {
         if &e.0 == v {
-            return Ok(&e.1);
+            return Some(&e.1);
         }
     }
-    Err(ValueMapLookupError::IDMissing)
+    None
 }
 
+/// Extract the id from a message
 pub fn id_for_message(map: &NooValueMap) -> Option<NooID> {
     let id_name = value::Value::Text(String::from("id"));
-    NooID::from_value(lookup(&id_name, map).ok()?)
+    NooID::from_value(lookup(&id_name, map)?)
 }
 
+/// Trait to describe a simple client
 pub trait MappedNoodlesClient {
     fn handle_message(
         &mut self,

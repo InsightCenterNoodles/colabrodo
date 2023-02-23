@@ -4,7 +4,7 @@ use serde::{de::Visitor, Deserialize, Serialize};
 
 use crate::nooid::NooID;
 
-#[derive(Debug, Deserialize, Serialize, Default)]
+#[derive(Debug, Copy, Clone, Deserialize, Serialize, Default)]
 pub enum Format {
     #[default]
     U8,
@@ -49,6 +49,10 @@ pub struct ByteBuff(Vec<u8>);
 impl ByteBuff {
     pub fn new(data: Vec<u8>) -> Self {
         Self(data)
+    }
+
+    pub fn bytes(&self) -> &[u8] {
+        &self.0.as_slice()
     }
 }
 

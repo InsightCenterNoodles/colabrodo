@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::env;
 use std::io::Write;
 use std::process::abort;
 use std::sync::{Arc, Mutex};
@@ -24,12 +25,12 @@ use colabrodo_client::mapped_client::ciborium::value::Value;
 
 use clap::Parser;
 
+use env_logger;
 use log::{debug, error, info, warn};
-use simplelog::TermLogger;
 
 #[derive(Parser, Debug)]
 struct CLIArgs {
-    /// server
+    /// Server hostname
     url: String,
 
     /// Debug mode
@@ -39,6 +40,7 @@ struct CLIArgs {
 
 type NooHashMap = HashMap<String, Value>;
 
+/// Convert the linear representation of a dictionary to a mapped representation
 fn convert(v: NooValueMap) -> NooHashMap {
     let mut ret: NooHashMap = NooHashMap::new();
     for (key, value) in v {
@@ -51,6 +53,7 @@ fn convert(v: NooValueMap) -> NooHashMap {
     ret
 }
 
+/// A simple container for component data
 #[derive(Default)]
 struct ComponentList {
     components: HashMap<NooID, NooHashMap>,
@@ -201,8 +204,7 @@ impl CLIState {
     }
 
     fn handle_method_reply(&mut self, content: &NooValueMap) -> Option<()> {
-        let reply_id =
-            lookup(&Value::Text("invoke_id".to_string()), content).ok()?;
+        let reply_id = lookup(&Value::Text("invoke_id".to_string()), content)?;
         let reply_id = reply_id.as_text()?.to_string();
 
         let reply = &self.methods_in_flight.get(&reply_id);
@@ -246,16 +248,15 @@ impl MappedNoodlesClient for CLIState {
 async fn cli_main() {
     let cli_args = CLIArgs::parse();
 
-    TermLogger::init(
-        match cli_args.debug {
-            false => log::LevelFilter::Info,
-            true => log::LevelFilter::Debug,
-        },
-        simplelog::Config::default(),
-        simplelog::TerminalMode::Mixed,
-        simplelog::ColorChoice::Auto,
-    )
-    .unwrap();
+    if env::var("RUST_LOG").is_err() {
+        env::set_var("RUST_LOG", "info")
+    }
+
+    if cli_args.debug {
+        env::set_var("RUST_LOG", "debug")
+    }
+
+    env_logger::init();
 
     let server = cli_args.url;
 
@@ -490,7 +491,7 @@ fn extract_method_arg_names(item: &NooHashMap) -> Option<Vec<String>> {
         };
 
         let name_value = match lookup(&name_name, arg_info) {
-            Ok(value) => value,
+            Some(value) => value,
             _ => continue,
         };
 

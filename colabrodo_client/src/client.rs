@@ -17,12 +17,14 @@ use tokio::net::TcpStream;
 use tokio_tungstenite::{connect_async, tungstenite::Message, WebSocketStream};
 use tokio_tungstenite::{tungstenite, MaybeTlsStream};
 
+/// A trait to interact with lists of immutable components
 pub trait ComponentList<State> {
     fn on_create(&mut self, id: NooID, state: State);
     fn on_delete(&mut self, id: NooID);
     fn find(&self, id: &NooID) -> Option<&State>;
 }
 
+/// A trait to describe how to interact with mutable components
 pub trait UpdatableComponentList<State>: ComponentList<State>
 where
     State: UpdatableWith,
@@ -30,6 +32,9 @@ where
     fn on_update(&mut self, id: NooID, update: State::Substate);
 }
 
+// =============================================================================
+
+/// A built in struct that conforms to the [ComponentList] trait.
 #[derive(Debug)]
 pub struct BasicComponentList<State>
 where
@@ -94,6 +99,9 @@ where
     }
 }
 
+// =============================================================================
+
+/// A provided container for mutable components. Can be used if your client has no requirement for extra functionality.
 #[derive(Debug)]
 pub struct BasicUpdatableList<State> {
     components: HashMap<NooID, State>,
@@ -132,28 +140,46 @@ where
     }
 }
 
+// =============================================================================
+
+/// A trait to describe how the client library interacts with client state.
 pub trait UserClientState: Debug {
+    /// The type holding methods
     type MethodL: ComponentList<MethodState>;
+    /// The type holding signals
     type SignalL: ComponentList<SignalState>;
 
+    /// The type holding buffers
     type BufferL: ComponentList<BufferState>;
+    /// The type holding buffer lists    
     type BufferViewL: ComponentList<ClientBufferViewState>;
 
+    /// The type holding samplers
     type SamplerL: ComponentList<SamplerState>;
+    /// The type holding images
     type ImageL: ComponentList<ClientImageState>;
+    /// The type holding texture
     type TextureL: ComponentList<ClientTextureState>;
 
+    /// The type holding materials
     type MaterialL: UpdatableComponentList<ClientMaterialState>;
+    /// The type holding geometry
     type GeometryL: ComponentList<ClientGeometryState>;
 
+    /// The type holding lights
     type LightL: UpdatableComponentList<LightState>;
 
+    /// The type holding tables
     type TableL: UpdatableComponentList<ClientTableState>;
+    /// The type holding plots
     type PlotL: UpdatableComponentList<ClientPlotState>;
 
+    /// The type holding entities
     type EntityL: UpdatableComponentList<ClientEntityState>;
 
+    /// The type for commands passed to the client
     type CommandType;
+    /// The type holding arguments for your client
     type ArgumentType;
 
     fn new(
@@ -201,6 +227,7 @@ pub enum UserClientNext {
     DecodeError(String),
 }
 
+/// Execute the next message from a server on your client state
 pub fn handle_next<U: UserClientState>(
     state: &mut U,
     message: &[u8],
@@ -314,18 +341,27 @@ pub enum UserClientError {
     ConnectionError(tungstenite::Error),
 }
 
+/// Enumeration describing incoming messages to your client.
 #[derive(Debug)]
 pub enum IncomingMessage<T: UserClientState> {
+    /// Message from the server
     NetworkMessage(Vec<u8>),
+    /// Message from an out of band command stream
     Command(T::CommandType),
 }
 
+/// Enumeration describing outgoing messages
 #[derive(Debug)]
 pub enum OutgoingMessage {
+    /// Instruct client machinery to shut down
     Close,
+    /// Invoke a message on the server
     MethodInvoke(ClientInvokeMessage),
 }
 
+/// Start running the client machinery.
+///
+/// Will create the given user client state type when needed
 pub async fn start_client<T>(
     url: String,
     name: String,
@@ -336,23 +372,25 @@ where
     T::CommandType: std::marker::Send + std::fmt::Debug,
     T::ArgumentType: std::marker::Send,
 {
-    //let url = url::Url::parse(&host)
-    //    .map_err(|x| UserClientError::InvalidHost(x.to_string()))?;
-
+    // create streams to stop machinery
     let (stop_tx, mut stop_rx) = tokio::sync::broadcast::channel::<u8>(1);
 
     info!("Connecting to {url}...");
 
+    // connect to a server...
     let conn_result = connect_async(&url)
         .await
         .map_err(UserClientError::ConnectionError)?;
 
     info!("Connecting to {url}...");
 
+    // Stream for messages going to client state
     let (to_client_thread_tx, to_client_thread_rx) = std::sync::mpsc::channel();
+    // Stream for messages from client state
     let (from_client_thread_tx, from_client_thread_rx) =
         tokio::sync::mpsc::channel(16);
 
+    // Stream to go from async world to the sync std stream
     let (inter_channel_tx, inter_channel_rx) = tokio::sync::mpsc::channel(16);
 
     let h1 = std::thread::spawn(move || {
@@ -372,8 +410,10 @@ where
 
     let (ws_stream, _) = conn_result;
 
+    // Split out our server connection
     let (mut socket_tx, mut socket_rx) = ws_stream.split();
 
+    // Send the initial introduction message
     {
         let content = (
             ClientIntroductionMessage::message_id(),
@@ -387,6 +427,7 @@ where
         socket_tx.send(Message::Binary(buffer)).await.unwrap();
     }
 
+    // spawn task that forwards messages from the client to the socket
     let fhandle = tokio::spawn(forward_task(
         from_client_thread_rx,
         socket_tx,
@@ -394,6 +435,7 @@ where
         stop_tx.subscribe(),
     ));
 
+    // Now handle all incoming messages
     loop {
         tokio::select! {
             _ = stop_rx.recv() => break,
@@ -420,6 +462,7 @@ where
     Ok(())
 }
 
+/// Task that consumes messages from a tokio stream and outputs it to a std stream
 async fn to_client_task<T>(
     mut input: tokio::sync::mpsc::Receiver<IncomingMessage<T>>,
     output: std::sync::mpsc::Sender<IncomingMessage<T>>,
@@ -434,12 +477,10 @@ async fn to_client_task<T>(
             Some(msg) = input.recv() => output.send(msg).unwrap()
         }
     }
-    // while let Some(msg) = input.recv().await {
-    //     output.send(msg).unwrap();
-    // }
     debug!("Ending to-client task");
 }
 
+/// Task that sends handles from the client.
 async fn forward_task(
     mut input: tokio::sync::mpsc::Receiver<OutgoingMessage>,
     mut output: SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>,
@@ -455,8 +496,12 @@ async fn forward_task(
                 let mut buffer = Vec::<u8>::new();
 
                 match msg {
+                    // If the client wants to close things down...
                     OutgoingMessage::Close => {
+                        // kill the output stream
                         output.close().await.unwrap();
+
+                        // tell everyone to stop
                         stopper_tx.send(1).unwrap();
                         break;
                     }
@@ -476,6 +521,7 @@ async fn forward_task(
     debug!("Ending thread forwarding task");
 }
 
+/// Run the client state in it's own thread
 fn client_worker_thread<T>(
     input: std::sync::mpsc::Receiver<IncomingMessage<T>>,
     output: tokio::sync::mpsc::Sender<OutgoingMessage>,

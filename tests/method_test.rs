@@ -10,7 +10,6 @@ use colabrodo_server::server_state::*;
 use colabrodo_server::server::ciborium::value;
 
 use log;
-use log::info;
 use std::backtrace::Backtrace;
 use std::collections::HashMap;
 use std::panic;
@@ -35,14 +34,14 @@ fn ping_pong(
     _context: &InvokeObj,
     args: Vec<ciborium::value::Value>,
 ) -> MethodResult {
-    info!("Sending signal...");
+    log::info!("Sending signal...");
     _state.state().issue_signal(
         &_state.test_signal,
         None,
         vec![value::Value::Text("Hi there".to_string())],
     );
 
-    info!("Sending reply...");
+    log::info!("Sending reply...");
     Ok(ciborium::value::Value::Array(args))
 }
 

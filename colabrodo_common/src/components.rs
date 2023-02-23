@@ -112,6 +112,14 @@ impl BufferRepresentation {
             uri_bytes: Some(Url::new_from_slice(url)),
         }
     }
+
+    pub fn bytes(&self) -> Option<&ByteBuff> {
+        self.inline_bytes.as_ref()
+    }
+
+    pub fn uri(&self) -> Option<&Url> {
+        self.uri_bytes.as_ref()
+    }
 }
 
 #[serde_with::skip_serializing_none]
@@ -220,7 +228,7 @@ impl<BufferReference> ComponentMessageIDs for BufferViewState<BufferReference> {
 
 // =============================================================================
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Copy, Clone, Default, Serialize, Deserialize)]
 pub enum AttributeSemantic {
     #[default]
     #[serde(rename = "POSITION")]

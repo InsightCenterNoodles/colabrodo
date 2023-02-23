@@ -2,7 +2,7 @@
 
 use colabrodo_server::{
     server::{AsyncServer, DefaultCommand, ServerOptions},
-    server_bufferbuilder,
+    server_bufferbuilder::{self, IndexType, VertexMinimal},
     server_http::*,
     server_messages::*,
     server_state::{MethodException, ServerState, UserServerState},
@@ -15,35 +15,42 @@ fn make_cube(
     server_state: &mut ServerState,
     link: &mut AssetServerLink,
 ) -> ServerGeometryPatch {
-    let mut test_source = server_bufferbuilder::VertexSource::default();
-
-    test_source.name = "Cube".to_string();
-
-    test_source.positions = vec![
-        [-1.0, -1.0, 1.0],
-        [1.0, -1.0, 1.0],
-        [1.0, 1.0, 1.0],
-        [-1.0, 1.0, 1.0],
-        //
-        [-1.0, -1.0, -1.0],
-        [1.0, -1.0, -1.0],
-        [1.0, 1.0, -1.0],
-        [-1.0, 1.0, -1.0],
+    let verts = vec![
+        VertexMinimal {
+            position: [-1.0, -1.0, 1.0],
+            normal: [-0.5774, -0.5774, 0.5774],
+        },
+        VertexMinimal {
+            position: [1.0, -1.0, 1.0],
+            normal: [0.5774, -0.5774, 0.5774],
+        },
+        VertexMinimal {
+            position: [1.0, 1.0, 1.0],
+            normal: [0.5774, 0.5774, 0.5774],
+        },
+        VertexMinimal {
+            position: [-1.0, 1.0, 1.0],
+            normal: [-0.5774, 0.5774, 0.5774],
+        },
+        VertexMinimal {
+            position: [-1.0, -1.0, -1.0],
+            normal: [-0.5774, -0.5774, -0.5774],
+        },
+        VertexMinimal {
+            position: [1.0, -1.0, -1.0],
+            normal: [0.5774, -0.5774, -0.5774],
+        },
+        VertexMinimal {
+            position: [1.0, 1.0, -1.0],
+            normal: [0.5774, 0.5774, -0.5774],
+        },
+        VertexMinimal {
+            position: [-1.0, 1.0, -1.0],
+            normal: [-0.5774, 0.5774, -0.5774],
+        },
     ];
 
-    test_source.normals = vec![
-        [-0.5774, -0.5774, 0.5774],
-        [0.5774, -0.5774, 0.5774],
-        [0.5774, 0.5774, 0.5774],
-        [-0.5774, 0.5774, 0.5774],
-        //
-        [-0.5774, -0.5774, -0.5774],
-        [0.5774, -0.5774, -0.5774],
-        [0.5774, 0.5774, -0.5774],
-        [-0.5774, 0.5774, -0.5774],
-    ];
-
-    test_source.triangles = vec![
+    let index_list = vec![
         // front
         [0, 1, 2],
         [2, 3, 0],
@@ -63,6 +70,13 @@ fn make_cube(
         [3, 2, 6],
         [6, 7, 3],
     ];
+    let index_list = IndexType::Triangles(index_list.as_slice());
+
+    let test_source = server_bufferbuilder::VertexSource {
+        name: Some("Cube".to_string()),
+        vertex: verts.as_slice(),
+        index: index_list,
+    };
 
     // Create a material to go along with this cube
     let material = server_state.materials.new_component(ServerMaterialState {
@@ -81,18 +95,16 @@ fn make_cube(
 
     // Return a new mesh with this geometry/material
     // Unlike the other cube example, we use a callback to describe how to store the data. Our callback uses the link to the asset server to create a new asset, and publish the URL.
-    let intermediate = server_bufferbuilder::create_mesh_with(
-        server_state,
-        test_source,
-        |data| {
-            let url = link.add_asset(
-                create_asset_id(),
-                Asset::new_from_slice(data.as_slice()),
-            );
-            println!("Cube asset URL is at {url}");
-            colabrodo_server::server_messages::BufferRepresentation::new_from_url(&url)
-        },
-    );
+    let intermediate = test_source.build_mesh_with(server_state, |data| {
+        let url = link.add_asset(
+            create_asset_id(),
+            Asset::new_from_slice(data.as_slice()),
+        );
+        println!("Cube asset URL is at {url}");
+        colabrodo_server::server_messages::BufferRepresentation::new_from_url(
+            &url,
+        )
+    }).unwrap();
 
     // build the cube with our material
 

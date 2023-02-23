@@ -229,7 +229,7 @@ async fn client_connect_task<T>(
                         stream,
                         to_server_send.clone(),
                         bcast_send.subscribe(),
-                        stop_tx.subscribe(),
+                        stop_tx.clone(),
                     ));
                 }
             }
@@ -332,7 +332,7 @@ async fn client_handler<'a, T>(
     stream: TcpStream,
     to_server_send: std::sync::mpsc::Sender<ToServerMessage<T>>,
     mut bcast_recv: broadcast::Receiver<Vec<u8>>,
-    mut stop_rx: tokio::sync::broadcast::Receiver<u8>,
+    stop_tx: tokio::sync::broadcast::Sender<u8>,
 ) -> Result<(), ()>
 where
     T: AsyncServer,
@@ -360,26 +360,43 @@ where
     // single-client replies
     let (out_tx, mut out_rx) = mpsc::channel(16);
 
+    let mut socket_stopper = stop_tx.subscribe();
     let h1 = tokio::spawn(async move {
         // task that just sends data to the socket
-        while let Some(data) = out_rx.recv().await {
-            // for each message, just send it along
-            tx.send(tokio_tungstenite::tungstenite::Message::Binary(data))
-                .await
-                .unwrap();
+        loop {
+            tokio::select! {
+                _ = socket_stopper.recv() => break,
+                data = out_rx.recv() => {
+                    if let Some(data) = data {
+                        // for each message, just send it along
+                        tx.send(tokio_tungstenite::tungstenite::Message::Binary(data))
+                        .await
+                        .unwrap();
+                    }
+                }
+            }
         }
         log::debug!("Ending per-client data-forwarder");
     });
 
+    let mut bcast_stopper = stop_tx.subscribe();
     // task that takes broadcast information and sends it to the out queue
     let h2 = {
         let this_tx = out_tx.clone();
         tokio::spawn(async move {
-            // take each message from the broadcast channel and add it to the
-            // queue
-            while let Ok(bcast) = bcast_recv.recv().await {
-                this_tx.send(bcast).await.unwrap();
+            loop {
+                tokio::select! {
+                        _ = bcast_stopper.recv() => break,
+                        bcast = bcast_recv.recv() => {
+                // take each message from the broadcast channel and add it to the
+                // queue
+                            if let Ok(bcast) = bcast {
+                                this_tx.send(bcast).await.unwrap();
+                            }
+                        }
+                    }
             }
+
             log::debug!("Ending per-client broadcast-forwarder");
         })
     };
@@ -387,6 +404,8 @@ where
     to_server_send
         .send(ToServerMessage::ClientConnected)
         .unwrap();
+
+    let mut stop_rx = stop_tx.subscribe();
 
     loop {
         tokio::select! {

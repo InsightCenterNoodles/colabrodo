@@ -8,6 +8,7 @@ pub use colabrodo_common::components::{
     SamplerState, SignalState,
 };
 
+/// Trait to allow extracting names from certain components
 pub trait NamedComponent {
     fn name(&self) -> Option<&String>;
 }

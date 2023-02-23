@@ -20,6 +20,7 @@ use crate::server_state::ComponentCell;
 
 // Traits ==============================================
 
+/// A trait to specify the update mechanism
 pub trait UpdatableStateItem {
     type HostState;
     fn patch(self, m: &mut Self::HostState);
@@ -27,6 +28,11 @@ pub trait UpdatableStateItem {
 
 // Component Refs ==============================================
 
+/// A reference to a component.
+///
+/// This is a lightweight handle to a component; when the last handle goes out of scope, the component will be deleted.
+///
+/// This handle also hashes based on the underlying content, so it can be used in hash maps, etc.
 #[derive(Debug)]
 pub struct ComponentReference<T>(pub(crate) Rc<ComponentCell<T>>)
 where
@@ -97,6 +103,7 @@ impl<T> Eq for ComponentReference<T> where
 
 // =============================================================================
 
+/// A simple struct to hold a message and an id for serialization
 #[derive(Serialize)]
 pub(crate) struct Bouncer<'a, T> {
     pub id: NooID,
@@ -107,9 +114,18 @@ pub(crate) struct Bouncer<'a, T> {
 
 // Write destination ==============================================
 
-#[derive(Debug, Default)]
+/// In the future this type will probably have a bit more safety on messages and ids.
+#[derive(Debug)]
 pub struct Recorder {
     pub data: Vec<u8>,
+}
+
+impl Recorder {
+    pub fn record<T: Serialize>(id: u32, t: &T) -> Self {
+        let mut data = Vec::<u8>::new();
+        ciborium::ser::into_writer(&(id, &t), &mut data).unwrap();
+        Self { data }
+    }
 }
 
 // Messages ==============================================

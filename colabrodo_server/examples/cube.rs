@@ -2,7 +2,7 @@
 
 use colabrodo_server::{
     server::{AsyncServer, DefaultCommand, NoInit, ServerOptions},
-    server_bufferbuilder,
+    server_bufferbuilder::{self, IndexType, VertexMinimal},
     server_messages::*,
     server_state::{MethodException, ServerState, UserServerState},
 };
@@ -11,35 +11,42 @@ use colabrodo_server::{
 ///
 /// This uses the simple helper tools to build a geometry buffer; you don't have to use this feature if you don't want to.
 fn make_cube(server_state: &mut ServerState) -> ServerGeometryPatch {
-    let mut test_source = server_bufferbuilder::VertexSource::default();
-
-    test_source.name = "Cube".to_string();
-
-    test_source.positions = vec![
-        [-1.0, -1.0, 1.0],
-        [1.0, -1.0, 1.0],
-        [1.0, 1.0, 1.0],
-        [-1.0, 1.0, 1.0],
-        //
-        [-1.0, -1.0, -1.0],
-        [1.0, -1.0, -1.0],
-        [1.0, 1.0, -1.0],
-        [-1.0, 1.0, -1.0],
+    let verts = vec![
+        VertexMinimal {
+            position: [-1.0, -1.0, 1.0],
+            normal: [-0.5774, -0.5774, 0.5774],
+        },
+        VertexMinimal {
+            position: [1.0, -1.0, 1.0],
+            normal: [0.5774, -0.5774, 0.5774],
+        },
+        VertexMinimal {
+            position: [1.0, 1.0, 1.0],
+            normal: [0.5774, 0.5774, 0.5774],
+        },
+        VertexMinimal {
+            position: [-1.0, 1.0, 1.0],
+            normal: [-0.5774, 0.5774, 0.5774],
+        },
+        VertexMinimal {
+            position: [-1.0, -1.0, -1.0],
+            normal: [-0.5774, -0.5774, -0.5774],
+        },
+        VertexMinimal {
+            position: [1.0, -1.0, -1.0],
+            normal: [0.5774, -0.5774, -0.5774],
+        },
+        VertexMinimal {
+            position: [1.0, 1.0, -1.0],
+            normal: [0.5774, 0.5774, -0.5774],
+        },
+        VertexMinimal {
+            position: [-1.0, 1.0, -1.0],
+            normal: [-0.5774, 0.5774, -0.5774],
+        },
     ];
 
-    test_source.normals = vec![
-        [-0.5774, -0.5774, 0.5774],
-        [0.5774, -0.5774, 0.5774],
-        [0.5774, 0.5774, 0.5774],
-        [-0.5774, 0.5774, 0.5774],
-        //
-        [-0.5774, -0.5774, -0.5774],
-        [0.5774, -0.5774, -0.5774],
-        [0.5774, 0.5774, -0.5774],
-        [-0.5774, 0.5774, -0.5774],
-    ];
-
-    test_source.triangles = vec![
+    let index_list = vec![
         // front
         [0, 1, 2],
         [2, 3, 0],
@@ -59,6 +66,13 @@ fn make_cube(server_state: &mut ServerState) -> ServerGeometryPatch {
         [3, 2, 6],
         [6, 7, 3],
     ];
+    let index_list = IndexType::Triangles(index_list.as_slice());
+
+    let test_source = server_bufferbuilder::VertexSource {
+        name: Some("Cube".to_string()),
+        vertex: verts.as_slice(),
+        index: index_list,
+    };
 
     // Create a material to go along with this cube
     let material = server_state.materials.new_component(ServerMaterialState {
@@ -76,8 +90,7 @@ fn make_cube(server_state: &mut ServerState) -> ServerGeometryPatch {
     });
 
     // Return a new mesh with this geometry/material
-    let intermediate =
-        server_bufferbuilder::create_mesh(server_state, test_source);
+    let intermediate = test_source.build_mesh(server_state).unwrap();
 
     // build the cube with our material
 

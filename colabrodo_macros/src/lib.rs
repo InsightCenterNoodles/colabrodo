@@ -20,17 +20,14 @@ pub fn emit_optional_patch_function(input: TokenStream) -> TokenStream {
         impl UpdatableStateItem for {name} {{
             type HostState = ComponentReference<{host_name}>;
             fn patch(self, h: &mut Self::HostState){{
-                let write_tuple = (
-                    {host_name}::update_message_id(),
-                    Bouncer {{
+
+                let recorder = Recorder::record(
+                    {host_name}::update_message_id() as u32, 
+                    &Bouncer {{
                         id: h.id(),
                         content: &self,
                     }}
                 );
-
-                let mut recorder = Recorder::default();
-
-                ciborium::ser::into_writer(&write_tuple, &mut recorder.data).unwrap();
 
                 h.send_to_broadcast(recorder);
 
