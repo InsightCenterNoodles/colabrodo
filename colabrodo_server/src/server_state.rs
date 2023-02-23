@@ -11,7 +11,9 @@ use ciborium::value;
 use colabrodo_common::client_communication::{
     AllClientMessages, ClientInvokeMessage, ClientRootMessage, InvokeIDType,
 };
-use colabrodo_common::common::ServerMessageIDs;
+pub use colabrodo_common::common::{
+    ComponentType, MessageArchType, ServerMessageIDs,
+};
 use colabrodo_common::components::*;
 use colabrodo_common::nooid::NooID;
 pub use colabrodo_common::server_communication::{

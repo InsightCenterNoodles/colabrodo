@@ -11,6 +11,7 @@ use tokio::{
     sync::{broadcast, mpsc},
 };
 use tokio_tungstenite;
+use tokio_tungstenite::tungstenite::Message as WSMessage;
 
 use crate::server_state;
 use crate::server_state::Output;
@@ -419,22 +420,27 @@ where
                         Ok(x) => x,
                         Err(error) => {
                             log::warn!("Client disconnected: {error:?}");
-                            return Ok(());
+                            break;
                         }
                     };
 
-                    if message.is_binary() {
-                        to_server_send
+                    match message {
+                        WSMessage::Binary(x) => {
+                            to_server_send
                             .send(ToServerMessage::Client(FromClientMessage(
                                 out_tx.clone(),
-                                message.into_data(),
+                                x,
                             )))
                             .unwrap();
+                        }
+                        _ => break
                     }
                 }
             }
         }
     }
+
+    stop_tx.send(1).unwrap();
 
     to_server_send.send(ToServerMessage::ClientClosed).unwrap();
 
