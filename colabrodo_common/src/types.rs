@@ -118,46 +118,6 @@ impl Url {
     }
 }
 
-// impl Serialize for Url {
-//     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-//     where
-//         S: serde::Serializer,
-//     {
-//         self.url.serialize(serializer)
-//     }
-// }
-
-// struct UrlVisitor;
-
-// impl<'de> Visitor<'de> for UrlVisitor {
-//     type Value = Url;
-
-//     fn expecting(
-//         &self,
-//         formatter: &mut std::fmt::Formatter,
-//     ) -> std::fmt::Result {
-//         write!(formatter, "URL")
-//     }
-
-//     fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
-//     where
-//         E: Error,
-//     {
-//         let copy = Vec::new();
-//         copy.copy_from_slice(v);
-//         Ok(ByteBuff { bytes: copy })
-//     }
-// }
-
-// impl<'de> Deserialize<'de> for ByteBuff {
-//     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-//     where
-//         D: serde::Deserializer<'de>,
-//     {
-//         deserializer.deserialize_seq(ByteBuffVisitor)
-//     }
-// }
-
 // =============================================================================
 
 #[derive(Debug, Serialize, Deserialize)]

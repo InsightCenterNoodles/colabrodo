@@ -55,46 +55,14 @@ where
     fn find(&self, id: &NooID) -> Option<&State> {
         self.list.find(id)
     }
-}
 
-// =============================================================================
-
-#[derive(Debug)]
-struct ExampleUpdatableComponentList<State> {
-    ty: String,
-    list: BasicUpdatableList<State>,
-}
-
-impl<State> Default for ExampleUpdatableComponentList<State> {
-    fn default() -> Self {
-        Self {
-            ty: get_type_name::<State>(),
-            list: Default::default(),
-        }
+    fn get_id_by_name(&self, name: &str) -> Option<&NooID> {
+        self.list.get_id_by_name(name)
     }
 }
 
-impl<State> ComponentList<State> for ExampleUpdatableComponentList<State>
-where
-    State: Debug,
-{
-    fn on_create(&mut self, id: NooID, state: State) {
-        println!("Create {}: {id}: {state:?}", self.ty);
-        self.list.on_create(id, state);
-    }
-
-    fn on_delete(&mut self, id: NooID) {
-        println!("Delete {}: {id}", self.ty);
-        self.list.on_delete(id);
-    }
-
-    fn find(&self, id: &NooID) -> Option<&State> {
-        self.list.find(id)
-    }
-}
-
-impl<State> UpdatableComponentList<State>
-    for ExampleUpdatableComponentList<State>
+impl<State: NamedComponent> UpdatableComponentList<State>
+    for ExampleComponentList<State>
 where
     State: UpdatableWith + Debug,
     State::Substate: Debug,
@@ -116,12 +84,12 @@ struct ExampleState {
     samplers: ExampleComponentList<SamplerState>,
     images: ExampleComponentList<ClientImageState>,
     textures: ExampleComponentList<ClientTextureState>,
-    materials: ExampleUpdatableComponentList<ClientMaterialState>,
+    materials: ExampleComponentList<ClientMaterialState>,
     geometries: ExampleComponentList<ClientGeometryState>,
-    lights: ExampleUpdatableComponentList<LightState>,
-    tables: ExampleUpdatableComponentList<ClientTableState>,
-    plots: ExampleUpdatableComponentList<ClientPlotState>,
-    entities: ExampleUpdatableComponentList<ClientEntityState>,
+    lights: ExampleComponentList<LightState>,
+    tables: ExampleComponentList<ClientTableState>,
+    plots: ExampleComponentList<ClientPlotState>,
+    entities: ExampleComponentList<ClientEntityState>,
 
     doc: ClientDocumentUpdate,
 }
@@ -139,12 +107,12 @@ impl UserClientState for ExampleState {
     type SamplerL = ExampleComponentList<SamplerState>;
     type ImageL = ExampleComponentList<ClientImageState>;
     type TextureL = ExampleComponentList<ClientTextureState>;
-    type MaterialL = ExampleUpdatableComponentList<ClientMaterialState>;
+    type MaterialL = ExampleComponentList<ClientMaterialState>;
     type GeometryL = ExampleComponentList<ClientGeometryState>;
-    type LightL = ExampleUpdatableComponentList<LightState>;
-    type TableL = ExampleUpdatableComponentList<ClientTableState>;
-    type PlotL = ExampleUpdatableComponentList<ClientPlotState>;
-    type EntityL = ExampleUpdatableComponentList<ClientEntityState>;
+    type LightL = ExampleComponentList<LightState>;
+    type TableL = ExampleComponentList<ClientTableState>;
+    type PlotL = ExampleComponentList<ClientPlotState>;
+    type EntityL = ExampleComponentList<ClientEntityState>;
 
     type CommandType = ExampleStateCommand;
     type ArgumentType = ExampleStateArgument;

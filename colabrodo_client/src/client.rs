@@ -22,6 +22,11 @@ pub trait ComponentList<State> {
     fn on_create(&mut self, id: NooID, state: State);
     fn on_delete(&mut self, id: NooID);
     fn find(&self, id: &NooID) -> Option<&State>;
+
+    fn get_id_by_name(&self, name: &str) -> Option<&NooID>;
+    fn get_state_by_name(&self, name: &str) -> Option<&State> {
+        self.find(self.get_id_by_name(name)?)
+    }
 }
 
 /// A trait to describe how to interact with mutable components
@@ -48,14 +53,6 @@ impl<State> BasicComponentList<State>
 where
     State: NamedComponent,
 {
-    pub fn search_id(&self, name: &str) -> Option<&NooID> {
-        self.name_map.get(name)
-    }
-
-    pub fn search(&self, name: &str) -> Option<&State> {
-        self.find(self.name_map.get(name)?)
-    }
-
     pub fn find_name(&self, id: &NooID) -> Option<&String> {
         self.find(id)?.name()
     }
@@ -97,41 +94,19 @@ where
     fn find(&self, id: &NooID) -> Option<&State> {
         self.components.get(id)
     }
-}
 
-// =============================================================================
+    fn get_id_by_name(&self, name: &str) -> Option<&NooID> {
+        self.name_map.get(name)
+    }
 
-/// A provided container for mutable components. Can be used if your client has no requirement for extra functionality.
-#[derive(Debug)]
-pub struct BasicUpdatableList<State> {
-    components: HashMap<NooID, State>,
-}
-
-impl<State> Default for BasicUpdatableList<State> {
-    fn default() -> Self {
-        Self {
-            components: HashMap::new(),
-        }
+    fn get_state_by_name(&self, name: &str) -> Option<&State> {
+        self.find(self.name_map.get(name)?)
     }
 }
 
-impl<State> ComponentList<State> for BasicUpdatableList<State> {
-    fn on_create(&mut self, id: NooID, state: State) {
-        self.components.insert(id, state);
-    }
-
-    fn on_delete(&mut self, id: NooID) {
-        self.components.remove(&id);
-    }
-
-    fn find(&self, id: &NooID) -> Option<&State> {
-        self.components.get(id)
-    }
-}
-
-impl<State> UpdatableComponentList<State> for BasicUpdatableList<State>
+impl<State> UpdatableComponentList<State> for BasicComponentList<State>
 where
-    State: UpdatableWith,
+    State: UpdatableWith + NamedComponent,
 {
     fn on_update(&mut self, id: NooID, update: State::Substate) {
         if let Some(item) = self.components.get_mut(&id) {
