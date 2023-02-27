@@ -52,7 +52,7 @@ impl ByteBuff {
     }
 
     pub fn bytes(&self) -> &[u8] {
-        &self.0.as_slice()
+        self.0.as_slice()
     }
 }
 

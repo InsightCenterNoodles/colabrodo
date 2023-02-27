@@ -27,7 +27,7 @@ fn ping_pong(
     _context: &InvokeObj,
     args: Vec<ciborium::value::Value>,
 ) -> MethodResult {
-    Ok(ciborium::value::Value::Array(args))
+    Ok(Some(ciborium::value::Value::Array(args)))
 }
 
 /// All server states should use this trait...
@@ -44,6 +44,7 @@ impl UserServerState for PingPongServer {
         &mut self,
         method: ComponentReference<MethodState>,
         context: colabrodo_server::server_state::InvokeObj,
+        _client_id: uuid::Uuid,
         args: Vec<ciborium::value::Value>,
     ) -> MethodResult {
         let function = self.method_list.get(&method).unwrap();

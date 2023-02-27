@@ -5,21 +5,21 @@ use crate::value_tools::*;
 //     inc_key_end: i64,
 // }
 
-#[derive(CBORTransform, Clone)]
+#[derive(CBORTransform, Debug, Clone)]
 pub struct Selection {
     pub name: String,
     pub rows: Option<Vec<i64>>,
     pub row_ranges: Option<Vec<i64>>,
 }
 
-#[derive(CBORTransform, Clone)]
+#[derive(CBORTransform, Debug, Clone)]
 pub struct TableColumnInfo {
     pub name: String,
     #[vserde(rename = "type")]
     pub type_: String,
 }
 
-#[derive(CBORTransform)]
+#[derive(CBORTransform, Debug)]
 pub struct TableInitData {
     pub columns: Vec<TableColumnInfo>,
     pub keys: Vec<i64>,

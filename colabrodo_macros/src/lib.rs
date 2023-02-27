@@ -19,7 +19,11 @@ pub fn emit_optional_patch_function(input: TokenStream) -> TokenStream {
         "
         impl UpdatableStateItem for {name} {{
             type HostState = ComponentReference<{host_name}>;
-            fn patch(self, h: &mut Self::HostState){{
+            fn patch(self, h: &Self::HostState){{
+
+                if log::log_enabled!(log::Level::Debug) {{
+                    log::debug!(\"Patching component with {{:?}}\", self);
+                }}
 
                 let recorder = Recorder::record(
                     {host_name}::update_message_id() as u32, 
@@ -202,11 +206,11 @@ pub fn value_serde(input: TokenStream) -> TokenStream {
         "
     );
 
-    let mut ret_impl_de = format!(
+    let mut ret_impl_de = String::from(
         "
-        fn to_cbor(&self) -> Value {{
+        fn to_cbor(&self) -> Value {
             let mut ret = Vec::<(Value, Value)>::new();
-        "
+        ",
     );
 
     fn handle_part(
@@ -227,12 +231,10 @@ pub fn value_serde(input: TokenStream) -> TokenStream {
 
             //println!("DEBUG {:?}", parts.tys);
 
-            if let Some(rn) = parts.tys.get("rename") {
-                if let syn::Lit::Str(rn) = rn {
-                    decode_name = rn.token().to_string();
-                    decode_name =
-                        decode_name[1..(decode_name.len() - 1)].to_string();
-                }
+            if let Some(syn::Lit::Str(rn)) = parts.tys.get("rename") {
+                decode_name = rn.token().to_string();
+                decode_name =
+                    decode_name[1..(decode_name.len() - 1)].to_string();
             }
         }
 
@@ -281,7 +283,7 @@ Err(FromValueError::WrongType {
     );
 
     ret_impl_de.push_str(" Value::Map(ret) }");
-    ret_impl.push_str(&ret_impl_de.as_str());
+    ret_impl.push_str(ret_impl_de.as_str());
     ret_impl.push_str("}\n");
 
     //print!("{}", ret_impl);

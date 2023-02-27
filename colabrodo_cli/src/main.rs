@@ -25,7 +25,6 @@ use colabrodo_client::mapped_client::ciborium::value::Value;
 
 use clap::Parser;
 
-use env_logger;
 use log::{debug, error, info, warn};
 
 #[derive(Parser, Debug)]

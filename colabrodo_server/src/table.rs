@@ -1,20 +1,23 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::{
     server::ClientRecord,
-    server_messages::{ComponentReference, Recorder, ServerTableState},
+    server_messages::{
+        ComponentReference, Recorder, ServerTableState,
+        ServerTableStateUpdatable, UpdatableStateItem,
+    },
     server_state::{
-        ServerMessageSignalInvoke, ServerSignalInvokeObj, ServerState,
+        InvokeObj, MethodResult, ServerMessageSignalInvoke,
+        ServerSignalInvokeObj, ServerState,
     },
 };
 use ciborium::value::Value;
+pub use colabrodo_common::table::{Selection, TableColumnInfo, TableInitData};
 use colabrodo_common::{
     arg_to_tuple,
-    client_communication::ClientInvokeMessage,
     common::strings,
     components::{MethodArg, MethodState, SignalState},
-    server_communication::ServerMessageID,
-    table::{Selection, TableColumnInfo, TableInitData},
+    server_communication::{ExceptionCodes, MethodException, ServerMessageID},
     tf_to_cbor,
     value_tools::*,
 };
@@ -36,129 +39,203 @@ pub struct TableSystemInit {
     mthd_remove: ComponentReference<MethodState>,
     mthd_clear: ComponentReference<MethodState>,
     mthd_update_selection: ComponentReference<MethodState>,
+
+    valid_signal_hash: HashSet<ComponentReference<SignalState>>,
+    valid_method_hash: HashSet<ComponentReference<MethodState>>,
 }
 
 impl TableSystemInit {
     pub fn new(state: &mut ServerState) -> Self {
-        Self {
-            sig_reset: state.signals.new_component(SignalState {
-                name: strings::SIG_TBL_RESET.to_string(),
-                doc: Some("The table context has been reset.".to_string()),
-                arg_doc: vec![MethodArg {
-                    name: "table_init".to_string(),
-                    doc: Some("New table data".to_string()),
-                }],
-            }),
-            sig_updated: state.signals.new_component(SignalState {
-                name: strings::SIG_TBL_UPDATED.to_string(),
-                doc: Some("The table rows have been updated".to_string()),
-                arg_doc: vec![
-                    MethodArg {
-                        name: "key_list".to_string(),
-                        doc: Some("Keys for new/updated rows".to_string()),
-                    },
-                    MethodArg {
-                        name: "row_list".to_string(),
-                        doc: Some("New/updated rows".to_string()),
-                    },
-                ],
-            }),
-            sig_row_remove: state.signals.new_component(SignalState {
-                name: strings::SIG_TBL_ROWS_REMOVED.to_string(),
-                doc: Some("Rows have been removed from the table".to_string()),
-                arg_doc: vec![MethodArg {
-                    name: "key_list".to_string(),
-                    doc: Some("Keys to remove from the table".to_string()),
-                }],
-            }),
-            sig_selection_update: state.signals.new_component(SignalState {
-                name: strings::SIG_TBL_SELECTION_UPDATED.to_string(),
+        let mthd_subscribe = state.methods.new_component(MethodState {
+            name: strings::MTHD_TBL_SUBSCRIBE.to_string(),
+            doc: Some("Subscribe to the given table".to_string()),
+            return_doc: Some("Initial table data structure".to_string()),
+            arg_doc: vec![],
+        });
+        let mthd_insert = state.methods.new_component(MethodState {
+            name: strings::MTHD_TBL_INSERT.to_string(),
+            doc: Some("Ask to insert data into the table".to_string()),
+            return_doc: None,
+            arg_doc: vec![MethodArg {
+                name: "rows".to_string(),
                 doc: Some(
-                    "A selection for the table has been updated".to_string(),
+                    "A list of rows, which is a list of data to insert."
+                        .to_string(),
                 ),
-                arg_doc: vec![MethodArg {
-                    name: "selection".to_string(),
-                    doc: Some("A Selection type".to_string()),
-                }],
-            }),
-            mthd_subscribe: state.methods.new_component(MethodState {
-                name: strings::MTHD_TBL_SUBSCRIBE.to_string(),
-                doc: Some("Subscribe to the given table".to_string()),
-                return_doc: Some("Initial table data structure".to_string()),
-                arg_doc: vec![],
-            }),
-            mthd_insert: state.methods.new_component(MethodState {
-                name: strings::MTHD_TBL_INSERT.to_string(),
-                doc: Some("Ask to insert data into the table".to_string()),
-                return_doc: None,
-                arg_doc: vec![MethodArg {
+            }],
+        });
+        let mthd_update = state.methods.new_component(MethodState {
+            name: strings::MTHD_TBL_UPDATE.to_string(),
+            doc: Some("Ask to update data in the table".to_string()),
+            return_doc: None,
+            arg_doc: vec![
+                MethodArg {
+                    name: "keys".to_string(),
+                    doc: Some("A list of keys, one for each row.".to_string()),
+                },
+                MethodArg {
                     name: "rows".to_string(),
                     doc: Some(
-                        "A list of rows, which is a list of data to insert."
+                        "A list of rows, which is a list of data to update."
                             .to_string(),
                     ),
-                }],
-            }),
-            mthd_update: state.methods.new_component(MethodState {
-                name: strings::MTHD_TBL_UPDATE.to_string(),
-                doc: Some("Ask to update data in the table".to_string()),
-                return_doc: None,
-                arg_doc: vec![
-                    MethodArg {
-                        name: "keys".to_string(),
-                        doc: Some(
-                            "A list of keys, one for each row."
-                                .to_string(),
-                        ),
-                    },
-                    MethodArg {
-                        name: "rows".to_string(),
-                        doc: Some(
-                            "A list of rows, which is a list of data to update."
-                                .to_string(),
-                        ),
-                    }
-                ],
-            }),
-            mthd_remove: state.methods.new_component(MethodState {
-                name: strings::MTHD_TBL_REMOVE.to_string(),
-                doc: Some("Ask to remove data in the table".to_string()),
-                return_doc: None,
-                arg_doc: vec![MethodArg {
-                    name: "keys".to_string(),
-                    doc: Some("A list of keys to remove.".to_string()),
-                }],
-            }),
-            mthd_clear: state.methods.new_component(MethodState {
-                name: strings::MTHD_TBL_CLEAR.to_string(),
-                doc: Some("Ask to clear all data in the table".to_string()),
-                return_doc: None,
-                arg_doc: vec![],
-            }),
-            mthd_update_selection: state.methods.new_component(MethodState {
-                name: strings::MTHD_TBL_UPDATE_SELECTION.to_string(),
-                doc: Some("Ask to update a selection in the table".to_string()),
-                return_doc: None,
-                arg_doc: vec![MethodArg {
-                    name: "selection".to_string(),
-                    doc: Some("A selection object".to_string()),
-                }],
-            }),
+                },
+            ],
+        });
+        let mthd_remove = state.methods.new_component(MethodState {
+            name: strings::MTHD_TBL_REMOVE.to_string(),
+            doc: Some("Ask to remove data in the table".to_string()),
+            return_doc: None,
+            arg_doc: vec![MethodArg {
+                name: "keys".to_string(),
+                doc: Some("A list of keys to remove.".to_string()),
+            }],
+        });
+        let mthd_clear = state.methods.new_component(MethodState {
+            name: strings::MTHD_TBL_CLEAR.to_string(),
+            doc: Some("Ask to clear all data in the table".to_string()),
+            return_doc: None,
+            arg_doc: vec![],
+        });
+        let mthd_update_selection = state.methods.new_component(MethodState {
+            name: strings::MTHD_TBL_UPDATE_SELECTION.to_string(),
+            doc: Some("Ask to update a selection in the table".to_string()),
+            return_doc: None,
+            arg_doc: vec![MethodArg {
+                name: "selection".to_string(),
+                doc: Some("A selection object".to_string()),
+            }],
+        });
+
+        let mut method_set = HashSet::new();
+        method_set.insert(mthd_subscribe.clone());
+        method_set.insert(mthd_insert.clone());
+        method_set.insert(mthd_update.clone());
+        method_set.insert(mthd_remove.clone());
+        method_set.insert(mthd_clear.clone());
+        method_set.insert(mthd_update_selection.clone());
+
+        let sig_reset = state.signals.new_component(SignalState {
+            name: strings::SIG_TBL_RESET.to_string(),
+            doc: Some("The table context has been reset.".to_string()),
+            arg_doc: vec![MethodArg {
+                name: "table_init".to_string(),
+                doc: Some("New table data".to_string()),
+            }],
+        });
+        let sig_updated = state.signals.new_component(SignalState {
+            name: strings::SIG_TBL_UPDATED.to_string(),
+            doc: Some("The table rows have been updated".to_string()),
+            arg_doc: vec![
+                MethodArg {
+                    name: "key_list".to_string(),
+                    doc: Some("Keys for new/updated rows".to_string()),
+                },
+                MethodArg {
+                    name: "row_list".to_string(),
+                    doc: Some("New/updated rows".to_string()),
+                },
+            ],
+        });
+        let sig_row_remove = state.signals.new_component(SignalState {
+            name: strings::SIG_TBL_ROWS_REMOVED.to_string(),
+            doc: Some("Rows have been removed from the table".to_string()),
+            arg_doc: vec![MethodArg {
+                name: "key_list".to_string(),
+                doc: Some("Keys to remove from the table".to_string()),
+            }],
+        });
+        let sig_selection_update = state.signals.new_component(SignalState {
+            name: strings::SIG_TBL_SELECTION_UPDATED.to_string(),
+            doc: Some("A selection for the table has been updated".to_string()),
+            arg_doc: vec![MethodArg {
+                name: "selection".to_string(),
+                doc: Some("A Selection type".to_string()),
+            }],
+        });
+
+        let mut signal_set = HashSet::new();
+        signal_set.insert(sig_reset.clone());
+        signal_set.insert(sig_updated.clone());
+        signal_set.insert(sig_row_remove.clone());
+        signal_set.insert(sig_selection_update.clone());
+
+        Self {
+            sig_reset,
+            sig_updated,
+            sig_row_remove,
+            sig_selection_update,
+
+            mthd_subscribe,
+            mthd_insert,
+            mthd_update,
+            mthd_remove,
+            mthd_clear,
+            mthd_update_selection,
+
+            valid_signal_hash: signal_set,
+            valid_method_hash: method_set,
         }
     }
 
-    pub fn is_table_message(&self, msg: &ClientInvokeMessage) -> bool {
-        [
-            self.mthd_subscribe.id(),
-            self.mthd_insert.id(),
-            self.mthd_update.id(),
-            self.mthd_remove.id(),
-            self.mthd_clear.id(),
-            self.mthd_update_selection.id(),
-        ]
-        .into_iter()
-        .find(|x| *x == msg.method)
-        .is_some()
+    fn attach(
+        &self,
+        state: &mut ServerState,
+        table: &ComponentReference<ServerTableState>,
+    ) {
+        let methods_to_update = state
+            .tables
+            .inspect(table.id(), |t| {
+                let mut existing = HashSet::new();
+
+                if let Some(l) = &t.mutable.methods_list {
+                    existing.extend(l.clone());
+                };
+
+                existing.extend(self.valid_method_hash.iter().cloned());
+
+                let ret: Vec<_> = existing.into_iter().collect();
+
+                ret
+            })
+            .unwrap_or_else(|| {
+                self.valid_method_hash.iter().cloned().collect()
+            });
+
+        let signals_to_update = state
+            .tables
+            .inspect(table.id(), |t| {
+                let mut existing = HashSet::new();
+
+                if let Some(l) = &t.mutable.signals_list {
+                    existing.extend(l.clone());
+                };
+
+                existing.extend(self.valid_signal_hash.iter().cloned());
+
+                let ret: Vec<_> = existing.into_iter().collect();
+
+                ret
+            })
+            .unwrap_or_else(|| {
+                self.valid_signal_hash.iter().cloned().collect()
+            });
+
+        let mut update = ServerTableStateUpdatable::default();
+
+        update.methods_list = Some(methods_to_update);
+        update.signals_list = Some(signals_to_update);
+
+        update.patch(table);
+    }
+
+    fn is_table_message(
+        &self,
+        method: &ComponentReference<MethodState>,
+    ) -> bool {
+        let ret = self.valid_method_hash.contains(method);
+        log::debug!("Checking if method is a table method: {ret}");
+        ret
     }
 }
 
@@ -196,10 +273,12 @@ pub struct TableStore<T: TableTrait> {
 
 impl<T: TableTrait> TableStore<T> {
     pub fn new(
+        state: &mut ServerState,
         init: TableSystemInit,
         table_id: ComponentReference<ServerTableState>,
         table: T,
     ) -> Self {
+        init.attach(state, &table_id);
         Self {
             init_info: init,
             table_id,
@@ -208,16 +287,18 @@ impl<T: TableTrait> TableStore<T> {
         }
     }
 
-    pub fn subscribe(
+    fn subscribe(
         &mut self,
         id: uuid::Uuid,
         sender: mpsc::Sender<Vec<u8>>,
     ) -> TableInitData {
+        log::debug!("Subscribing {id}");
         self.subscribers.insert(id, sender);
         self.table_type.get_init_data()
     }
 
     pub fn forget_client(&mut self, id: uuid::Uuid) {
+        log::debug!("Forgetting {id}");
         self.subscribers.remove(&id);
     }
 
@@ -273,34 +354,84 @@ impl<T: TableTrait> TableStore<T> {
         Some(())
     }
 
-    pub fn is_table_message(&self, msg: &ClientInvokeMessage) -> bool {
-        self.init_info.is_table_message(msg)
+    pub fn can_handle_next(
+        &self,
+        method: &ComponentReference<MethodState>,
+        context: &InvokeObj,
+    ) -> bool {
+        if let InvokeObj::Table(t) = context {
+            return (t.id() == self.table_id.id())
+                && self.init_info.is_table_message(method);
+        }
+        return false;
     }
 
     pub fn handle_next(
         &mut self,
         cr: &ClientRecord,
-        msg: ClientInvokeMessage,
-    ) -> Option<()> {
-        if self.init_info.mthd_subscribe.id() == msg.method {
-            self.subscribe(cr.id, cr.sender.clone());
-        } else if self.init_info.mthd_insert.id() == msg.method {
-            self.insert(from_cbor_list(msg.args).ok()?)?
-        } else if self.init_info.mthd_update.id() == msg.method {
-            let (keys, rows) =
-                arg_to_tuple!(msg.args, Vec<i64>, Vec<Vec<Value>>)?;
-            self.update(keys, rows)?;
-        } else if self.init_info.mthd_remove.id() == msg.method {
-            let keys = arg_to_tuple!(msg.args, Vec<i64>)?;
-            self.remove(keys.0);
-        } else if self.init_info.mthd_clear.id() == msg.method {
-            self.clear()?;
-        } else if self.init_info.mthd_update_selection.id() == msg.method {
-            let args = arg_to_tuple!(msg.args, Selection)?;
-            self.update_selection(args.0)?;
+        method: &ComponentReference<MethodState>,
+        context: InvokeObj,
+        args: Vec<Value>,
+    ) -> MethodResult {
+        log::debug!("Handle next table command: {method:?}");
+        if !{
+            if let InvokeObj::Table(t) = context {
+                (t == self.table_id) && self.init_info.is_table_message(method)
+            } else {
+                log::debug!("Context is not a table.");
+                false
+            }
+        } {
+            return Err(MethodException::internal_error(Some(
+                "Given a bad method to invoke on a table.".to_string(),
+            )));
         }
 
-        Some(())
+        log::debug!("Table handler: Client {}", cr.id);
+
+        fn translate_return(r: Option<()>) -> MethodResult {
+            if r.is_some() {
+                return Ok(None);
+            }
+            return Err(MethodException {
+                code: ExceptionCodes::InvalidParameters as i32,
+                ..Default::default()
+            });
+        }
+
+        fn map_bad_args() -> MethodException {
+            return MethodException {
+                code: ExceptionCodes::InvalidParameters as i32,
+                ..Default::default()
+            };
+        }
+
+        if self.init_info.mthd_subscribe == *method {
+            let init = self.subscribe(cr.id, cr.sender.clone());
+            return Ok(Some(to_cbor(&init)));
+        } else if self.init_info.mthd_insert == *method {
+            return translate_return(
+                self.insert(from_cbor_list(args).map_err(|_| map_bad_args())?),
+            );
+        } else if self.init_info.mthd_update == *method {
+            let (keys, rows) = arg_to_tuple!(args, Vec<i64>, Vec<Vec<Value>>)
+                .ok_or_else(map_bad_args)?;
+            return translate_return(self.update(keys, rows));
+        } else if self.init_info.mthd_remove == *method {
+            let keys =
+                arg_to_tuple!(args, Vec<i64>).ok_or_else(map_bad_args)?;
+            return translate_return(self.remove(keys.0));
+        } else if self.init_info.mthd_clear == *method {
+            return translate_return(self.clear());
+        } else if self.init_info.mthd_update_selection == *method {
+            let args =
+                arg_to_tuple!(args, Selection).ok_or_else(map_bad_args)?;
+            return translate_return(self.update_selection(args.0));
+        }
+
+        log::error!("Missing table method invoke");
+
+        return Err(MethodException::internal_error(None));
     }
 
     fn broadcast(
@@ -329,6 +460,7 @@ impl<T: TableTrait> TableStore<T> {
 
 // =============================================================================
 
+#[derive(Debug)]
 pub struct BasicTable {
     header: Vec<TableColumnInfo>,
     data: BTreeMap<i64, Vec<Value>>,
@@ -337,19 +469,28 @@ pub struct BasicTable {
 }
 
 impl BasicTable {
-    pub fn new(header: Vec<TableColumnInfo>) -> Self {
-        Self {
+    pub fn new(
+        header: Vec<TableColumnInfo>,
+        init_data: Vec<Vec<Value>>,
+    ) -> Self {
+        let mut ret = Self {
             header,
             data: BTreeMap::new(),
             selections: HashMap::new(),
             counter: 0,
-        }
+        };
+
+        ret.insert_data(init_data);
+
+        log::debug!("Basic table ready {ret:?}");
+
+        ret
     }
 
     fn next_key(&mut self) -> i64 {
         let now = self.counter;
         self.counter += 1;
-        return now;
+        now
     }
 }
 
@@ -369,8 +510,13 @@ impl TableTrait for BasicTable {
         let mut fixed_data = Vec::<Vec<Value>>::new();
         let mut new_keys = Vec::<i64>::new();
 
+        if log::log_enabled!(log::Level::Debug) {
+            log::debug!("Inserting data: {:?}", new_data);
+        }
+
         for l in new_data {
             if l.len() != self.header.len() {
+                log::debug!("Skipping insert, row is not the right length");
                 continue;
             }
             fixed_data.push(l);
@@ -379,6 +525,14 @@ impl TableTrait for BasicTable {
 
         if new_keys.is_empty() {
             return None;
+        }
+
+        if log::log_enabled!(log::Level::Debug) {
+            log::debug!("Keys: {new_keys:?}, Fixed: {fixed_data:?}",);
+        }
+
+        for (k, v) in new_keys.iter().zip(fixed_data.iter()) {
+            self.data.insert(*k, v.clone());
         }
 
         Some((new_keys, fixed_data))
@@ -411,7 +565,7 @@ impl TableTrait for BasicTable {
         let mut ret = Vec::new();
 
         for k in keys {
-            if let Some(_) = self.data.remove(&k) {
+            if self.data.remove(&k).is_some() {
                 ret.push(k);
             }
         }

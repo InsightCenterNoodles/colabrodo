@@ -127,6 +127,7 @@ impl UserServerState for CubeServer {
         &mut self,
         _method: ComponentReference<MethodState>,
         _context: colabrodo_server::server_state::InvokeObj,
+        _client_id: uuid::Uuid,
         _args: Vec<ciborium::value::Value>,
     ) -> colabrodo_server::server_state::MethodResult {
         Err(MethodException::method_not_found(None))

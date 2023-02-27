@@ -159,7 +159,7 @@ pub enum IndexType<'a> {
 impl<'a> IndexType<'a> {
     fn total_u32_count(&self) -> u32 {
         (match self {
-            IndexType::Points(x) => x.len() * 1,
+            IndexType::Points(x) => x.len(),
             IndexType::Lines(x) => x.len() * 2,
             IndexType::Triangles(x) => x.len() * 3,
             _ => 0,

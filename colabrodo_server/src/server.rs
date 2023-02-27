@@ -16,13 +16,18 @@ use tokio_tungstenite::tungstenite::Message as WSMessage;
 
 use crate::server_state;
 use crate::server_state::Output;
-use crate::server_state::UserServerState;
+pub use crate::server_state::{
+    CallbackPtr, InvokeObj, ServerState, UserServerState,
+};
 
 pub use tokio;
 
 pub use ciborium;
 
 pub use uuid;
+
+pub use crate::server_messages::{ComponentReference, MethodState};
+pub use crate::server_state::MethodResult;
 
 // We have a fun structure here.
 // First there is a thread for handling the server state, which is controlled through queues.
@@ -94,7 +99,7 @@ pub trait AsyncServer: UserServerState {
     fn new(tx: server_state::CallbackPtr, init: Self::InitType) -> Self;
 
     /// Called after the user state has been created. Extra setup can happen here.
-    fn initialize_state(&mut self);
+    fn initialize_state(&mut self) {}
 
     /// Called when a new client connects. This is before any introduction is received
     #[allow(unused_variables)]
@@ -105,7 +110,8 @@ pub trait AsyncServer: UserServerState {
     fn client_disconnected(&mut self, client_id: uuid::Uuid) {}
 
     /// Called when an async command is received
-    fn handle_command(&mut self, command: Self::CommandType);
+    #[allow(unused_variables)]
+    fn handle_command(&mut self, command: Self::CommandType) {}
 }
 
 /// Public entry point to the server process.
@@ -192,9 +198,15 @@ pub async fn server_main_with_command_queue<T>(
     server_message_pump(bcast_send, from_server_recv, to_server_send.clone())
         .await;
 
+    log::debug!("Server is closing down, waiting for client connect task...");
+
     h1.await.unwrap();
 
+    log::debug!("Server is closing down, waiting for state thread...");
+
     state_handle.join().unwrap();
+
+    log::debug!("Server is done.");
 }
 
 async fn command_sender<T>(
@@ -261,12 +273,11 @@ async fn server_message_pump<T>(
 {
     log::debug!("Starting server message pump");
     while let Ok(msg) = from_server_recv.recv() {
-        if bcast_send.receiver_count() == 0 {
-            continue;
-        }
-
         match msg {
             Output::Broadcast(msg) => {
+                if bcast_send.receiver_count() == 0 {
+                    continue;
+                }
                 if bcast_send.send(msg).is_err() {
                     log::error!("Internal error: Unable to broadcast message.")
                 }
@@ -318,6 +329,7 @@ fn server_state_loop<T>(
                 let result = server_state::handle_next(
                     &mut server_state,
                     client_msg.1,
+                    client_msg.0,
                     |out| {
                         if log_enabled!(log::Level::Debug) {
                             log::debug!("SEND TO CLIENT:");

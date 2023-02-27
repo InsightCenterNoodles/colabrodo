@@ -139,9 +139,7 @@ impl CBORTransform for f32 {
 impl CBORTransform for u32 {
     fn try_from_cbor(value: Value) -> Result<Self, FromValueError> {
         if let Value::Integer(s) = value {
-            return Ok(s
-                .try_into()
-                .map_err(|_| FromValueError::IntegerCast)?);
+            return s.try_into().map_err(|_| FromValueError::IntegerCast);
         }
         Err(FromValueError::WrongType {
             expected: "Integer".into(),
@@ -157,9 +155,7 @@ impl CBORTransform for u32 {
 impl CBORTransform for i32 {
     fn try_from_cbor(value: Value) -> Result<Self, FromValueError> {
         if let Value::Integer(s) = value {
-            return Ok(s
-                .try_into()
-                .map_err(|_| FromValueError::IntegerCast)?);
+            return s.try_into().map_err(|_| FromValueError::IntegerCast);
         }
         Err(FromValueError::WrongType {
             expected: "Integer".into(),
@@ -175,9 +171,7 @@ impl CBORTransform for i32 {
 impl CBORTransform for i64 {
     fn try_from_cbor(value: Value) -> Result<Self, FromValueError> {
         if let Value::Integer(s) = value {
-            return Ok(s
-                .try_into()
-                .map_err(|_| FromValueError::IntegerCast)?);
+            return s.try_into().map_err(|_| FromValueError::IntegerCast);
         }
         Err(FromValueError::WrongType {
             expected: "Integer".into(),
@@ -300,13 +294,16 @@ macro_rules! make_decode_function {
 macro_rules! arg_to_tuple {
     ($y:expr, $( $x:ty ),*) => {
         {
-            let mut arr = ($y).into_iter();
-            let tuple = (
+            fn arg_to_tuple_check(v: Vec<Value>) -> Option<( $( $x, )* )> {
+                let mut arr = v.into_iter();
+                return Some( (
                 $(
                     from_cbor::<$x>(arr.next()?).ok()?,
                 )*
-                );
-            Some(tuple)
+                ) );
+            }
+
+            arg_to_tuple_check($y)
         }
     };
 }

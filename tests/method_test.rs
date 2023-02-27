@@ -4,7 +4,6 @@ use colabrodo_server::server::ciborium;
 use colabrodo_server::server::tokio;
 use colabrodo_server::server::tokio::runtime;
 use colabrodo_server::server::*;
-use colabrodo_server::server_messages::*;
 use colabrodo_server::server_state::*;
 
 use colabrodo_server::server::ciborium::value;
@@ -42,7 +41,7 @@ fn ping_pong(
     );
 
     log::info!("Sending reply...");
-    Ok(ciborium::value::Value::Array(args))
+    Ok(Some(ciborium::value::Value::Array(args)))
 }
 
 impl UserServerState for PingPongServer {
@@ -58,6 +57,7 @@ impl UserServerState for PingPongServer {
         &mut self,
         method: ComponentReference<MethodState>,
         context: colabrodo_server::server_state::InvokeObj,
+        _client_id: uuid::Uuid,
         args: Vec<ciborium::value::Value>,
     ) -> MethodResult {
         let function = self.method_list.get(&method).unwrap();

@@ -184,13 +184,13 @@ pub async fn run_asset_server(
         log::info!("Serving binary assets on {}", state.hostname());
     }
 
-    let (bcast_tx, mut bcast_rx) = broadcast::channel(2);
+    let (stop_tx, mut stop_rx) = broadcast::channel(2);
 
-    tokio::spawn(command_handler(
+    let command_handle = tokio::spawn(command_handler(
         command_stream,
         command_replies.clone(),
-        bcast_tx.subscribe(),
-        bcast_tx,
+        stop_tx.subscribe(),
+        stop_tx,
         state.clone(),
     ));
 
@@ -217,17 +217,23 @@ pub async fn run_asset_server(
                 log::error!("HTTP server error: {e}");
             }
         },
-        _shutdown_c = bcast_rx.recv() => {
+        _shutdown_c = stop_rx.recv() => {
         }
     }
+
+    log::debug!("Shutting down asset server...");
+
+    command_handle.await.unwrap();
+
+    log::debug!("Complete.");
 }
 
 /// Task to handle commands
 async fn command_handler(
     mut command_stream: mpsc::Receiver<AssetServerCommand>,
     command_replies: mpsc::Sender<AssetServerReply>,
-    mut bcast_rx: broadcast::Receiver<u8>,
-    bcast_tx: broadcast::Sender<u8>,
+    mut stop_rx: broadcast::Receiver<u8>,
+    stop_tx: broadcast::Sender<u8>,
     state: Arc<Mutex<AssetStore>>,
 ) {
     loop {
@@ -262,12 +268,12 @@ async fn command_handler(
                                 .send(AssetServerReply::ShuttingDown)
                                 .await
                                 .unwrap();
-                            bcast_tx.send(1).unwrap();
+                            stop_tx.send(1).unwrap();
                         }
                     }
                 }
             },
-            _shutdown_c = bcast_rx.recv() => {
+            _shutdown_c = stop_rx.recv() => {
                 return;
             }
         }

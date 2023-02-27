@@ -112,6 +112,14 @@ impl MethodException {
             ..Default::default()
         }
     }
+
+    pub fn internal_error(optional_info: Option<String>) -> Self {
+        Self {
+            code: ExceptionCodes::InternalError as i32,
+            message: optional_info,
+            ..Default::default()
+        }
+    }
 }
 
 pub enum ExceptionCodes {
