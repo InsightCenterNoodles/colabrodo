@@ -1,5 +1,3 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
-
 use crate::{
     server::ClientRecord,
     server_messages::{
@@ -21,12 +19,14 @@ use colabrodo_common::{
     tf_to_cbor,
     value_tools::*,
 };
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::fmt::Debug;
 use tokio::sync::mpsc;
 
 // =============================================================================
 
 #[derive(Debug, Clone)]
-pub struct TableSystemInit {
+pub struct CreateTableMethods {
     sig_reset: ComponentReference<SignalState>,
     sig_updated: ComponentReference<SignalState>,
     sig_row_remove: ComponentReference<SignalState>,
@@ -44,7 +44,10 @@ pub struct TableSystemInit {
     valid_method_hash: HashSet<ComponentReference<MethodState>>,
 }
 
-impl TableSystemInit {
+impl CreateTableMethods {
+    /// Creates and resolves table related methods and signals.
+    ///
+    /// This does not currently check if the methods have already been created, so do not call this more than once. Instead, clone or move the resulting object around.
     pub fn new(state: &mut ServerState) -> Self {
         let mthd_subscribe = state.methods.new_component(MethodState {
             name: strings::MTHD_TBL_SUBSCRIBE.to_string(),
@@ -178,6 +181,7 @@ impl TableSystemInit {
         }
     }
 
+    /// Register signals and methods with a given table
     fn attach(
         &self,
         state: &mut ServerState,
@@ -241,40 +245,66 @@ impl TableSystemInit {
 
 // =============================================================================
 
+/// Interface for interacting with a table.
 pub trait TableTrait {
+    /// Called when a client needs initial data
     fn get_init_data(&self) -> TableInitData;
 
+    /// Called when a client is asking to install data.
+    ///
+    /// This function should return None if the insert should fail. Otherwise, it should return keys for the newly inserted rows along with the data that was inserted. This allows your code to fix up inserted rows; either rejecting certain rows, adding values, etc.
     fn insert_data(
         &mut self,
         new_data: Vec<Vec<Value>>,
     ) -> Option<(Vec<i64>, Vec<Vec<Value>>)>;
 
+    /// Called when a client is asking to update data.
+    ///
+    /// This function should return None if the update should fail. Otherwise, it should return keys for the updated rows along with the corresponding data that was changed. This allows your code to fix up updated rows; either rejecting certain rows, adding values, etc.
     fn update_data(
         &mut self,
         keys: Vec<i64>,
         updated_data: Vec<Vec<Value>>,
     ) -> Option<(Vec<i64>, Vec<Vec<Value>>)>;
 
+    /// Called when a client is requesting to delete data.
+    ///
+    /// Should return None if the request should fail. Otherwise the function should return keys that should actually be deleted.
     fn delete_data(&mut self, keys: Vec<i64>) -> Option<Vec<i64>>;
 
+    /// Called when a client is requesting to update a Selection
+    ///
+    /// Return None if the request should fail. Otherwise return the actual update to the Selection.
     fn update_selection(&mut self, selection: Selection) -> Option<Selection>;
 
+    /// Called when a client is requesting to clear the table
+    ///
+    /// Return None if the request should fail. Otherwise return the new 'blank' state.
     fn clear(&mut self) -> Option<TableInitData>;
 }
 
 // =============================================================================
 
+/// Contains a table to be managed
+///
+/// Tables should be created with some struct that implements [TableTrait].
+///
+/// These tables will need to be informed when table-related methods are called from clients, as well as specific clients that are subscribing. For that reason, make sure to check [`Self::is_relevant_method()`], and, if this returns true, call [`Self::consume_relevant_method()`]. When a client leaves, call [`Self::forget_client()`]
+///
+/// Manipulating the provided table won't broadcast changes; make sure to use the available public methods to modify the table.
+#[derive(Debug)]
 pub struct TableStore<T: TableTrait> {
-    init_info: TableSystemInit,
+    init_info: CreateTableMethods,
     table_id: ComponentReference<ServerTableState>,
     table_type: T,
     subscribers: HashMap<uuid::Uuid, mpsc::Sender<Vec<u8>>>,
 }
 
 impl<T: TableTrait> TableStore<T> {
+    /// Create a new managed table
     pub fn new(
         state: &mut ServerState,
-        init: TableSystemInit,
+        init: CreateTableMethods,
         table_id: ComponentReference<ServerTableState>,
         table: T,
     ) -> Self {
@@ -297,11 +327,13 @@ impl<T: TableTrait> TableStore<T> {
         self.table_type.get_init_data()
     }
 
+    /// Inform the managed table that a client has gone away.
     pub fn forget_client(&mut self, id: uuid::Uuid) {
         log::debug!("Forgetting {id}");
         self.subscribers.remove(&id);
     }
 
+    /// Insert data into the table
     pub fn insert(&mut self, new_data: Vec<Vec<Value>>) -> Option<()> {
         let (keys, fixed) = self.table_type.insert_data(new_data)?;
 
@@ -312,6 +344,7 @@ impl<T: TableTrait> TableStore<T> {
         Some(())
     }
 
+    /// Update the table
     pub fn update(
         &mut self,
         keys: Vec<i64>,
@@ -326,6 +359,7 @@ impl<T: TableTrait> TableStore<T> {
         Some(())
     }
 
+    /// Remove keys from the table
     pub fn remove(&mut self, keys: Vec<i64>) -> Option<()> {
         let keys = self.table_type.delete_data(keys)?;
 
@@ -336,6 +370,7 @@ impl<T: TableTrait> TableStore<T> {
         Some(())
     }
 
+    /// Change a selection
     pub fn update_selection(&mut self, selection: Selection) -> Option<()> {
         let sel = self.table_type.update_selection(selection)?;
 
@@ -346,6 +381,7 @@ impl<T: TableTrait> TableStore<T> {
         Some(())
     }
 
+    /// Clear the table
     pub fn clear(&mut self) -> Option<()> {
         let new_state = self.table_type.clear()?;
 
@@ -354,7 +390,8 @@ impl<T: TableTrait> TableStore<T> {
         Some(())
     }
 
-    pub fn can_handle_next(
+    /// Discover if a method invocation should be directed to this manager. If true, call [`Self::consume_relevant_method()`]
+    pub fn is_relevant_method(
         &self,
         method: &ComponentReference<MethodState>,
         context: &InvokeObj,
@@ -366,7 +403,8 @@ impl<T: TableTrait> TableStore<T> {
         return false;
     }
 
-    pub fn handle_next(
+    /// Consume a method, note that [`Self::is_relevant_method()`] should be tested first.
+    pub fn consume_relevant_method(
         &mut self,
         cr: &ClientRecord,
         method: &ComponentReference<MethodState>,
@@ -460,6 +498,7 @@ impl<T: TableTrait> TableStore<T> {
 
 // =============================================================================
 
+/// An example table to be used to present information to clients. This can be used directly, or used as a guide to create your own
 #[derive(Debug)]
 pub struct BasicTable {
     header: Vec<TableColumnInfo>,
@@ -469,6 +508,9 @@ pub struct BasicTable {
 }
 
 impl BasicTable {
+    /// Create a new table
+    ///
+    /// The column count in the header and the initial data should match...
     pub fn new(
         header: Vec<TableColumnInfo>,
         init_data: Vec<Vec<Value>>,
@@ -500,6 +542,7 @@ impl TableTrait for BasicTable {
             columns: self.header.clone(),
             keys: self.data.keys().cloned().collect(),
             data: self.data.values().cloned().collect(),
+            ..Default::default()
         }
     }
 

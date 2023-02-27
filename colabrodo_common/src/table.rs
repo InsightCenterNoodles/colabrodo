@@ -19,9 +19,10 @@ pub struct TableColumnInfo {
     pub type_: String,
 }
 
-#[derive(CBORTransform, Debug)]
+#[derive(CBORTransform, Debug, Default)]
 pub struct TableInitData {
     pub columns: Vec<TableColumnInfo>,
     pub keys: Vec<i64>,
     pub data: Vec<Vec<Value>>,
+    pub selections: Option<Vec<Selection>>,
 }
