@@ -15,121 +15,171 @@ pub struct ServerRootMessage {
 
 struct ServerRootMessageVisitor;
 
-fn push_next<'de, A>(id: ServerMessageIDs, seq: &mut A) -> Option<FromServer>
+fn push_next<'de, A>(
+    id: ServerMessageIDs,
+    seq: &mut A,
+) -> Result<FromServer, A::Error>
 where
     A: serde::de::SeqAccess<'de>,
 {
-    match id {
-        ServerMessageIDs::MsgMethodCreate => {
-            Some(FromServer::MsgMethodCreate(seq.next_element().ok()??))
-        }
-        ServerMessageIDs::MsgMethodDelete => {
-            Some(FromServer::MsgMethodDelete(seq.next_element().ok()??))
-        }
-        ServerMessageIDs::MsgSignalCreate => {
-            Some(FromServer::MsgSignalCreate(seq.next_element().ok()??))
-        }
-        ServerMessageIDs::MsgSignalDelete => {
-            Some(FromServer::MsgSignalDelete(seq.next_element().ok()??))
-        }
-        ServerMessageIDs::MsgEntityCreate => {
-            Some(FromServer::MsgEntityCreate(seq.next_element().ok()??))
-        }
-        ServerMessageIDs::MsgEntityUpdate => {
-            Some(FromServer::MsgEntityUpdate(seq.next_element().ok()??))
-        }
-        ServerMessageIDs::MsgEntityDelete => {
-            Some(FromServer::MsgEntityDelete(seq.next_element().ok()??))
-        }
-        ServerMessageIDs::MsgPlotCreate => {
-            Some(FromServer::MsgPlotCreate(seq.next_element().ok()??))
-        }
-        ServerMessageIDs::MsgPlotUpdate => {
-            Some(FromServer::MsgPlotUpdate(seq.next_element().ok()??))
-        }
-        ServerMessageIDs::MsgPlotDelete => {
-            Some(FromServer::MsgPlotDelete(seq.next_element().ok()??))
-        }
-        ServerMessageIDs::MsgBufferCreate => {
-            Some(FromServer::MsgBufferCreate(seq.next_element().ok()??))
-        }
-        ServerMessageIDs::MsgBufferDelete => {
-            Some(FromServer::MsgBufferDelete(seq.next_element().ok()??))
-        }
+    let ret = match id {
+        ServerMessageIDs::MsgMethodCreate => FromServer::MsgMethodCreate(
+            seq.next_element()?
+                .ok_or_else(|| serde::de::Error::custom(""))?,
+        ),
+        ServerMessageIDs::MsgMethodDelete => FromServer::MsgMethodDelete(
+            seq.next_element()?
+                .ok_or_else(|| serde::de::Error::custom(""))?,
+        ),
+        ServerMessageIDs::MsgSignalCreate => FromServer::MsgSignalCreate(
+            seq.next_element()?
+                .ok_or_else(|| serde::de::Error::custom(""))?,
+        ),
+        ServerMessageIDs::MsgSignalDelete => FromServer::MsgSignalDelete(
+            seq.next_element()?
+                .ok_or_else(|| serde::de::Error::custom(""))?,
+        ),
+        ServerMessageIDs::MsgEntityCreate => FromServer::MsgEntityCreate(
+            seq.next_element()?
+                .ok_or_else(|| serde::de::Error::custom(""))?,
+        ),
+        ServerMessageIDs::MsgEntityUpdate => FromServer::MsgEntityUpdate(
+            seq.next_element()?
+                .ok_or_else(|| serde::de::Error::custom(""))?,
+        ),
+        ServerMessageIDs::MsgEntityDelete => FromServer::MsgEntityDelete(
+            seq.next_element()?
+                .ok_or_else(|| serde::de::Error::custom(""))?,
+        ),
+        ServerMessageIDs::MsgPlotCreate => FromServer::MsgPlotCreate(
+            seq.next_element()?
+                .ok_or_else(|| serde::de::Error::custom(""))?,
+        ),
+        ServerMessageIDs::MsgPlotUpdate => FromServer::MsgPlotUpdate(
+            seq.next_element()?
+                .ok_or_else(|| serde::de::Error::custom(""))?,
+        ),
+        ServerMessageIDs::MsgPlotDelete => FromServer::MsgPlotDelete(
+            seq.next_element()?
+                .ok_or_else(|| serde::de::Error::custom(""))?,
+        ),
+        ServerMessageIDs::MsgBufferCreate => FromServer::MsgBufferCreate(
+            seq.next_element()?
+                .ok_or_else(|| serde::de::Error::custom(""))?,
+        ),
+        ServerMessageIDs::MsgBufferDelete => FromServer::MsgBufferDelete(
+            seq.next_element()?
+                .ok_or_else(|| serde::de::Error::custom(""))?,
+        ),
         ServerMessageIDs::MsgBufferViewCreate => {
-            Some(FromServer::MsgBufferViewCreate(seq.next_element().ok()??))
+            FromServer::MsgBufferViewCreate(
+                seq.next_element()?
+                    .ok_or_else(|| serde::de::Error::custom(""))?,
+            )
         }
         ServerMessageIDs::MsgBufferViewDelete => {
-            Some(FromServer::MsgBufferViewDelete(seq.next_element().ok()??))
+            FromServer::MsgBufferViewDelete(
+                seq.next_element()?
+                    .ok_or_else(|| serde::de::Error::custom(""))?,
+            )
         }
-        ServerMessageIDs::MsgMaterialCreate => {
-            Some(FromServer::MsgMaterialCreate(seq.next_element().ok()??))
-        }
-        ServerMessageIDs::MsgMaterialUpdate => {
-            Some(FromServer::MsgMaterialUpdate(seq.next_element().ok()??))
-        }
-        ServerMessageIDs::MsgMaterialDelete => {
-            Some(FromServer::MsgMaterialDelete(seq.next_element().ok()??))
-        }
-        ServerMessageIDs::MsgImageCreate => {
-            Some(FromServer::MsgImageCreate(seq.next_element().ok()??))
-        }
-        ServerMessageIDs::MsgImageDelete => {
-            Some(FromServer::MsgImageDelete(seq.next_element().ok()??))
-        }
-        ServerMessageIDs::MsgTextureCreate => {
-            Some(FromServer::MsgTextureCreate(seq.next_element().ok()??))
-        }
-        ServerMessageIDs::MsgTextureDelete => {
-            Some(FromServer::MsgTextureDelete(seq.next_element().ok()??))
-        }
-        ServerMessageIDs::MsgSamplerCreate => {
-            Some(FromServer::MsgSamplerCreate(seq.next_element().ok()??))
-        }
-        ServerMessageIDs::MsgSamplerDelete => {
-            Some(FromServer::MsgSamplerDelete(seq.next_element().ok()??))
-        }
-        ServerMessageIDs::MsgLightCreate => {
-            Some(FromServer::MsgLightCreate(seq.next_element().ok()??))
-        }
-        ServerMessageIDs::MsgLightUpdate => {
-            Some(FromServer::MsgLightUpdate(seq.next_element().ok()??))
-        }
-        ServerMessageIDs::MsgLightDelete => {
-            Some(FromServer::MsgLightDelete(seq.next_element().ok()??))
-        }
-        ServerMessageIDs::MsgGeometryCreate => {
-            Some(FromServer::MsgGeometryCreate(seq.next_element().ok()??))
-        }
-        ServerMessageIDs::MsgGeometryDelete => {
-            Some(FromServer::MsgGeometryDelete(seq.next_element().ok()??))
-        }
-        ServerMessageIDs::MsgTableCreate => {
-            Some(FromServer::MsgTableCreate(seq.next_element().ok()??))
-        }
-        ServerMessageIDs::MsgTableUpdate => {
-            Some(FromServer::MsgTableUpdate(seq.next_element().ok()??))
-        }
-        ServerMessageIDs::MsgTableDelete => {
-            Some(FromServer::MsgTableDelete(seq.next_element().ok()??))
-        }
-        ServerMessageIDs::MsgDocumentUpdate => {
-            Some(FromServer::MsgDocumentUpdate(seq.next_element().ok()??))
-        }
-        ServerMessageIDs::MsgDocumentReset => {
-            Some(FromServer::MsgDocumentReset(seq.next_element().ok()??))
-        }
-        ServerMessageIDs::MsgSignalInvoke => {
-            Some(FromServer::MsgSignalInvoke(seq.next_element().ok()??))
-        }
-        ServerMessageIDs::MsgMethodReply => {
-            Some(FromServer::MsgMethodReply(seq.next_element().ok()??))
-        }
-        ServerMessageIDs::MsgDocumentInitialized => Some(
-            FromServer::MsgDocumentInitialized(seq.next_element().ok()??),
+        ServerMessageIDs::MsgMaterialCreate => FromServer::MsgMaterialCreate(
+            seq.next_element()?
+                .ok_or_else(|| serde::de::Error::custom(""))?,
         ),
-        ServerMessageIDs::Unknown => None,
-    }
+        ServerMessageIDs::MsgMaterialUpdate => FromServer::MsgMaterialUpdate(
+            seq.next_element()?
+                .ok_or_else(|| serde::de::Error::custom(""))?,
+        ),
+        ServerMessageIDs::MsgMaterialDelete => FromServer::MsgMaterialDelete(
+            seq.next_element()?
+                .ok_or_else(|| serde::de::Error::custom(""))?,
+        ),
+        ServerMessageIDs::MsgImageCreate => FromServer::MsgImageCreate(
+            seq.next_element()?
+                .ok_or_else(|| serde::de::Error::custom(""))?,
+        ),
+        ServerMessageIDs::MsgImageDelete => FromServer::MsgImageDelete(
+            seq.next_element()?
+                .ok_or_else(|| serde::de::Error::custom(""))?,
+        ),
+        ServerMessageIDs::MsgTextureCreate => FromServer::MsgTextureCreate(
+            seq.next_element()?
+                .ok_or_else(|| serde::de::Error::custom(""))?,
+        ),
+        ServerMessageIDs::MsgTextureDelete => FromServer::MsgTextureDelete(
+            seq.next_element()?
+                .ok_or_else(|| serde::de::Error::custom(""))?,
+        ),
+        ServerMessageIDs::MsgSamplerCreate => FromServer::MsgSamplerCreate(
+            seq.next_element()?
+                .ok_or_else(|| serde::de::Error::custom(""))?,
+        ),
+        ServerMessageIDs::MsgSamplerDelete => FromServer::MsgSamplerDelete(
+            seq.next_element()?
+                .ok_or_else(|| serde::de::Error::custom(""))?,
+        ),
+        ServerMessageIDs::MsgLightCreate => FromServer::MsgLightCreate(
+            seq.next_element()?
+                .ok_or_else(|| serde::de::Error::custom(""))?,
+        ),
+        ServerMessageIDs::MsgLightUpdate => FromServer::MsgLightUpdate(
+            seq.next_element()?
+                .ok_or_else(|| serde::de::Error::custom(""))?,
+        ),
+        ServerMessageIDs::MsgLightDelete => FromServer::MsgLightDelete(
+            seq.next_element()?
+                .ok_or_else(|| serde::de::Error::custom(""))?,
+        ),
+        ServerMessageIDs::MsgGeometryCreate => FromServer::MsgGeometryCreate(
+            seq.next_element()?
+                .ok_or_else(|| serde::de::Error::custom(""))?,
+        ),
+        ServerMessageIDs::MsgGeometryDelete => FromServer::MsgGeometryDelete(
+            seq.next_element()?
+                .ok_or_else(|| serde::de::Error::custom(""))?,
+        ),
+        ServerMessageIDs::MsgTableCreate => FromServer::MsgTableCreate(
+            seq.next_element()?
+                .ok_or_else(|| serde::de::Error::custom(""))?,
+        ),
+        ServerMessageIDs::MsgTableUpdate => FromServer::MsgTableUpdate(
+            seq.next_element()?
+                .ok_or_else(|| serde::de::Error::custom(""))?,
+        ),
+        ServerMessageIDs::MsgTableDelete => FromServer::MsgTableDelete(
+            seq.next_element()?
+                .ok_or_else(|| serde::de::Error::custom(""))?,
+        ),
+        ServerMessageIDs::MsgDocumentUpdate => FromServer::MsgDocumentUpdate(
+            seq.next_element()?
+                .ok_or_else(|| serde::de::Error::custom(""))?,
+        ),
+        ServerMessageIDs::MsgDocumentReset => FromServer::MsgDocumentReset(
+            seq.next_element()?
+                .ok_or_else(|| serde::de::Error::custom(""))?,
+        ),
+        ServerMessageIDs::MsgSignalInvoke => FromServer::MsgSignalInvoke(
+            seq.next_element()?
+                .ok_or_else(|| serde::de::Error::custom(""))?,
+        ),
+        ServerMessageIDs::MsgMethodReply => FromServer::MsgMethodReply(
+            seq.next_element()?
+                .ok_or_else(|| serde::de::Error::custom(""))?,
+        ),
+        ServerMessageIDs::MsgDocumentInitialized => {
+            FromServer::MsgDocumentInitialized(
+                seq.next_element()?
+                    .ok_or_else(|| serde::de::Error::custom(""))?,
+            )
+        }
+        ServerMessageIDs::Unknown => {
+            log::debug!("Unknown ID, bailing");
+            return Err(serde::de::Error::custom(""));
+        }
+    };
+
+    Ok(ret)
 }
 
 impl<'de> Visitor<'de> for ServerRootMessageVisitor {
@@ -149,11 +199,15 @@ impl<'de> Visitor<'de> for ServerRootMessageVisitor {
         let mut ret = ServerRootMessage { list: Vec::new() };
 
         loop {
+            log::debug!("Decoding next message:");
             let id: Option<u32> = seq.next_element()?;
 
             if id.is_none() {
+                log::debug!("Bad id, breaking");
                 break;
             }
+
+            log::debug!("ID: {id:?}");
 
             let id: ServerMessageIDs =
                 match <ServerMessageIDs as FromPrimitive>::from_u32(id.unwrap())
@@ -162,9 +216,13 @@ impl<'de> Visitor<'de> for ServerRootMessageVisitor {
                     None => break,
                 };
 
+            log::debug!("Mapped to: {id:?}");
+
             match push_next(id, &mut seq) {
-                Some(x) => ret.list.push(x),
-                None => break,
+                Ok(x) => ret.list.push(x),
+                Err(x) => {
+                    log::error!("Unable to deserialize message {id:?} from server: {x:?}");
+                }
             }
         }
 

@@ -37,6 +37,12 @@ impl NamedComponent for SamplerState {
     }
 }
 
+impl NamedComponent for LightState {
+    fn name(&self) -> Option<&String> {
+        self.name.as_ref()
+    }
+}
+
 pub type ClientRenderRepresentation = RenderRepresentation<NooID>;
 
 pub type ClientEntityRepresentation = EntityRepresentation<NooID>;

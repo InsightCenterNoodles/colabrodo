@@ -23,7 +23,7 @@ use crate::server_state::ComponentCell;
 /// A trait to specify the update mechanism
 pub trait UpdatableStateItem {
     type HostState;
-    fn patch(self, m: &mut Self::HostState);
+    fn patch(self, m: &Self::HostState);
 }
 
 // Component Refs ==============================================
@@ -212,7 +212,7 @@ pub struct ServerTableStateUpdatable {
 #[serde_with::skip_serializing_none]
 #[derive(Debug, Default, Serialize)]
 pub struct ServerTableState {
-    name: Option<String>,
+    pub name: Option<String>,
 
     #[serde(flatten)]
     pub mutable: ServerTableStateUpdatable,

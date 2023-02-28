@@ -3,4 +3,6 @@ pub mod common;
 pub mod components;
 pub mod nooid;
 pub mod server_communication;
+pub mod table;
 pub mod types;
+pub mod value_tools;

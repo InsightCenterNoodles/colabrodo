@@ -4,7 +4,6 @@ use colabrodo_server::server::ciborium;
 use colabrodo_server::server::tokio;
 use colabrodo_server::server::tokio::runtime;
 use colabrodo_server::server::*;
-use colabrodo_server::server_messages::*;
 use colabrodo_server::server_state::*;
 
 use colabrodo_server::server::ciborium::value;
@@ -42,7 +41,7 @@ fn ping_pong(
     );
 
     log::info!("Sending reply...");
-    Ok(ciborium::value::Value::Array(args))
+    Ok(Some(ciborium::value::Value::Array(args)))
 }
 
 impl UserServerState for PingPongServer {
@@ -58,6 +57,7 @@ impl UserServerState for PingPongServer {
         &mut self,
         method: ComponentReference<MethodState>,
         context: colabrodo_server::server_state::InvokeObj,
+        _client_id: uuid::Uuid,
         args: Vec<ciborium::value::Value>,
     ) -> MethodResult {
         let function = self.method_list.get(&method).unwrap();
@@ -121,7 +121,7 @@ impl AsyncServer for PingPongServer {
         // pass
     }
 
-    fn client_disconnected(&mut self) {
+    fn client_disconnected(&mut self, _id: uuid::Uuid) {
         log::debug!("Last client left, shutting down...");
         self.state.output().send(Output::Shutdown).unwrap();
     }
@@ -140,12 +140,12 @@ struct ExampleState {
     samplers: BasicComponentList<SamplerState>,
     images: BasicComponentList<ClientImageState>,
     textures: BasicComponentList<ClientTextureState>,
-    materials: BasicUpdatableList<ClientMaterialState>,
+    materials: BasicComponentList<ClientMaterialState>,
     geometries: BasicComponentList<ClientGeometryState>,
-    lights: BasicUpdatableList<LightState>,
-    tables: BasicUpdatableList<ClientTableState>,
-    plots: BasicUpdatableList<ClientPlotState>,
-    entities: BasicUpdatableList<ClientEntityState>,
+    lights: BasicComponentList<LightState>,
+    tables: BasicComponentList<ClientTableState>,
+    plots: BasicComponentList<ClientPlotState>,
+    entities: BasicComponentList<ClientEntityState>,
 
     doc: ClientDocumentUpdate,
 
@@ -177,12 +177,12 @@ impl UserClientState for ExampleState {
     type SamplerL = BasicComponentList<SamplerState>;
     type ImageL = BasicComponentList<ClientImageState>;
     type TextureL = BasicComponentList<ClientTextureState>;
-    type MaterialL = BasicUpdatableList<ClientMaterialState>;
+    type MaterialL = BasicComponentList<ClientMaterialState>;
     type GeometryL = BasicComponentList<ClientGeometryState>;
-    type LightL = BasicUpdatableList<LightState>;
-    type TableL = BasicUpdatableList<ClientTableState>;
-    type PlotL = BasicUpdatableList<ClientPlotState>;
-    type EntityL = BasicUpdatableList<ClientEntityState>;
+    type LightL = BasicComponentList<LightState>;
+    type TableL = BasicComponentList<ClientTableState>;
+    type PlotL = BasicComponentList<ClientPlotState>;
+    type EntityL = BasicComponentList<ClientEntityState>;
 
     type CommandType = ExampleStateCommand;
     type ArgumentType = ExampleStateArgument;
@@ -296,7 +296,7 @@ impl UserClientState for ExampleState {
     }
     fn on_document_ready(&mut self) {
         log::info!("Document is ready, calling method...");
-        let id = self.methods.search_id("ping_pong").unwrap();
+        let id = self.methods.get_id_by_name("ping_pong").unwrap();
 
         log::info!("Found message ID: {id:?}");
 

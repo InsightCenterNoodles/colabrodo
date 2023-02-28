@@ -1,5 +1,6 @@
 //! A tokio powered server framework. Users can plug in a user server struct to this framework to obtain a coroutine powered NOODLES server.
 
+use std::collections::HashMap;
 use std::thread;
 
 use futures_util::SinkExt;
@@ -11,14 +12,22 @@ use tokio::{
     sync::{broadcast, mpsc},
 };
 use tokio_tungstenite;
+use tokio_tungstenite::tungstenite::Message as WSMessage;
 
 use crate::server_state;
 use crate::server_state::Output;
-use crate::server_state::UserServerState;
+pub use crate::server_state::{
+    CallbackPtr, InvokeObj, ServerState, UserServerState,
+};
 
 pub use tokio;
 
 pub use ciborium;
+
+pub use uuid;
+
+pub use crate::server_messages::{ComponentReference, MethodState};
+pub use crate::server_state::MethodResult;
 
 // We have a fun structure here.
 // First there is a thread for handling the server state, which is controlled through queues.
@@ -39,17 +48,23 @@ fn debug_cbor(data: &Vec<u8>) {
     println!("Decoded {output:?} | {data:02X?}");
 }
 
+#[derive(Debug, Clone)]
+pub struct ClientRecord {
+    pub id: uuid::Uuid,
+    pub sender: mpsc::Sender<Vec<u8>>,
+}
+
 /// Models a message from a client. As the server thread doesn't know who sent it, we pass along a lightweight handle to the client-specific queue so the server can send specific messages along
 #[derive(Debug)]
-struct FromClientMessage(mpsc::Sender<Vec<u8>>, Vec<u8>);
+struct FromClientMessage(uuid::Uuid, Vec<u8>);
 
 enum ToServerMessage<T>
 where
     T: AsyncServer,
 {
-    ClientConnected,
+    ClientConnected(ClientRecord),
     Client(FromClientMessage),
-    ClientClosed,
+    ClientClosed(uuid::Uuid),
     Shutdown,
     Command(T::CommandType),
 }
@@ -84,16 +99,19 @@ pub trait AsyncServer: UserServerState {
     fn new(tx: server_state::CallbackPtr, init: Self::InitType) -> Self;
 
     /// Called after the user state has been created. Extra setup can happen here.
-    fn initialize_state(&mut self);
+    fn initialize_state(&mut self) {}
 
     /// Called when a new client connects. This is before any introduction is received
-    fn client_connected(&mut self) {}
+    #[allow(unused_variables)]
+    fn client_connected(&mut self, record: ClientRecord) {}
 
-    /// Called when a client disconnects. This is purely informative.
-    fn client_disconnected(&mut self) {}
+    /// Called when a client disconnects.
+    #[allow(unused_variables)]
+    fn client_disconnected(&mut self, client_id: uuid::Uuid) {}
 
     /// Called when an async command is received
-    fn handle_command(&mut self, command: Self::CommandType);
+    #[allow(unused_variables)]
+    fn handle_command(&mut self, command: Self::CommandType) {}
 }
 
 /// Public entry point to the server process.
@@ -180,9 +198,15 @@ pub async fn server_main_with_command_queue<T>(
     server_message_pump(bcast_send, from_server_recv, to_server_send.clone())
         .await;
 
+    log::debug!("Server is closing down, waiting for client connect task...");
+
     h1.await.unwrap();
 
+    log::debug!("Server is closing down, waiting for state thread...");
+
     state_handle.join().unwrap();
+
+    log::debug!("Server is done.");
 }
 
 async fn command_sender<T>(
@@ -249,12 +273,11 @@ async fn server_message_pump<T>(
 {
     log::debug!("Starting server message pump");
     while let Ok(msg) = from_server_recv.recv() {
-        if bcast_send.receiver_count() == 0 {
-            continue;
-        }
-
         match msg {
             Output::Broadcast(msg) => {
+                if bcast_send.receiver_count() == 0 {
+                    continue;
+                }
                 if bcast_send.send(msg).is_err() {
                     log::error!("Internal error: Unable to broadcast message.")
                 }
@@ -285,9 +308,14 @@ fn server_state_loop<T>(
 
     server_state.initialize_state();
 
+    let mut client_map = HashMap::<uuid::Uuid, ClientRecord>::new();
+
     while let Ok(msg) = from_world.recv() {
         match msg {
-            ToServerMessage::ClientConnected => server_state.client_connected(),
+            ToServerMessage::ClientConnected(cr) => {
+                client_map.insert(cr.id, cr.clone());
+                server_state.client_connected(cr)
+            }
             ToServerMessage::Client(client_msg) => {
                 // handle a message from a client, and write any replies
                 // to the client's output queue
@@ -295,15 +323,19 @@ fn server_state_loop<T>(
                     log::debug!("RECV:");
                     debug_cbor(&client_msg.1);
                 }
+
+                let client = client_map.get(&client_msg.0).unwrap();
+
                 let result = server_state::handle_next(
                     &mut server_state,
                     client_msg.1,
+                    client_msg.0,
                     |out| {
                         if log_enabled!(log::Level::Debug) {
                             log::debug!("SEND TO CLIENT:");
                             debug_cbor(&out);
                         }
-                        client_msg.0.blocking_send(out).unwrap();
+                        client.sender.blocking_send(out).unwrap();
                     },
                 );
 
@@ -311,8 +343,9 @@ fn server_state_loop<T>(
                     log::warn!("Unable to handle message from client: {x:?}");
                 }
             }
-            ToServerMessage::ClientClosed => {
-                server_state.client_disconnected();
+            ToServerMessage::ClientClosed(id) => {
+                server_state.client_disconnected(id);
+                client_map.remove(&id);
             }
             ToServerMessage::Shutdown => {
                 stop_tx.send(1).unwrap();
@@ -350,6 +383,10 @@ where
         .expect("Error during handshake");
 
     log::info!("Websocket ready: {addr}");
+
+    let client_id = uuid::Uuid::new_v4();
+
+    log::info!("Identifying client as: {client_id}");
 
     // tx an rx are the core websocket channels
     let (mut tx, mut rx) = websocket.split();
@@ -402,7 +439,10 @@ where
     };
 
     to_server_send
-        .send(ToServerMessage::ClientConnected)
+        .send(ToServerMessage::ClientConnected(ClientRecord {
+            id: client_id,
+            sender: out_tx.clone(),
+        }))
         .unwrap();
 
     let mut stop_rx = stop_tx.subscribe();
@@ -419,24 +459,31 @@ where
                         Ok(x) => x,
                         Err(error) => {
                             log::warn!("Client disconnected: {error:?}");
-                            return Ok(());
+                            break;
                         }
                     };
 
-                    if message.is_binary() {
-                        to_server_send
+                    match message {
+                        WSMessage::Binary(x) => {
+                            to_server_send
                             .send(ToServerMessage::Client(FromClientMessage(
-                                out_tx.clone(),
-                                message.into_data(),
+                                client_id,
+                                x,
                             )))
                             .unwrap();
+                        }
+                        _ => break
                     }
                 }
             }
         }
     }
 
-    to_server_send.send(ToServerMessage::ClientClosed).unwrap();
+    stop_tx.send(1).unwrap();
+
+    to_server_send
+        .send(ToServerMessage::ClientClosed(client_id))
+        .unwrap();
 
     log::info!("Closing client, waiting for tasks...");
 

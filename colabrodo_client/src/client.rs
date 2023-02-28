@@ -1,3 +1,4 @@
+pub use crate::table::{ManagedTable, ResolvedTableIDs};
 use crate::{
     components::*,
     server_root_message::{FromServer, ServerRootMessage},
@@ -22,6 +23,11 @@ pub trait ComponentList<State> {
     fn on_create(&mut self, id: NooID, state: State);
     fn on_delete(&mut self, id: NooID);
     fn find(&self, id: &NooID) -> Option<&State>;
+
+    fn get_id_by_name(&self, name: &str) -> Option<&NooID>;
+    fn get_state_by_name(&self, name: &str) -> Option<&State> {
+        self.find(self.get_id_by_name(name)?)
+    }
 }
 
 /// A trait to describe how to interact with mutable components
@@ -48,16 +54,12 @@ impl<State> BasicComponentList<State>
 where
     State: NamedComponent,
 {
-    pub fn search_id(&self, name: &str) -> Option<&NooID> {
-        self.name_map.get(name)
-    }
-
-    pub fn search(&self, name: &str) -> Option<&State> {
-        self.find(self.name_map.get(name)?)
-    }
-
     pub fn find_name(&self, id: &NooID) -> Option<&String> {
         self.find(id)?.name()
+    }
+
+    pub fn component_map(&self) -> &HashMap<NooID, State> {
+        &self.components
     }
 }
 
@@ -97,41 +99,19 @@ where
     fn find(&self, id: &NooID) -> Option<&State> {
         self.components.get(id)
     }
-}
 
-// =============================================================================
+    fn get_id_by_name(&self, name: &str) -> Option<&NooID> {
+        self.name_map.get(name)
+    }
 
-/// A provided container for mutable components. Can be used if your client has no requirement for extra functionality.
-#[derive(Debug)]
-pub struct BasicUpdatableList<State> {
-    components: HashMap<NooID, State>,
-}
-
-impl<State> Default for BasicUpdatableList<State> {
-    fn default() -> Self {
-        Self {
-            components: HashMap::new(),
-        }
+    fn get_state_by_name(&self, name: &str) -> Option<&State> {
+        self.find(self.name_map.get(name)?)
     }
 }
 
-impl<State> ComponentList<State> for BasicUpdatableList<State> {
-    fn on_create(&mut self, id: NooID, state: State) {
-        self.components.insert(id, state);
-    }
-
-    fn on_delete(&mut self, id: NooID) {
-        self.components.remove(&id);
-    }
-
-    fn find(&self, id: &NooID) -> Option<&State> {
-        self.components.get(id)
-    }
-}
-
-impl<State> UpdatableComponentList<State> for BasicUpdatableList<State>
+impl<State> UpdatableComponentList<State> for BasicComponentList<State>
 where
-    State: UpdatableWith,
+    State: UpdatableWith + NamedComponent,
 {
     fn on_update(&mut self, id: NooID, update: State::Substate) {
         if let Some(item) = self.components.get_mut(&id) {
@@ -232,9 +212,18 @@ pub fn handle_next<U: UserClientState>(
     state: &mut U,
     message: &[u8],
 ) -> Result<(), UserClientNext> {
-    debug!("Handling next message array");
+    debug!("Handling next message array:");
+
+    if log::log_enabled!(log::Level::Debug) {
+        let v: ciborium::value::Value =
+            ciborium::de::from_reader(message).unwrap();
+        debug!("Content: {v:?}");
+    }
+
     let root: ServerRootMessage = ciborium::de::from_reader(message)
         .map_err(|x| UserClientNext::DecodeError(x.to_string()))?;
+
+    debug!("Got {} messages", root.list.len());
 
     for msg in root.list {
         handle_next_message(state, msg)?;
@@ -253,10 +242,12 @@ fn handle_next_message<U: UserClientState>(
             state.method_list().on_create(x.id, x.content);
         }
         FromServer::MsgMethodDelete(x) => state.method_list().on_delete(x.id),
+        //
         FromServer::MsgSignalCreate(x) => {
             state.signal_list().on_create(x.id, x.content)
         }
         FromServer::MsgSignalDelete(x) => state.signal_list().on_delete(x.id),
+        //
         FromServer::MsgEntityCreate(x) => {
             state.entity_list().on_create(x.id, x.content)
         }
@@ -264,62 +255,78 @@ fn handle_next_message<U: UserClientState>(
             state.entity_list().on_update(x.id, x.content)
         }
         FromServer::MsgEntityDelete(x) => state.entity_list().on_delete(x.id),
+        //
         FromServer::MsgPlotCreate(x) => {
             state.plot_list().on_create(x.id, x.content)
         }
         FromServer::MsgPlotUpdate(x) => {
             state.plot_list().on_update(x.id, x.content)
         }
-        FromServer::MsgPlotDelete(x) => state.method_list().on_delete(x.id),
+        FromServer::MsgPlotDelete(x) => state.plot_list().on_delete(x.id),
+        //
         FromServer::MsgBufferCreate(x) => {
             state.buffer_list().on_create(x.id, x.content)
         }
-        FromServer::MsgBufferDelete(x) => state.method_list().on_delete(x.id),
+        FromServer::MsgBufferDelete(x) => state.buffer_list().on_delete(x.id),
+        //
         FromServer::MsgBufferViewCreate(x) => {
             state.buffer_view_list().on_create(x.id, x.content)
         }
         FromServer::MsgBufferViewDelete(x) => {
-            state.method_list().on_delete(x.id)
+            state.buffer_view_list().on_delete(x.id)
         }
+        //
         FromServer::MsgMaterialCreate(x) => {
             state.material_list().on_create(x.id, x.content)
         }
         FromServer::MsgMaterialUpdate(x) => {
             state.material_list().on_update(x.id, x.content)
         }
-        FromServer::MsgMaterialDelete(x) => state.method_list().on_delete(x.id),
+        FromServer::MsgMaterialDelete(x) => {
+            state.material_list().on_delete(x.id)
+        }
+        //
         FromServer::MsgImageCreate(x) => {
             state.image_list().on_create(x.id, x.content)
         }
-        FromServer::MsgImageDelete(x) => state.method_list().on_delete(x.id),
+        FromServer::MsgImageDelete(x) => state.image_list().on_delete(x.id),
+        //
         FromServer::MsgTextureCreate(x) => {
             state.texture_list().on_create(x.id, x.content)
         }
-        FromServer::MsgTextureDelete(x) => state.method_list().on_delete(x.id),
+        FromServer::MsgTextureDelete(x) => state.texture_list().on_delete(x.id),
+        //
         FromServer::MsgSamplerCreate(x) => {
             state.sampler_list().on_create(x.id, x.content)
         }
-        FromServer::MsgSamplerDelete(x) => state.method_list().on_delete(x.id),
+        FromServer::MsgSamplerDelete(x) => state.sampler_list().on_delete(x.id),
+        //
         FromServer::MsgLightCreate(x) => {
             state.light_list().on_create(x.id, x.content)
         }
         FromServer::MsgLightUpdate(x) => {
             state.light_list().on_update(x.id, x.content)
         }
-        FromServer::MsgLightDelete(x) => state.method_list().on_delete(x.id),
+        FromServer::MsgLightDelete(x) => state.light_list().on_delete(x.id),
+        //
         FromServer::MsgGeometryCreate(x) => {
             state.geometry_list().on_create(x.id, x.content)
         }
-        FromServer::MsgGeometryDelete(x) => state.method_list().on_delete(x.id),
+        FromServer::MsgGeometryDelete(x) => {
+            state.geometry_list().on_delete(x.id)
+        }
+        //
         FromServer::MsgTableCreate(x) => {
             state.table_list().on_create(x.id, x.content)
         }
         FromServer::MsgTableUpdate(x) => {
             state.table_list().on_update(x.id, x.content)
         }
-        FromServer::MsgTableDelete(x) => state.method_list().on_delete(x.id),
+        FromServer::MsgTableDelete(x) => state.table_list().on_delete(x.id),
+        //
         FromServer::MsgDocumentUpdate(x) => state.document_update(x),
         FromServer::MsgDocumentReset(_) => state.document_reset(),
+        //
         FromServer::MsgSignalInvoke(x) => {
             log::debug!("Signal from server");
             state.on_signal_invoke(x)

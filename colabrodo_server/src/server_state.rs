@@ -11,7 +11,9 @@ use ciborium::value;
 use colabrodo_common::client_communication::{
     AllClientMessages, ClientInvokeMessage, ClientRootMessage, InvokeIDType,
 };
-use colabrodo_common::common::ServerMessageIDs;
+pub use colabrodo_common::common::{
+    ComponentType, MessageArchType, ServerMessageIDs,
+};
 use colabrodo_common::components::*;
 use colabrodo_common::nooid::NooID;
 pub use colabrodo_common::server_communication::{
@@ -572,7 +574,7 @@ pub type ServerMessageSignalInvoke = MessageSignalInvoke<
 /// The result of a method invocation.
 ///
 /// Invoked methods can use this to provide a meaningful result, or to signal that an exception has occurred.
-pub type MethodResult = Result<value::Value, MethodException>;
+pub type MethodResult = Result<Option<value::Value>, MethodException>;
 
 /// Trait for operating on user-defined server states.
 ///
@@ -580,12 +582,19 @@ pub type MethodResult = Result<value::Value, MethodException>;
 pub trait UserServerState {
     fn mut_state(&mut self) -> &mut ServerState;
     fn state(&self) -> &ServerState;
+
+    #[allow(unused_variables)]
     fn invoke(
         &mut self,
         method: ComponentReference<MethodState>,
         context: InvokeObj,
+        client_id: uuid::Uuid,
         args: Vec<value::Value>,
-    ) -> MethodResult;
+    ) -> MethodResult {
+        Err(MethodException::method_not_found(Some(
+            "No methods are available".to_string(),
+        )))
+    }
 }
 
 /// Helper function to determine if a method is indeed attached to a given target.
@@ -611,8 +620,9 @@ fn find_method_in_state(
 /// Determines if the method exists, can be invoked on the target, etc, and if so, dispatches to the user server
 fn invoke_helper(
     c: &mut impl UserServerState,
+    client_id: uuid::Uuid,
     invoke: ClientInvokeMessage,
-) -> Result<value::Value, MethodException> {
+) -> MethodResult {
     let method = c.state().methods.resolve(invoke.method).ok_or_else(|| {
         MethodException {
             code: ExceptionCodes::MethodNotFound as i32,
@@ -668,7 +678,7 @@ fn invoke_helper(
 
     // all valid. pass along
 
-    c.invoke(method, context, invoke.args)
+    c.invoke(method, context, client_id, invoke.args)
 }
 
 #[derive(Error, Debug)]
@@ -685,6 +695,7 @@ pub enum ServerError {
 pub fn handle_next<F>(
     c: &mut impl UserServerState,
     msg: Vec<u8>,
+    client_id: uuid::Uuid,
     write: F,
 ) -> Result<(), ServerError>
 where
@@ -716,7 +727,7 @@ where
                 let reply_id = invoke.invoke_id.clone();
 
                 // invoke the method and get the result or error
-                let result = invoke_helper(c, invoke);
+                let result = invoke_helper(c, client_id, invoke);
 
                 // if we have a reply id, then we can ship a response. Otherwise, we just skip this step.
                 if let Some(resp) = reply_id {
@@ -732,7 +743,7 @@ where
                             reply.method_exception = Some(x);
                         }
                         Ok(result) => {
-                            reply.result = Some(result);
+                            reply.result = result;
                         }
                     }
 

@@ -2,7 +2,7 @@ use colabrodo_macros::DeltaPatch;
 use serde::de::Error;
 use serde::Deserializer;
 use serde::{Deserialize, Serialize};
-use serde_with;
+use serde_with::{self, serde_as, DefaultOnError};
 
 //use colabrodo_macros::DeltaPatch;
 
@@ -198,6 +198,7 @@ pub enum BufferViewType {
     Image,
 }
 
+#[serde_as]
 #[serde_with::skip_serializing_none]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct BufferViewState<BufferReference> {
@@ -205,6 +206,7 @@ pub struct BufferViewState<BufferReference> {
 
     pub source_buffer: BufferReference,
 
+    #[serde_as(deserialize_as = "DefaultOnError")]
     #[serde(rename = "type")]
     pub view_type: BufferViewType,
 
