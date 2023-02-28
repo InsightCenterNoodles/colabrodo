@@ -225,10 +225,11 @@ impl CreateTableMethods {
                 self.valid_signal_hash.iter().cloned().collect()
             });
 
-        let mut update = ServerTableStateUpdatable::default();
-
-        update.methods_list = Some(methods_to_update);
-        update.signals_list = Some(signals_to_update);
+        let update = ServerTableStateUpdatable {
+            methods_list: Some(methods_to_update),
+            signals_list: Some(signals_to_update),
+            ..Default::default()
+        };
 
         update.patch(table);
     }
@@ -400,7 +401,7 @@ impl<T: TableTrait> TableStore<T> {
             return (t.id() == self.table_id.id())
                 && self.init_info.is_table_message(method);
         }
-        return false;
+        false
     }
 
     /// Consume a method, note that [`Self::is_relevant_method()`] should be tested first.
@@ -431,17 +432,17 @@ impl<T: TableTrait> TableStore<T> {
             if r.is_some() {
                 return Ok(None);
             }
-            return Err(MethodException {
+            Err(MethodException {
                 code: ExceptionCodes::InvalidParameters as i32,
                 ..Default::default()
-            });
+            })
         }
 
         fn map_bad_args() -> MethodException {
-            return MethodException {
+            MethodException {
                 code: ExceptionCodes::InvalidParameters as i32,
                 ..Default::default()
-            };
+            }
         }
 
         if self.init_info.mthd_subscribe == *method {
@@ -469,7 +470,7 @@ impl<T: TableTrait> TableStore<T> {
 
         log::error!("Missing table method invoke");
 
-        return Err(MethodException::internal_error(None));
+        Err(MethodException::internal_error(None))
     }
 
     fn broadcast(
