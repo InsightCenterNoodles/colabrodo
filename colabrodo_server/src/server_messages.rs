@@ -130,11 +130,15 @@ impl Recorder {
 
 // Messages ==============================================
 
-pub type ServerRenderRepresentation =
-    RenderRepresentation<ComponentReference<ServerGeometryState>>;
+pub type ServerRenderRepresentation = RenderRepresentation<
+    ComponentReference<ServerGeometryState>,
+    ComponentReference<ServerBufferViewState>,
+>;
 
-pub type ServerEntityRepresentation =
-    EntityRepresentation<ComponentReference<ServerGeometryState>>;
+pub type ServerEntityRepresentation = EntityRepresentation<
+    ComponentReference<ServerGeometryState>,
+    ComponentReference<ServerBufferViewState>,
+>;
 
 #[serde_with::skip_serializing_none]
 #[derive(Debug, Default, Serialize, UpdatableStateItem)]

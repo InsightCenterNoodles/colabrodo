@@ -43,9 +43,9 @@ impl NamedComponent for LightState {
     }
 }
 
-pub type ClientRenderRepresentation = RenderRepresentation<NooID>;
+pub type ClientRenderRepresentation = RenderRepresentation<NooID, NooID>;
 
-pub type ClientEntityRepresentation = EntityRepresentation<NooID>;
+pub type ClientEntityRepresentation = EntityRepresentation<NooID, NooID>;
 
 pub type ClientGeometryAttribute = GeometryAttribute<NooID>;
 
@@ -116,10 +116,18 @@ impl NamedComponent for ClientPlotState {
     }
 }
 
-pub type ClientEntityUpdate =
-    EntityStateUpdatable<NooID, NooID, NooID, NooID, NooID, NooID, NooID>;
+pub type ClientEntityUpdate = EntityStateUpdatable<
+    NooID,
+    NooID,
+    NooID,
+    NooID,
+    NooID,
+    NooID,
+    NooID,
+    NooID,
+>;
 pub type ClientEntityState =
-    EntityState<NooID, NooID, NooID, NooID, NooID, NooID, NooID>;
+    EntityState<NooID, NooID, NooID, NooID, NooID, NooID, NooID, NooID>;
 
 impl NamedComponent for ClientEntityState {
     fn name(&self) -> Option<&String> {

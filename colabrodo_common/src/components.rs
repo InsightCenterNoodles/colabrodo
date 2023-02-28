@@ -696,13 +696,17 @@ pub struct WebRepresentation {
 
 #[serde_with::skip_serializing_none]
 #[derive(Debug, Default, Serialize, Deserialize)]
-pub struct InstanceSource {}
+pub struct InstanceSource<BufferViewRef> {
+    pub view: BufferViewRef,
+    pub stride: Option<u64>,
+    pub bb: Option<BoundingBox>,
+}
 
 #[serde_with::skip_serializing_none]
 #[derive(Debug, Serialize, Deserialize)]
-pub struct RenderRepresentation<GeometryRef> {
+pub struct RenderRepresentation<GeometryRef, BufferViewRef> {
     pub mesh: GeometryRef,
-    pub instances: Option<InstanceSource>,
+    pub instances: Option<InstanceSource<BufferViewRef>>,
 }
 
 #[serde_with::skip_serializing_none]
@@ -711,14 +715,16 @@ pub struct NullRepresentation;
 
 #[serde_with::skip_serializing_none]
 #[derive(Debug, Serialize, Deserialize)]
-pub struct EntityRepresentation<GeometryRef> {
+pub struct EntityRepresentation<GeometryRef, BufferViewRef> {
     null_rep: Option<NullRepresentation>,
     text_rep: Option<TextRepresentation>,
     web_rep: Option<WebRepresentation>,
-    render_rep: Option<RenderRepresentation<GeometryRef>>,
+    render_rep: Option<RenderRepresentation<GeometryRef, BufferViewRef>>,
 }
 
-impl<GeometryRef> EntityRepresentation<GeometryRef> {
+impl<GeometryRef, BufferViewRef>
+    EntityRepresentation<GeometryRef, BufferViewRef>
+{
     pub fn new_null() -> Self {
         Self {
             null_rep: Some(NullRepresentation),
@@ -746,7 +752,9 @@ impl<GeometryRef> EntityRepresentation<GeometryRef> {
         }
     }
 
-    pub fn new_render(t: RenderRepresentation<GeometryRef>) -> Self {
+    pub fn new_render(
+        t: RenderRepresentation<GeometryRef, BufferViewRef>,
+    ) -> Self {
         Self {
             null_rep: None,
             text_rep: None,
@@ -762,6 +770,7 @@ impl<GeometryRef> EntityRepresentation<GeometryRef> {
 #[derive(Debug, Default, Serialize, Deserialize, DeltaPatch)]
 #[patch_generic(
     EntityRef,
+    BufferViewRef,
     GeometryRef,
     LightRef,
     TableRef,
@@ -771,6 +780,7 @@ impl<GeometryRef> EntityRepresentation<GeometryRef> {
 )]
 pub struct EntityStateUpdatable<
     EntityRef,
+    BufferViewRef,
     GeometryRef,
     LightRef,
     TableRef,
@@ -783,7 +793,8 @@ pub struct EntityStateUpdatable<
     pub transform: Option<[f32; 16]>,
 
     #[serde(flatten)]
-    pub representation: Option<EntityRepresentation<GeometryRef>>,
+    pub representation:
+        Option<EntityRepresentation<GeometryRef, BufferViewRef>>,
 
     pub lights: Option<Vec<LightRef>>,
     pub tables: Option<Vec<TableRef>>,
@@ -801,6 +812,7 @@ pub struct EntityStateUpdatable<
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct EntityState<
     EntityRef,
+    BufferViewRef,
     GeometryRef,
     LightRef,
     TableRef,
@@ -813,6 +825,7 @@ pub struct EntityState<
     #[serde(flatten)]
     pub mutable: EntityStateUpdatable<
         EntityRef,
+        BufferViewRef,
         GeometryRef,
         LightRef,
         TableRef,
@@ -824,6 +837,7 @@ pub struct EntityState<
 
 impl<
         EntityRef,
+        BufferViewRef,
         GeometryRef,
         LightRef,
         TableRef,
@@ -833,6 +847,7 @@ impl<
     > UpdatableWith
     for EntityState<
         EntityRef,
+        BufferViewRef,
         GeometryRef,
         LightRef,
         TableRef,
@@ -843,6 +858,7 @@ impl<
 {
     type Substate = EntityStateUpdatable<
         EntityRef,
+        BufferViewRef,
         GeometryRef,
         LightRef,
         TableRef,
@@ -857,6 +873,7 @@ impl<
 
 impl<
         EntityRef,
+        BufferViewRef,
         GeometryRef,
         LightRef,
         TableRef,
@@ -866,6 +883,7 @@ impl<
     > ComponentMessageIDs
     for EntityState<
         EntityRef,
+        BufferViewRef,
         GeometryRef,
         LightRef,
         TableRef,
