@@ -334,10 +334,8 @@ async fn server_state_loop<T>(
                         let client = client_map.get(&client_msg.0).unwrap();
 
                         let result = {
-                            let mut state_lock = server_state.lock().unwrap();
-
                             server_state::handle_next(
-                                &mut *state_lock,
+                                Arc::clone(&server_state),
                                 client_msg.1,
                                 client_msg.0,
                                 |out| {

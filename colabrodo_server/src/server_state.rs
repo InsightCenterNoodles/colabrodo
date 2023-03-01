@@ -26,6 +26,7 @@ use std::cell::{Ref, RefCell, RefMut};
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::rc::{Rc, Weak};
+use std::sync::{Arc, Mutex};
 use thiserror::Error;
 use tokio::sync::broadcast::Sender;
 
@@ -693,13 +694,14 @@ pub enum ServerError {
 /// Drive state changes by handling the next message to the server.
 ///
 /// This function takes a user server state, a message, and a writeback function. The message is assumed to be encoded in CBOR. If a specific message is needed to be sent back, the `write` function argument will be called with the content; it is up to user code to determine how to send that to the client.
-pub fn handle_next<F>(
-    c: &mut impl UserServerState,
+pub fn handle_next<U, F>(
+    c: Arc<Mutex<U>>,
     msg: Vec<u8>,
     client_id: uuid::Uuid,
     write: F,
 ) -> Result<(), ServerError>
 where
+    U: UserServerState,
     F: Fn(Vec<u8>),
 {
     log::debug!("Handling next message...");
@@ -717,9 +719,11 @@ where
                 // to send back
                 log::debug!("Client joined, providing initial state");
                 let mut recorder = Vec::<u8>::new();
-
-                ciborium::ser::into_writer(&c.state(), &mut recorder).unwrap();
-
+                {
+                    let lock = c.lock().unwrap();
+                    ciborium::ser::into_writer(&lock.state(), &mut recorder)
+                        .unwrap();
+                }
                 write(recorder);
             }
             AllClientMessages::Invoke(invoke) => {
@@ -728,7 +732,8 @@ where
                 let reply_id = invoke.invoke_id.clone();
 
                 // invoke the method and get the result or error
-                let result = invoke_helper(c, client_id, invoke);
+                let result =
+                    invoke_helper(&mut *c.lock().unwrap(), client_id, invoke);
 
                 // if we have a reply id, then we can ship a response. Otherwise, we just skip this step.
                 if let Some(resp) = reply_id {
