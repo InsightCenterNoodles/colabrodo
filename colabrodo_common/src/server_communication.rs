@@ -105,29 +105,37 @@ pub struct MethodException {
 }
 
 impl MethodException {
-    pub fn method_not_found(optional_info: Option<String>) -> Self {
+    pub fn method_not_found(optional_info: Option<&str>) -> Self {
         Self {
             code: ExceptionCodes::MethodNotFound as i32,
-            message: optional_info,
+            message: optional_info.map(|f| f.to_string()),
             ..Default::default()
         }
     }
 
-    pub fn internal_error(optional_info: Option<String>) -> Self {
+    pub fn invalid_parameters(optional_info: Option<&str>) -> Self {
+        Self {
+            code: ExceptionCodes::InvalidParameters as i32,
+            message: optional_info.map(|f| f.to_string()),
+            ..Default::default()
+        }
+    }
+
+    pub fn internal_error(optional_info: Option<&str>) -> Self {
         Self {
             code: ExceptionCodes::InternalError as i32,
-            message: optional_info,
+            message: optional_info.map(|f| f.to_string()),
             ..Default::default()
         }
     }
 }
 
 pub enum ExceptionCodes {
-    ParseError = -32700,
-    InvalidRequest = -32600,
-    MethodNotFound = -32601,
-    InvalidParameters = -32602,
-    InternalError = -32603,
+    ParseError = -32700,        // Invalid CBOR was provided
+    InvalidRequest = -32600,    // The request is not valid
+    MethodNotFound = -32601,    // The method is not available
+    InvalidParameters = -32602, // The parameters to the method are incorrect
+    InternalError = -32603,     // An internal server error
 }
 #[serde_with::skip_serializing_none]
 #[derive(Debug, Default, Serialize, Deserialize)]

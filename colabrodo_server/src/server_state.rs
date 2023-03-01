@@ -594,7 +594,7 @@ pub trait UserServerState {
         args: Vec<value::Value>,
     ) -> MethodResult {
         Err(MethodException::method_not_found(Some(
-            "No methods are available".to_string(),
+            "No methods are available",
         )))
     }
 }

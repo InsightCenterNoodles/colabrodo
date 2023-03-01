@@ -422,7 +422,7 @@ impl<T: TableTrait> TableStore<T> {
             }
         } {
             return Err(MethodException::internal_error(Some(
-                "Given a bad method to invoke on a table.".to_string(),
+                "Given a bad method to invoke on a table.",
             )));
         }
 
