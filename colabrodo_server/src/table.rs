@@ -298,7 +298,7 @@ pub struct TableStore<T: TableTrait> {
     init_info: CreateTableMethods,
     table_id: ComponentReference<ServerTableState>,
     table_type: T,
-    subscribers: HashMap<uuid::Uuid, mpsc::Sender<Vec<u8>>>,
+    subscribers: HashMap<uuid::Uuid, mpsc::UnboundedSender<Vec<u8>>>,
 }
 
 impl<T: TableTrait> TableStore<T> {
@@ -321,7 +321,7 @@ impl<T: TableTrait> TableStore<T> {
     fn subscribe(
         &mut self,
         id: uuid::Uuid,
-        sender: mpsc::Sender<Vec<u8>>,
+        sender: mpsc::UnboundedSender<Vec<u8>>,
     ) -> TableInitData {
         log::debug!("Subscribing {id}");
         self.subscribers.insert(id, sender);
@@ -492,7 +492,7 @@ impl<T: TableTrait> TableStore<T> {
         };
 
         for client in self.subscribers.values() {
-            client.blocking_send(data.data.clone()).unwrap();
+            client.send(data.data.clone()).unwrap();
         }
     }
 }

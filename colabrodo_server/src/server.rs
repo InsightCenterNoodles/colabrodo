@@ -1,7 +1,9 @@
 //! A tokio powered server framework. Users can plug in a user server struct to this framework to obtain a coroutine powered NOODLES server.
 
 use std::collections::HashMap;
-use std::thread;
+use std::fmt::Debug;
+use std::sync::Arc;
+use std::sync::Mutex;
 
 use futures_util::SinkExt;
 use futures_util::StreamExt;
@@ -51,22 +53,20 @@ fn debug_cbor(data: &Vec<u8>) {
 #[derive(Debug, Clone)]
 pub struct ClientRecord {
     pub id: uuid::Uuid,
-    pub sender: mpsc::Sender<Vec<u8>>,
+    pub sender: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
 }
 
 /// Models a message from a client. As the server thread doesn't know who sent it, we pass along a lightweight handle to the client-specific queue so the server can send specific messages along
 #[derive(Debug)]
 struct FromClientMessage(uuid::Uuid, Vec<u8>);
 
-enum ToServerMessage<T>
-where
-    T: AsyncServer,
-{
+#[derive(Debug)]
+enum ToServerMessage<CommandType> {
     ClientConnected(ClientRecord),
     Client(FromClientMessage),
     ClientClosed(uuid::Uuid),
-    Shutdown,
-    Command(T::CommandType),
+    //Shutdown,
+    Command(CommandType),
 }
 
 pub struct ServerOptions {
@@ -81,9 +81,11 @@ impl Default for ServerOptions {
     }
 }
 
+#[derive(Debug)]
 /// A placeholder if the user server doesn't support commands
 pub struct DefaultCommand {}
 
+#[derive(Debug)]
 /// A placeholder if the user server doesn't support initialization arguments
 pub struct NoInit {}
 
@@ -142,7 +144,7 @@ pub trait AsyncServer: UserServerState {
 pub async fn server_main<T>(opts: ServerOptions, init: T::InitType)
 where
     T: AsyncServer + 'static,
-    T::CommandType: std::marker::Send,
+    T::CommandType: Debug + std::marker::Send,
     <T as AsyncServer>::InitType: std::marker::Send,
 {
     server_main_with_command_queue::<T>(opts, init, None).await;
@@ -154,20 +156,20 @@ pub async fn server_main_with_command_queue<T>(
     command_queue: Option<mpsc::Receiver<T::CommandType>>,
 ) where
     T: AsyncServer + 'static,
-    T::CommandType: std::marker::Send,
+    T::CommandType: Debug + std::marker::Send,
     <T as AsyncServer>::InitType: std::marker::Send,
 {
     // channel for task control
     let (stop_tx, _stop_rx) = tokio::sync::broadcast::channel::<u8>(1);
 
     // channel for messages to be sent to all clients
-    let (bcast_send, _) = broadcast::channel(16);
+    let (bcast_send, bcast_recv) = broadcast::channel(16);
 
     // channel for server to recv messages
-    let (to_server_send, to_server_recv) = std::sync::mpsc::channel();
+    let (to_server_send, to_server_recv) = tokio::sync::mpsc::channel(16);
 
-    // channel for server to send messages to all clients
-    let (from_server_send, from_server_recv) = std::sync::mpsc::channel();
+    // // channel for server to send messages to all clients
+    // let (from_server_send, from_server_recv) = tokio::sync::mpsc::channel(16);
 
     let listener = listen(&opts).await;
 
@@ -176,10 +178,13 @@ pub async fn server_main_with_command_queue<T>(
 
     log::info!("NOODLES server accepting clients @ {local_addy}");
 
+    let stop_watch_task =
+        tokio::spawn(shutdown_watcher(bcast_recv, stop_tx.clone()));
+
     // move the listener off to start accepting clients
     // it needs a handle for the broadcast channel to hand to new clients
     // and a handle to the to_server stream.
-    let h1 = tokio::spawn(client_connect_task(
+    let h1 = tokio::spawn(client_connect_task::<T>(
         listener,
         bcast_send.clone(),
         to_server_send.clone(),
@@ -188,37 +193,63 @@ pub async fn server_main_with_command_queue<T>(
     ));
 
     if let Some(q) = command_queue {
-        tokio::spawn(command_sender(q, to_server_send.clone()));
+        tokio::spawn(command_sender::<T>(q, to_server_send.clone()));
     }
 
-    let state_handle = thread::spawn(move || {
-        server_state_loop::<T>(from_server_send, init, to_server_recv, stop_tx)
-    });
+    // let state_handle = thread::spawn(move || {
 
-    server_message_pump(bcast_send, from_server_recv, to_server_send.clone())
-        .await;
+    // });
+
+    server_state_loop::<T>(
+        bcast_send.clone(),
+        init,
+        to_server_recv,
+        stop_tx.subscribe(),
+    )
+    .await;
+
+    //server_message_pump(bcast_send, from_server_recv, to_server_send.clone())
+    //    .await;
+
+    log::debug!("Server is closing down, waiting for stopwatch task...");
+
+    stop_watch_task.await.unwrap();
 
     log::debug!("Server is closing down, waiting for client connect task...");
 
     h1.await.unwrap();
 
-    log::debug!("Server is closing down, waiting for state thread...");
-
-    state_handle.join().unwrap();
+    //state_handle.join().unwrap();
 
     log::debug!("Server is done.");
 }
 
+async fn shutdown_watcher(
+    mut server_bcast: tokio::sync::broadcast::Receiver<Output>,
+    stop_tx: tokio::sync::broadcast::Sender<u8>,
+) {
+    while let Ok(msg) = server_bcast.recv().await {
+        if let Output::Shutdown = msg {
+            log::debug!("Server is asking to stop, broadcasting stop bit");
+            stop_tx.send(1).unwrap();
+            return;
+        }
+    }
+}
+
 async fn command_sender<T>(
     mut command_queue: mpsc::Receiver<T::CommandType>,
-    to_server_send: std::sync::mpsc::Sender<ToServerMessage<T>>,
+    to_server_send: tokio::sync::mpsc::Sender<ToServerMessage<T::CommandType>>,
 ) where
     T: AsyncServer + 'static,
-    T::CommandType: std::marker::Send + 'static,
+    T::CommandType: std::marker::Send + Debug + 'static,
 {
     log::debug!("Launching command sender");
     while let Some(msg) = command_queue.recv().await {
-        to_server_send.send(ToServerMessage::Command(msg)).unwrap();
+        to_server_send
+            .send(ToServerMessage::Command(msg))
+            .await
+            .unwrap();
     }
     log::debug!("Done with command sender");
 }
@@ -234,13 +265,13 @@ async fn listen(opts: &ServerOptions) -> TcpListener {
 // handler task
 async fn client_connect_task<T>(
     listener: TcpListener,
-    bcast_send: broadcast::Sender<Vec<u8>>,
-    to_server_send: std::sync::mpsc::Sender<ToServerMessage<T>>,
+    bcast_send: broadcast::Sender<Output>,
+    to_server_send: tokio::sync::mpsc::Sender<ToServerMessage<T::CommandType>>,
     stop_tx: tokio::sync::broadcast::Sender<u8>,
     mut stop_rx: tokio::sync::broadcast::Receiver<u8>,
 ) where
     T: AsyncServer + 'static,
-    T::CommandType: std::marker::Send + 'static,
+    T::CommandType: std::marker::Send + Debug + 'static,
 {
     log::debug!("Starting client connect task");
 
@@ -249,7 +280,7 @@ async fn client_connect_task<T>(
             _ = stop_rx.recv() => break,
             acc = listener.accept() => {
                 if let Ok((stream, _)) = acc {
-                    tokio::spawn(client_handler(
+                    tokio::spawn(client_handler::<T>(
                         stream,
                         to_server_send.clone(),
                         bcast_send.subscribe(),
@@ -263,96 +294,78 @@ async fn client_connect_task<T>(
     log::debug!("Stopping client connect task");
 }
 
-/// Broadcast a message from the server outgoing queue to all clients.
-async fn server_message_pump<T>(
-    bcast_send: broadcast::Sender<Vec<u8>>,
-    from_server_recv: std::sync::mpsc::Receiver<Output>,
-    to_server_send: std::sync::mpsc::Sender<ToServerMessage<T>>,
-) where
-    T: AsyncServer + 'static,
-{
-    log::debug!("Starting server message pump");
-    while let Ok(msg) = from_server_recv.recv() {
-        match msg {
-            Output::Broadcast(msg) => {
-                if bcast_send.receiver_count() == 0 {
-                    continue;
-                }
-                if bcast_send.send(msg).is_err() {
-                    log::error!("Internal error: Unable to broadcast message.")
-                }
-            }
-            Output::Shutdown => {
-                log::debug!("Server sent a shutdown, broadcasting stop.");
-                to_server_send.send(ToServerMessage::Shutdown).unwrap();
-                break;
-            }
-        }
-    }
-    log::debug!("Stopping server message pump");
-}
-
 /// handles server state; the state itself is not thread safe, so we isolate it
 /// to this task.
-fn server_state_loop<T>(
+async fn server_state_loop<T>(
     tx: server_state::CallbackPtr,
     init: T::InitType,
-    from_world: std::sync::mpsc::Receiver<ToServerMessage<T>>,
-    stop_tx: tokio::sync::broadcast::Sender<u8>,
+    mut from_world: tokio::sync::mpsc::Receiver<
+        ToServerMessage<T::CommandType>,
+    >,
+    mut stop_rx: tokio::sync::broadcast::Receiver<u8>,
 ) where
     T: AsyncServer,
     T::CommandType: std::marker::Send,
 {
     log::debug!("Starting server state thread");
-    let mut server_state = T::new(tx, init);
+    let server_state = Arc::new(Mutex::new(T::new(tx, init)));
 
-    server_state.initialize_state();
+    server_state.lock().unwrap().initialize_state();
 
     let mut client_map = HashMap::<uuid::Uuid, ClientRecord>::new();
 
-    while let Ok(msg) = from_world.recv() {
-        match msg {
-            ToServerMessage::ClientConnected(cr) => {
-                client_map.insert(cr.id, cr.clone());
-                server_state.client_connected(cr)
-            }
-            ToServerMessage::Client(client_msg) => {
-                // handle a message from a client, and write any replies
-                // to the client's output queue
-                if log_enabled!(log::Level::Debug) {
-                    log::debug!("RECV:");
-                    debug_cbor(&client_msg.1);
-                }
-
-                let client = client_map.get(&client_msg.0).unwrap();
-
-                let result = server_state::handle_next(
-                    &mut server_state,
-                    client_msg.1,
-                    client_msg.0,
-                    |out| {
+    loop {
+        tokio::select! {
+            _ = stop_rx.recv() => break,
+            Some(msg) = from_world.recv() => {
+                match msg {
+                    ToServerMessage::ClientConnected(cr) => {
+                        client_map.insert(cr.id, cr.clone());
+                        server_state.lock().unwrap().client_connected(cr)
+                    }
+                    ToServerMessage::Client(client_msg) => {
+                        // handle a message from a client, and write any replies
+                        // to the client's output queue
                         if log_enabled!(log::Level::Debug) {
-                            log::debug!("SEND TO CLIENT:");
-                            debug_cbor(&out);
+                            log::debug!("RECV:");
+                            debug_cbor(&client_msg.1);
                         }
-                        client.sender.blocking_send(out).unwrap();
-                    },
-                );
 
-                if let Err(x) = result {
-                    log::warn!("Unable to handle message from client: {x:?}");
+                        let client = client_map.get(&client_msg.0).unwrap();
+
+                        let result = {
+                            let mut state_lock = server_state.lock().unwrap();
+
+                            server_state::handle_next(
+                                &mut *state_lock,
+                                client_msg.1,
+                                client_msg.0,
+                                |out| {
+                                    if log_enabled!(log::Level::Debug) {
+                                        log::debug!("SEND TO CLIENT:");
+                                        debug_cbor(&out);
+                                    }
+                                    client.sender.send(out).unwrap();
+                                },
+                            )
+                        };
+
+                        if let Err(x) = result {
+                            log::warn!("Unable to handle message from client: {x:?}");
+                        }
+                    }
+                    ToServerMessage::ClientClosed(id) => {
+                        server_state.lock().unwrap().client_disconnected(id);
+                        client_map.remove(&id);
+                    }
+                    // ToServerMessage::Shutdown => {
+                    //     stop_tx.send(1).unwrap();
+                    //     break;
+                    // }
+                    ToServerMessage::Command(comm_msg) => {
+                        server_state.lock().unwrap().handle_command(comm_msg);
+                    }
                 }
-            }
-            ToServerMessage::ClientClosed(id) => {
-                server_state.client_disconnected(id);
-                client_map.remove(&id);
-            }
-            ToServerMessage::Shutdown => {
-                stop_tx.send(1).unwrap();
-                break;
-            }
-            ToServerMessage::Command(comm_msg) => {
-                server_state.handle_command(comm_msg);
             }
         }
     }
@@ -363,13 +376,13 @@ fn server_state_loop<T>(
 /// Task for each client that has joined up
 async fn client_handler<'a, T>(
     stream: TcpStream,
-    to_server_send: std::sync::mpsc::Sender<ToServerMessage<T>>,
-    mut bcast_recv: broadcast::Receiver<Vec<u8>>,
+    to_server_send: tokio::sync::mpsc::Sender<ToServerMessage<T::CommandType>>,
+    mut bcast_recv: broadcast::Receiver<Output>,
     stop_tx: tokio::sync::broadcast::Sender<u8>,
 ) -> Result<(), ()>
 where
     T: AsyncServer,
-    T::CommandType: std::marker::Send + 'a,
+    T::CommandType: std::marker::Send + Debug + 'a,
 {
     let addr = stream
         .peer_addr()
@@ -395,7 +408,7 @@ where
     // probably more elegant ways of doing this, but this seems to be
     // an appropriate way to merge messages from a broadcast and possible
     // single-client replies
-    let (out_tx, mut out_rx) = mpsc::channel(16);
+    let (out_tx, mut out_rx) = mpsc::unbounded_channel();
 
     let mut socket_stopper = stop_tx.subscribe();
     let h1 = tokio::spawn(async move {
@@ -427,8 +440,8 @@ where
                         bcast = bcast_recv.recv() => {
                 // take each message from the broadcast channel and add it to the
                 // queue
-                            if let Ok(bcast) = bcast {
-                                this_tx.send(bcast).await.unwrap();
+                            if let Ok(Output::Broadcast(bcast)) = bcast {
+                                this_tx.send(bcast).unwrap();
                             }
                         }
                     }
@@ -443,6 +456,7 @@ where
             id: client_id,
             sender: out_tx.clone(),
         }))
+        .await
         .unwrap();
 
     let mut stop_rx = stop_tx.subscribe();
@@ -469,7 +483,7 @@ where
                             .send(ToServerMessage::Client(FromClientMessage(
                                 client_id,
                                 x,
-                            )))
+                            ))).await
                             .unwrap();
                         }
                         _ => break
@@ -479,10 +493,11 @@ where
         }
     }
 
-    stop_tx.send(1).unwrap();
+    //stop_tx.send(1).unwrap();
 
     to_server_send
         .send(ToServerMessage::ClientClosed(client_id))
+        .await
         .unwrap();
 
     log::info!("Closing client, waiting for tasks...");

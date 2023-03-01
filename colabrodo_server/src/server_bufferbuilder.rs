@@ -407,7 +407,7 @@ mod tests {
 
     #[test]
     fn common_pack() {
-        let (tx, _rx) = std::sync::mpsc::channel();
+        let (tx, _rx) = tokio::sync::broadcast::channel(16);
 
         let mut state = ServerState::new(tx);
 

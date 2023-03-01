@@ -26,9 +26,10 @@ use std::cell::{Ref, RefCell, RefMut};
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::rc::{Rc, Weak};
-use std::sync::mpsc::Sender;
 use thiserror::Error;
+use tokio::sync::broadcast::Sender;
 
+#[derive(Debug, Clone)]
 pub enum Output {
     Broadcast(Vec<u8>),
     Shutdown,
@@ -796,7 +797,7 @@ mod tests {
     fn build_server_state() {
         // we test by encoding to cbor and then decoding.
         // messages can be encoded different ways, ie, indefinite size of maps, etc.
-        let (tx, rx) = std::sync::mpsc::channel();
+        let (tx, mut rx) = tokio::sync::broadcast::channel(16);
 
         let mut state = ServerState::new(tx);
 
@@ -909,7 +910,7 @@ mod tests {
 
     #[test]
     fn cascade_delete() {
-        let (tx, rx) = std::sync::mpsc::channel();
+        let (tx, mut rx) = tokio::sync::broadcast::channel(16);
 
         let mut state = ServerState::new(tx);
 
@@ -941,7 +942,7 @@ mod tests {
 
     #[test]
     fn check_lookup_inspect() {
-        let (tx, rx) = std::sync::mpsc::channel();
+        let (tx, mut rx) = tokio::sync::broadcast::channel(16);
 
         let mut state = ServerState::new(tx);
 
