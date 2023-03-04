@@ -21,7 +21,7 @@ impl ClientMessageID for ClientIntroductionMessage {
 
 // ============================================================================
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum InvokeIDType {
     Entity(NooID),
     Table(NooID),

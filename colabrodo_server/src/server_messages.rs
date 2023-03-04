@@ -1,3 +1,5 @@
+use ciborium::value;
+use colabrodo_common::client_communication::InvokeIDType;
 use colabrodo_common::server_communication::DocumentUpdate;
 use colabrodo_macros::UpdatableStateItem;
 use core::fmt::Debug;
@@ -17,6 +19,7 @@ pub use colabrodo_common::components::{
 };
 
 use crate::server_state::ComponentCell;
+use crate::server_state::MethodResult;
 
 // Traits ==============================================
 
@@ -24,6 +27,63 @@ use crate::server_state::ComponentCell;
 pub trait UpdatableStateItem {
     type HostState;
     fn patch(self, m: &Self::HostState);
+}
+
+#[derive(Debug)]
+pub struct MethodSignalContent {
+    pub context: Option<InvokeIDType>,
+    pub args: Vec<value::Value>,
+    pub from: uuid::Uuid,
+}
+
+pub trait MethodHandler {
+    fn activate(&self, message: MethodSignalContent) -> MethodResult;
+}
+
+pub struct MethodHandlerSlot {
+    pub(crate) dest: Option<Rc<dyn MethodHandler>>,
+}
+
+struct ClosureMethodHandler {
+    f: Box<dyn Fn(MethodSignalContent) -> MethodResult>,
+}
+
+impl MethodHandler for ClosureMethodHandler {
+    fn activate(&self, message: MethodSignalContent) -> MethodResult {
+        (self.f)(message)
+    }
+}
+
+impl MethodHandlerSlot {
+    pub fn new<F>(f: F) -> Self
+    where
+        F: MethodHandler + 'static,
+    {
+        Self {
+            dest: Some(Rc::new(f)),
+        }
+    }
+
+    pub fn new_from_closure<C>(function: C) -> Self
+    where
+        C: Fn(MethodSignalContent) -> MethodResult + 'static,
+    {
+        Self::new(ClosureMethodHandler {
+            f: Box::new(function),
+        })
+    }
+}
+
+impl Debug for MethodHandlerSlot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MethodHandlerSlot").finish()
+    }
+}
+
+impl Default for MethodHandlerSlot {
+    fn default() -> Self {
+        Self { dest: None }
+    }
 }
 
 // Component Refs ==============================================
@@ -130,6 +190,10 @@ impl Recorder {
 
 // Messages ==============================================
 
+pub type ServerMethodState = MethodState<MethodHandlerSlot>;
+
+// =======================================================
+
 pub type ServerRenderRepresentation = RenderRepresentation<
     ComponentReference<ServerGeometryState>,
     ComponentReference<ServerBufferViewState>,
@@ -155,7 +219,7 @@ pub struct ServerEntityStateUpdatable {
     pub plots: Option<Vec<ComponentReference<ServerPlotState>>>,
     pub tags: Option<Vec<String>>,
 
-    pub methods_list: Option<Vec<ComponentReference<MethodState>>>,
+    pub methods_list: Option<Vec<ComponentReference<ServerMethodState>>>,
     pub signals_list: Option<Vec<ComponentReference<SignalState>>>,
 
     pub influence: Option<BoundingBox>,
@@ -209,7 +273,7 @@ pub type ServerGeometryState = GeometryState<
 #[derive(Debug, Default, Serialize, UpdatableStateItem)]
 pub struct ServerTableStateUpdatable {
     pub meta: Option<String>,
-    pub methods_list: Option<Vec<ComponentReference<MethodState>>>,
+    pub methods_list: Option<Vec<ComponentReference<ServerMethodState>>>,
     pub signals_list: Option<Vec<ComponentReference<SignalState>>>,
 }
 
@@ -243,7 +307,7 @@ impl ComponentMessageIDs for ServerTableState {
 pub struct ServerPlotStateUpdatable {
     pub table: Option<ComponentReference<ServerTableState>>,
 
-    pub methods_list: Option<Vec<ComponentReference<MethodState>>>,
+    pub methods_list: Option<Vec<ComponentReference<ServerMethodState>>>,
     pub signals_list: Option<Vec<ComponentReference<SignalState>>>,
 }
 
@@ -437,6 +501,6 @@ impl ComponentMessageIDs for ServerLightState {
 // =============================================================================
 
 pub type ServerDocumentUpdate = DocumentUpdate<
-    ComponentReference<MethodState>,
+    ComponentReference<ServerMethodState>,
     ComponentReference<SignalState>,
 >;

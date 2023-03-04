@@ -1,15 +1,13 @@
 use crate::{
     server::ClientRecord,
-    server_messages::{
-        ComponentReference, Recorder, ServerTableState,
-        ServerTableStateUpdatable, UpdatableStateItem,
-    },
+    server_messages::*,
     server_state::{
         InvokeObj, MethodResult, ServerMessageSignalInvoke,
         ServerSignalInvokeObj, ServerState,
     },
 };
 use ciborium::value::Value;
+use closure::closure;
 pub use colabrodo_common::table::{Selection, TableColumnInfo, TableInitData};
 use colabrodo_common::{
     arg_to_tuple,
@@ -19,8 +17,11 @@ use colabrodo_common::{
     tf_to_cbor,
     value_tools::*,
 };
-use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Debug;
+use std::{
+    collections::{BTreeMap, HashMap, HashSet},
+    sync::{Arc, Mutex},
+};
 use tokio::sync::mpsc;
 
 // =============================================================================
@@ -32,30 +33,38 @@ pub struct CreateTableMethods {
     sig_row_remove: ComponentReference<SignalState>,
     sig_selection_update: ComponentReference<SignalState>,
 
-    mthd_subscribe: ComponentReference<MethodState>,
-    mthd_insert: ComponentReference<MethodState>,
-    mthd_update: ComponentReference<MethodState>,
+    mthd_subscribe: ComponentReference<ServerMethodState>,
+    mthd_insert: ComponentReference<ServerMethodState>,
+    mthd_update: ComponentReference<ServerMethodState>,
 
-    mthd_remove: ComponentReference<MethodState>,
-    mthd_clear: ComponentReference<MethodState>,
-    mthd_update_selection: ComponentReference<MethodState>,
+    mthd_remove: ComponentReference<ServerMethodState>,
+    mthd_clear: ComponentReference<ServerMethodState>,
+    mthd_update_selection: ComponentReference<ServerMethodState>,
 
     valid_signal_hash: HashSet<ComponentReference<SignalState>>,
-    valid_method_hash: HashSet<ComponentReference<MethodState>>,
+    valid_method_hash: HashSet<ComponentReference<ServerMethodState>>,
 }
 
 impl CreateTableMethods {
     /// Creates and resolves table related methods and signals.
     ///
     /// This does not currently check if the methods have already been created, so do not call this more than once. Instead, clone or move the resulting object around.
-    pub fn new(state: &mut ServerState) -> Self {
-        let mthd_subscribe = state.methods.new_component(MethodState {
+    pub fn new(state: Arc<Mutex<ServerState>>) -> Self {
+        let mut lock = state.lock().unwrap();
+
+        let mthd_subscribe = lock.methods.new_component(ServerMethodState {
             name: strings::MTHD_TBL_SUBSCRIBE.to_string(),
             doc: Some("Subscribe to the given table".to_string()),
             return_doc: Some("Initial table data structure".to_string()),
             arg_doc: vec![],
+            state: MethodHandlerSlot::new_from_closure(closure!(
+                clone state, |m|{
+                    let x = state.lock();
+                    Ok(None)
+                }
+            )),
         });
-        let mthd_insert = state.methods.new_component(MethodState {
+        let mthd_insert = lock.methods.new_component(ServerMethodState {
             name: strings::MTHD_TBL_INSERT.to_string(),
             doc: Some("Ask to insert data into the table".to_string()),
             return_doc: None,
@@ -66,8 +75,14 @@ impl CreateTableMethods {
                         .to_string(),
                 ),
             }],
+            state: MethodHandlerSlot::new_from_closure(closure!(
+                clone state, |m|{
+                    let x = state.lock();
+                    Ok(None)
+                }
+            )),
         });
-        let mthd_update = state.methods.new_component(MethodState {
+        let mthd_update = lock.methods.new_component(ServerMethodState {
             name: strings::MTHD_TBL_UPDATE.to_string(),
             doc: Some("Ask to update data in the table".to_string()),
             return_doc: None,
@@ -84,8 +99,14 @@ impl CreateTableMethods {
                     ),
                 },
             ],
+            state: MethodHandlerSlot::new_from_closure(closure!(
+                clone state, |m|{
+                    let x = state.lock();
+                    Ok(None)
+                }
+            )),
         });
-        let mthd_remove = state.methods.new_component(MethodState {
+        let mthd_remove = lock.methods.new_component(ServerMethodState {
             name: strings::MTHD_TBL_REMOVE.to_string(),
             doc: Some("Ask to remove data in the table".to_string()),
             return_doc: None,
@@ -93,22 +114,41 @@ impl CreateTableMethods {
                 name: "keys".to_string(),
                 doc: Some("A list of keys to remove.".to_string()),
             }],
+            state: MethodHandlerSlot::new_from_closure(closure!(
+                clone state, |m|{
+                    let x = state.lock();
+                    Ok(None)
+                }
+            )),
         });
-        let mthd_clear = state.methods.new_component(MethodState {
+        let mthd_clear = lock.methods.new_component(ServerMethodState {
             name: strings::MTHD_TBL_CLEAR.to_string(),
             doc: Some("Ask to clear all data in the table".to_string()),
             return_doc: None,
             arg_doc: vec![],
+            state: MethodHandlerSlot::new_from_closure(closure!(
+                clone state, |m|{
+                    let x = state.lock();
+                    Ok(None)
+                }
+            )),
         });
-        let mthd_update_selection = state.methods.new_component(MethodState {
-            name: strings::MTHD_TBL_UPDATE_SELECTION.to_string(),
-            doc: Some("Ask to update a selection in the table".to_string()),
-            return_doc: None,
-            arg_doc: vec![MethodArg {
-                name: "selection".to_string(),
-                doc: Some("A selection object".to_string()),
-            }],
-        });
+        let mthd_update_selection =
+            lock.methods.new_component(ServerMethodState {
+                name: strings::MTHD_TBL_UPDATE_SELECTION.to_string(),
+                doc: Some("Ask to update a selection in the table".to_string()),
+                return_doc: None,
+                arg_doc: vec![MethodArg {
+                    name: "selection".to_string(),
+                    doc: Some("A selection object".to_string()),
+                }],
+                state: MethodHandlerSlot::new_from_closure(closure!(
+                    clone state, |m|{
+                        let x = state.lock();
+                        Ok(None)
+                    }
+                )),
+            });
 
         let mut method_set = HashSet::new();
         method_set.insert(mthd_subscribe.clone());
@@ -118,7 +158,7 @@ impl CreateTableMethods {
         method_set.insert(mthd_clear.clone());
         method_set.insert(mthd_update_selection.clone());
 
-        let sig_reset = state.signals.new_component(SignalState {
+        let sig_reset = lock.signals.new_component(SignalState {
             name: strings::SIG_TBL_RESET.to_string(),
             doc: Some("The table context has been reset.".to_string()),
             arg_doc: vec![MethodArg {
@@ -126,7 +166,7 @@ impl CreateTableMethods {
                 doc: Some("New table data".to_string()),
             }],
         });
-        let sig_updated = state.signals.new_component(SignalState {
+        let sig_updated = lock.signals.new_component(SignalState {
             name: strings::SIG_TBL_UPDATED.to_string(),
             doc: Some("The table rows have been updated".to_string()),
             arg_doc: vec![
@@ -140,7 +180,7 @@ impl CreateTableMethods {
                 },
             ],
         });
-        let sig_row_remove = state.signals.new_component(SignalState {
+        let sig_row_remove = lock.signals.new_component(SignalState {
             name: strings::SIG_TBL_ROWS_REMOVED.to_string(),
             doc: Some("Rows have been removed from the table".to_string()),
             arg_doc: vec![MethodArg {
@@ -148,7 +188,7 @@ impl CreateTableMethods {
                 doc: Some("Keys to remove from the table".to_string()),
             }],
         });
-        let sig_selection_update = state.signals.new_component(SignalState {
+        let sig_selection_update = lock.signals.new_component(SignalState {
             name: strings::SIG_TBL_SELECTION_UPDATED.to_string(),
             doc: Some("A selection for the table has been updated".to_string()),
             arg_doc: vec![MethodArg {
@@ -236,7 +276,7 @@ impl CreateTableMethods {
 
     fn is_table_message(
         &self,
-        method: &ComponentReference<MethodState>,
+        method: &ComponentReference<ServerMethodState>,
     ) -> bool {
         let ret = self.valid_method_hash.contains(method);
         log::debug!("Checking if method is a table method: {ret}");
@@ -394,7 +434,7 @@ impl<T: TableTrait> TableStore<T> {
     /// Discover if a method invocation should be directed to this manager. If true, call [`Self::consume_relevant_method()`]
     pub fn is_relevant_method(
         &self,
-        method: &ComponentReference<MethodState>,
+        method: &ComponentReference<ServerMethodState>,
         context: &InvokeObj,
     ) -> bool {
         if let InvokeObj::Table(t) = context {
@@ -408,7 +448,7 @@ impl<T: TableTrait> TableStore<T> {
     pub fn consume_relevant_method(
         &mut self,
         cr: &ClientRecord,
-        method: &ComponentReference<MethodState>,
+        method: &ComponentReference<ServerMethodState>,
         context: InvokeObj,
         args: Vec<Value>,
     ) -> MethodResult {

@@ -8,9 +8,6 @@
 
 use crate::server_messages::*;
 use ciborium::value;
-use colabrodo_common::client_communication::{
-    AllClientMessages, ClientInvokeMessage, ClientRootMessage, InvokeIDType,
-};
 pub use colabrodo_common::common::{
     ComponentType, MessageArchType, ServerMessageIDs,
 };
@@ -27,8 +24,7 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::rc::{Rc, Weak};
 use std::sync::{Arc, Mutex};
-use thiserror::Error;
-use tokio::sync::broadcast::Sender;
+use tokio::sync::broadcast::{self, Sender};
 
 #[derive(Debug, Clone)]
 pub enum Output {
@@ -214,6 +210,7 @@ where
     id_list: HashMap<NooID, Weak<ComponentCell<T>>>,
     broadcast: CallbackPtr,
     free_list: Vec<NooID>,
+    owned_list: Vec<Rc<ComponentCell<T>>>,
 }
 
 impl<T: Serialize + ComponentMessageIDs + Debug> ServerComponentList<T> {
@@ -223,12 +220,13 @@ impl<T: Serialize + ComponentMessageIDs + Debug> ServerComponentList<T> {
             id_list: HashMap::new(),
             broadcast: tx,
             free_list: Default::default(),
+            owned_list: Default::default(),
         }
     }
 
     /// Send a CBOR message to the broadcast sink
     fn send_to_broadcast(&self, rec: Recorder) {
-        self.broadcast.send(Output::Broadcast(rec.data)).unwrap();
+        let _ret = self.broadcast.send(Output::Broadcast(rec.data));
     }
 
     /// Obtain a new id. Either generates a new ID if there are no free slots. If there are free slots, reuse and bump the generation.
@@ -296,6 +294,16 @@ impl<T: Serialize + ComponentMessageIDs + Debug> ServerComponentList<T> {
         self.id_list.insert(new_id, Rc::downgrade(&cell));
 
         ComponentReference(cell)
+    }
+
+    fn new_owned_component(
+        &mut self,
+        new_t: T,
+        host: Rc<RefCell<ServerComponentList<T>>>,
+    ) -> ComponentReference<T> {
+        let ret = self.new_component(new_t, host);
+        self.owned_list.push(ret.0.clone());
+        ret
     }
 
     /// Obtain the count of components in this list
@@ -370,6 +378,12 @@ where
             .new_component(new_t, self.list.clone())
     }
 
+    pub fn new_owned_component(&mut self, new_t: T) -> ComponentReference<T> {
+        self.list
+            .borrow_mut()
+            .new_owned_component(new_t, self.list.clone())
+    }
+
     /// Discover a component by its ID. If the ID is invalid, returns None
     pub fn resolve(&self, id: NooID) -> Option<ComponentReference<T>> {
         self.list.borrow().resolve(id)
@@ -408,7 +422,8 @@ where
 /// See examples for usage.
 pub struct ServerState {
     tx: CallbackPtr,
-    pub methods: PubUserCompList<MethodState>,
+
+    pub methods: PubUserCompList<ServerMethodState>,
     pub signals: PubUserCompList<SignalState>,
 
     pub buffers: PubUserCompList<BufferState>,
@@ -426,7 +441,7 @@ pub struct ServerState {
 
     pub entities: PubUserCompList<ServerEntityState>,
 
-    comm: ServerDocumentUpdate,
+    pub(crate) comm: ServerDocumentUpdate,
 }
 
 /// A dummy struct for use when we need a message with no content. Terrible.
@@ -472,29 +487,35 @@ impl Serialize for ServerState {
 }
 
 impl ServerState {
-    /// Create a new server state. A sink must be provided; this sink will collect messages that are to be broadcasted to all clients, and should be serviced regularly.
-    pub fn new(broadcast: CallbackPtr) -> Self {
-        Self {
-            tx: broadcast.clone(),
+    /// Create a new server state.
+    pub fn new() -> Arc<Mutex<Self>> {
+        let (bcast_send, _) = broadcast::channel(16);
 
-            methods: PubUserCompList::new(broadcast.clone()),
-            signals: PubUserCompList::new(broadcast.clone()),
-            buffers: PubUserCompList::new(broadcast.clone()),
-            buffer_views: PubUserCompList::new(broadcast.clone()),
-            samplers: PubUserCompList::new(broadcast.clone()),
-            images: PubUserCompList::new(broadcast.clone()),
-            textures: PubUserCompList::new(broadcast.clone()),
-            materials: PubUserCompList::new(broadcast.clone()),
-            geometries: PubUserCompList::new(broadcast.clone()),
-            tables: PubUserCompList::new(broadcast.clone()),
-            plots: PubUserCompList::new(broadcast.clone()),
-            entities: PubUserCompList::new(broadcast),
+        Arc::new(Mutex::new(Self {
+            tx: bcast_send.clone(),
+
+            methods: PubUserCompList::new(bcast_send.clone()),
+            signals: PubUserCompList::new(bcast_send.clone()),
+            buffers: PubUserCompList::new(bcast_send.clone()),
+            buffer_views: PubUserCompList::new(bcast_send.clone()),
+            samplers: PubUserCompList::new(bcast_send.clone()),
+            images: PubUserCompList::new(bcast_send.clone()),
+            textures: PubUserCompList::new(bcast_send.clone()),
+            materials: PubUserCompList::new(bcast_send.clone()),
+            geometries: PubUserCompList::new(bcast_send.clone()),
+            tables: PubUserCompList::new(bcast_send.clone()),
+            plots: PubUserCompList::new(bcast_send.clone()),
+            entities: PubUserCompList::new(bcast_send),
 
             comm: Default::default(),
-        }
+        }))
     }
 
-    pub fn output(&self) -> CallbackPtr {
+    pub fn new_broadcast_recv(&self) -> broadcast::Receiver<Output> {
+        self.tx.subscribe()
+    }
+
+    pub fn new_broadcast_send(&self) -> broadcast::Sender<Output> {
         self.tx.clone()
     }
 
@@ -505,7 +526,7 @@ impl ServerState {
             &update,
         );
 
-        self.tx.send(Output::Broadcast(recorder.data)).unwrap();
+        let _ret = self.tx.send(Output::Broadcast(recorder.data));
 
         self.comm = update;
     }
@@ -551,6 +572,8 @@ impl ServerState {
     }
 }
 
+pub type ServerStatePtr = Arc<Mutex<ServerState>>;
+
 /// Helper enum of the target of a method invocation
 #[derive(Clone)]
 pub enum InvokeObj {
@@ -577,196 +600,6 @@ pub type ServerMessageSignalInvoke = MessageSignalInvoke<
 ///
 /// Invoked methods can use this to provide a meaningful result, or to signal that an exception has occurred.
 pub type MethodResult = Result<Option<value::Value>, MethodException>;
-
-/// Trait for operating on user-defined server states.
-///
-/// Users should have their own struct that conforms to this specification, as it is required for message handling (see [`handle_next`]).
-pub trait UserServerState {
-    fn mut_state(&mut self) -> &mut ServerState;
-    fn state(&self) -> &ServerState;
-
-    #[allow(unused_variables)]
-    fn invoke(
-        &mut self,
-        method: ComponentReference<MethodState>,
-        context: InvokeObj,
-        client_id: uuid::Uuid,
-        args: Vec<value::Value>,
-    ) -> MethodResult {
-        Err(MethodException::method_not_found(Some(
-            "No methods are available",
-        )))
-    }
-}
-
-/// Helper function to determine if a method is indeed attached to a given target.
-fn find_method_in_state(
-    method: &ComponentReference<MethodState>,
-    state: &Option<Vec<ComponentReference<MethodState>>>,
-) -> bool {
-    match state {
-        None => false,
-        Some(x) => {
-            for m in x {
-                if m.id() == method.id() {
-                    return true;
-                }
-            }
-            false
-        }
-    }
-}
-
-/// Helper function to actually invoke a method
-///
-/// Determines if the method exists, can be invoked on the target, etc, and if so, dispatches to the user server
-fn invoke_helper(
-    c: &mut impl UserServerState,
-    client_id: uuid::Uuid,
-    invoke: ClientInvokeMessage,
-) -> MethodResult {
-    let method = c.state().methods.resolve(invoke.method).ok_or_else(|| {
-        MethodException {
-            code: ExceptionCodes::MethodNotFound as i32,
-            ..Default::default()
-        }
-    })?;
-
-    // get context
-
-    let context = match invoke.context {
-        None => Some(InvokeObj::Document),
-        Some(id) => match id {
-            InvokeIDType::Entity(eid) => {
-                c.state().entities.resolve(eid).map(InvokeObj::Entity)
-            }
-            InvokeIDType::Table(eid) => {
-                c.state().tables.resolve(eid).map(InvokeObj::Table)
-            }
-            InvokeIDType::Plot(eid) => {
-                c.state().plots.resolve(eid).map(InvokeObj::Plot)
-            }
-        },
-    };
-
-    let context = context.ok_or_else(|| MethodException {
-        code: ExceptionCodes::MethodNotFound as i32,
-        ..Default::default()
-    })?;
-
-    // make sure the object has the method attached
-
-    let has_method = match &context {
-        InvokeObj::Document => {
-            find_method_in_state(&method, &c.state().comm.methods_list)
-        }
-        InvokeObj::Entity(x) => {
-            find_method_in_state(&method, &x.0.get().mutable.methods_list)
-        }
-        InvokeObj::Plot(x) => {
-            find_method_in_state(&method, &x.0.get().mutable.methods_list)
-        }
-        InvokeObj::Table(x) => {
-            find_method_in_state(&method, &x.0.get().mutable.methods_list)
-        }
-    };
-
-    if !has_method {
-        return Err(MethodException {
-            code: ExceptionCodes::MethodNotFound as i32,
-            ..Default::default()
-        });
-    }
-
-    // all valid. pass along
-
-    c.invoke(method, context, client_id, invoke.args)
-}
-
-#[derive(Error, Debug)]
-pub enum ServerError {
-    #[error("Decode error")]
-    DecodeError(String),
-    #[error("Root message is not valid")]
-    InvalidRootMessage(String),
-}
-
-/// Drive state changes by handling the next message to the server.
-///
-/// This function takes a user server state, a message, and a writeback function. The message is assumed to be encoded in CBOR. If a specific message is needed to be sent back, the `write` function argument will be called with the content; it is up to user code to determine how to send that to the client.
-pub fn handle_next<U, F>(
-    c: Arc<Mutex<U>>,
-    msg: Vec<u8>,
-    client_id: uuid::Uuid,
-    write: F,
-) -> Result<(), ServerError>
-where
-    U: UserServerState,
-    F: Fn(Vec<u8>),
-{
-    log::debug!("Handling next message...");
-    // extract a typed message from the input stream
-    let root_message = ciborium::de::from_reader(msg.as_slice());
-
-    let root_message: ClientRootMessage = root_message
-        .map_err(|_| ServerError::InvalidRootMessage("Unable to extract root client message; this should just be a CBOR array.".to_string()))?;
-
-    for message in root_message.list {
-        match message {
-            AllClientMessages::Intro(_) => {
-                // dump current state to the client. The serde handler should
-                // do the right thing here and make one big list of messages
-                // to send back
-                log::debug!("Client joined, providing initial state");
-                let mut recorder = Vec::<u8>::new();
-                {
-                    let lock = c.lock().unwrap();
-                    ciborium::ser::into_writer(&lock.state(), &mut recorder)
-                        .unwrap();
-                }
-                write(recorder);
-            }
-            AllClientMessages::Invoke(invoke) => {
-                log::debug!("Next message is invoke...");
-                // copy the reply ident
-                let reply_id = invoke.invoke_id.clone();
-
-                // invoke the method and get the result or error
-                let result =
-                    invoke_helper(&mut *c.lock().unwrap(), client_id, invoke);
-
-                // if we have a reply id, then we can ship a response. Otherwise, we just skip this step.
-                if let Some(resp) = reply_id {
-                    // Format a reply object
-                    let mut reply = MessageMethodReply {
-                        invoke_id: resp,
-                        ..Default::default()
-                    };
-
-                    // only fill in a certain field if a reply or exception...
-                    match result {
-                        Err(x) => {
-                            reply.method_exception = Some(x);
-                        }
-                        Ok(result) => {
-                            reply.result = result;
-                        }
-                    }
-
-                    // now send it back
-                    let recorder = Recorder::record(
-                        ServerMessageIDs::MsgMethodReply as u32,
-                        &reply,
-                    );
-
-                    write(recorder.data);
-                }
-            }
-        }
-    }
-
-    Ok(())
-}
 
 #[cfg(test)]
 mod tests {
@@ -802,19 +635,21 @@ mod tests {
     fn build_server_state() {
         // we test by encoding to cbor and then decoding.
         // messages can be encoded different ways, ie, indefinite size of maps, etc.
-        let (tx, mut rx) = tokio::sync::broadcast::channel(16);
+        let mut state = ServerState::new();
 
-        let mut state = ServerState::new(tx);
+        let mut state_lock = state.lock().unwrap();
 
-        state
+        let mut recv = state_lock.new_broadcast_recv();
+
+        state_lock
             .buffers
             .new_component(BufferState::new_from_bytes(vec![10, 10, 25, 25]));
 
-        let component_b = state.buffers.new_component(
+        let component_b = state_lock.buffers.new_component(
             BufferState::new_from_url("http://wombat.com", 1024),
         );
 
-        state.buffer_views.new_component(
+        state_lock.buffer_views.new_component(
             BufferViewState::new_from_whole_buffer(component_b.clone()),
         );
 
@@ -896,7 +731,7 @@ mod tests {
             .unwrap(),
         ));
 
-        while let Ok(msg) = rx.try_recv() {
+        while let Ok(msg) = recv.try_recv() {
             //println!("{msg:02X?}");
             let truth = messages.pop_front().unwrap();
 
@@ -915,17 +750,19 @@ mod tests {
 
     #[test]
     fn cascade_delete() {
-        let (tx, mut rx) = tokio::sync::broadcast::channel(16);
+        let mut state = ServerState::new();
 
-        let mut state = ServerState::new(tx);
+        let mut state_lock = state.lock().unwrap();
+
+        let mut recv = state_lock.new_broadcast_recv();
 
         {
-            let a = state.entities.new_component(ServerEntityState {
+            let a = state_lock.entities.new_component(ServerEntityState {
                 name: Some("A".to_string()),
                 mutable: Default::default(),
             });
 
-            let b = state.entities.new_component(ServerEntityState {
+            let b = state_lock.entities.new_component(ServerEntityState {
                 name: Some("B".to_string()),
                 mutable: ServerEntityStateUpdatable {
                     parent: Some(a),
@@ -933,7 +770,7 @@ mod tests {
                 },
             });
 
-            let _c = state.entities.new_component(ServerEntityState {
+            let _c = state_lock.entities.new_component(ServerEntityState {
                 name: Some("C".to_string()),
                 mutable: ServerEntityStateUpdatable {
                     parent: Some(b),
@@ -942,16 +779,18 @@ mod tests {
             });
         }
 
-        while let Ok(_msg) = rx.try_recv() {}
+        while let Ok(_msg) = recv.try_recv() {}
     }
 
     #[test]
     fn check_lookup_inspect() {
-        let (tx, mut rx) = tokio::sync::broadcast::channel(16);
+        let mut state = ServerState::new();
 
-        let mut state = ServerState::new(tx);
+        let mut state_lock = state.lock().unwrap();
 
-        let a = state.entities.new_component(ServerEntityState {
+        let mut recv = state_lock.new_broadcast_recv();
+
+        let a = state_lock.entities.new_component(ServerEntityState {
             name: Some("A".to_string()),
             mutable: ServerEntityStateUpdatable {
                 tags: Some(vec!["item_a".to_string()]),
@@ -959,11 +798,11 @@ mod tests {
             },
         });
 
-        state.entities.inspect(a.id(), |e| {
+        state_lock.entities.inspect(a.id(), |e| {
             assert_eq!(e.name.as_ref().unwrap(), "A");
             assert_eq!(e.mutable.tags, Some(vec!["item_a".to_string()]));
         });
 
-        while let Ok(_msg) = rx.try_recv() {}
+        while let Ok(_msg) = recv.try_recv() {}
     }
 }

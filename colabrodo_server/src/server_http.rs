@@ -172,8 +172,8 @@ pub enum AssetServerReply {
 /// The function will return on an error, or after the [AssetServerCommand::Shutdown] command has been sent.
 pub async fn run_asset_server(
     options: AssetServerOptions,
-    command_stream: mpsc::Receiver<AssetServerCommand>,
-    command_replies: mpsc::Sender<AssetServerReply>,
+    command_stream: mpsc::UnboundedReceiver<AssetServerCommand>,
+    command_replies: mpsc::UnboundedSender<AssetServerReply>,
 ) {
     let addr: SocketAddr = options.host.parse().unwrap();
 
@@ -206,10 +206,7 @@ pub async fn run_asset_server(
 
     let server = Server::bind(&addr).serve(make_service);
 
-    command_replies
-        .send(AssetServerReply::Started)
-        .await
-        .unwrap();
+    command_replies.send(AssetServerReply::Started).unwrap();
 
     tokio::select! {
         e = server => {
@@ -230,8 +227,8 @@ pub async fn run_asset_server(
 
 /// Task to handle commands
 async fn command_handler(
-    mut command_stream: mpsc::Receiver<AssetServerCommand>,
-    command_replies: mpsc::Sender<AssetServerReply>,
+    mut command_stream: mpsc::UnboundedReceiver<AssetServerCommand>,
+    command_replies: mpsc::UnboundedSender<AssetServerReply>,
     mut stop_rx: broadcast::Receiver<u8>,
     stop_tx: broadcast::Sender<u8>,
     state: Arc<Mutex<AssetStore>>,
@@ -249,7 +246,6 @@ async fn command_handler(
                             }
                             command_replies
                                 .send(AssetServerReply::Registered(id, url))
-                                .await
                                 .unwrap();
                         }
                         AssetServerCommand::Unregister(id) => {
@@ -260,13 +256,11 @@ async fn command_handler(
 
                             command_replies
                                 .send(AssetServerReply::Unregistered(id))
-                                .await
                                 .unwrap();
                         }
                         AssetServerCommand::Shutdown => {
                             command_replies
                                 .send(AssetServerReply::ShuttingDown)
-                                .await
                                 .unwrap();
                             stop_tx.send(1).unwrap();
                         }
@@ -281,8 +275,8 @@ async fn command_handler(
 }
 
 pub struct AssetServerLink {
-    tx_to_server: mpsc::Sender<AssetServerCommand>,
-    rx_from_server: mpsc::Receiver<AssetServerReply>,
+    tx_to_server: mpsc::UnboundedSender<AssetServerCommand>,
+    rx_from_server: mpsc::UnboundedReceiver<AssetServerReply>,
 }
 
 impl AssetServerLink {
@@ -301,45 +295,18 @@ impl AssetServerLink {
         &mut self,
         command: AssetServerCommand,
     ) -> AssetServerReply {
-        self.tx_to_server.blocking_send(command).unwrap();
+        let h = tokio::runtime::Handle::current();
 
-        self.rx_from_server.blocking_recv().unwrap()
-    }
+        self.tx_to_server.send(command).unwrap();
 
-    pub async fn send_command_async(
-        &mut self,
-        command: AssetServerCommand,
-    ) -> AssetServerReply {
-        self.tx_to_server.send(command).await.unwrap();
-
-        // Now the smart thing would be to figure out if responses are correlated to replies, but as this is a single sender, single recv situation, we can skip that for the moment
-        // TODO: robustify request and recv.
-
-        self.rx_from_server.recv().await.unwrap()
+        let j = h.block_on((|| async {
+            self.rx_from_server.recv().await.unwrap()
+        })());
+        j
     }
 
     pub fn add_asset(&mut self, id: uuid::Uuid, asset: Asset) -> String {
         let reply = self.send_command(AssetServerCommand::Register(id, asset));
-
-        match reply {
-            AssetServerReply::Registered(rid, url) => {
-                assert_eq!(rid, id);
-                url
-            }
-            _ => {
-                panic!("Unexpected message!");
-            }
-        }
-    }
-
-    pub async fn add_asset_async(
-        &mut self,
-        id: uuid::Uuid,
-        asset: Asset,
-    ) -> String {
-        let reply = self
-            .send_command_async(AssetServerCommand::Register(id, asset))
-            .await;
 
         match reply {
             AssetServerReply::Registered(rid, url) => {
@@ -375,25 +342,14 @@ impl AssetServerLink {
             }
         }
     }
-
-    pub async fn shutdown_async(&mut self) {
-        let reply = self.send_command_async(AssetServerCommand::Shutdown).await;
-
-        match reply {
-            AssetServerReply::ShuttingDown => {}
-            _ => {
-                panic!("Unexpected message!");
-            }
-        }
-    }
 }
 
 /// Make an asset server with some channels already set up.
 pub fn make_asset_server(
     options: AssetServerOptions,
 ) -> (impl futures_util::Future<Output = ()>, AssetServerLink) {
-    let (tx_to_server, rx_to_server) = mpsc::channel(16);
-    let (tx_from_server, rx_from_server) = mpsc::channel(16);
+    let (tx_to_server, rx_to_server) = mpsc::unbounded_channel();
+    let (tx_from_server, rx_from_server) = mpsc::unbounded_channel();
 
     (
         run_asset_server(options, rx_to_server, tx_from_server),
@@ -440,18 +396,16 @@ mod tests {
         tokio::spawn(async move {
             link.wait_for_start().await;
 
-            let url = link
-                .add_asset_async(
-                    new_id,
-                    Asset::InMemory(Bytes::from(vec![10, 20, 30, 40])),
-                )
-                .await;
+            let url = link.add_asset(
+                new_id,
+                Asset::InMemory(Bytes::from(vec![10, 20, 30, 40])),
+            );
 
             let content = fetch_url(url.parse().unwrap()).await.unwrap();
 
             assert_eq!(content, vec![10, 20, 30, 40]);
 
-            link.shutdown_async().await;
+            link.shutdown();
         });
 
         asset_server.await;

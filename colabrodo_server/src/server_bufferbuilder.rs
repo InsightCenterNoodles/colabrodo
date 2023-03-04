@@ -176,6 +176,12 @@ impl<'a> IndexType<'a> {
     }
 }
 
+pub struct PackResult {
+    bytes: Vec<u8>,
+    vertex_region_size: u64,
+    index_region_size: u64,
+}
+
 #[derive(Debug)]
 pub struct VertexSource<'a, V>
 where
@@ -190,33 +196,57 @@ impl<'a, V> VertexSource<'a, V>
 where
     V: Vertex,
 {
-    pub fn build_mesh(
-        &self,
-        server_state: &mut ServerState,
-    ) -> Result<IntermediateGeometryPatch, BufferBuildError> {
-        self.build_mesh_with(server_state, |data| {
-            crate::server_messages::BufferRepresentation::new_from_bytes(data)
+    pub fn pack_bytes(&self) -> Result<PackResult, BufferBuildError> {
+        let mut bytes: Vec<u8> = Vec::new();
+
+        let vertex_bytes = try_cast_slice(self.vertex)
+            .map_err(|_| BufferBuildError::InternalError)?;
+
+        let i_total_bytes = self.index.total_byte_count();
+
+        bytes.reserve(vertex_bytes.len() + i_total_bytes);
+
+        bytes.extend_from_slice(vertex_bytes);
+
+        fn try_cast<T: Pod>(t: &[T]) -> Result<&[u8], BufferBuildError> {
+            try_cast_slice(t).map_err(|_| BufferBuildError::InternalError)
+        }
+
+        let blank = Vec::<u8>::new();
+
+        let slice = match self.index {
+            IndexType::Points(x) => try_cast(x)?,
+            IndexType::Lines(x) => try_cast(x)?,
+            IndexType::Triangles(x) => try_cast(x)?,
+            _ => blank.as_slice(),
+        };
+
+        bytes.extend_from_slice(slice);
+
+        Ok(PackResult {
+            bytes,
+            vertex_region_size: vertex_bytes.len() as u64,
+            index_region_size: i_total_bytes as u64,
         })
     }
 
-    pub fn build_mesh_with<F>(
+    pub fn build_states(
         &self,
         server_state: &mut ServerState,
-        register_bytes: F,
-    ) -> Result<IntermediateGeometryPatch, BufferBuildError>
-    where
-        F: FnOnce(Vec<u8>) -> crate::server_messages::BufferRepresentation,
-    {
-        let v_count = self.vertex.len();
-
+        representation: BufferRepresentation,
+    ) -> Result<IntermediateGeometryPatch, BufferBuildError> {
         let v_byte_size = size_of::<V>();
 
-        let copy_result = copy_bytes(self.vertex, &self.index)?;
+        let vertex_bytes = (v_byte_size * self.vertex.len()) as u64;
+
+        let i_total_bytes = self.index.total_byte_count() as u64;
+
+        let total_bytes = vertex_bytes + i_total_bytes;
 
         let buffer = server_state.buffers.new_component(BufferState {
             name: self.name.as_ref().map(|x| format!("{x}_buffer")),
-            size: copy_result.bytes.len() as u64,
-            representation: register_bytes(copy_result.bytes),
+            size: total_bytes as u64,
+            representation,
         });
 
         let vertex_view =
@@ -227,12 +257,12 @@ where
                     source_buffer: buffer.clone(),
                     view_type: BufferViewType::Geometry,
                     offset: 0,
-                    length: copy_result.vertex_region_size,
+                    length: vertex_bytes,
                 });
 
         let mut ret = IntermediateGeometryPatch {
             attributes: Vec::default(),
-            vertex_count: v_count as u64,
+            vertex_count: self.vertex.len() as u64,
             indices: None,
             patch_type: match self.index {
                 IndexType::UnindexedPoints => PrimitiveType::Points,
@@ -270,8 +300,8 @@ where
                         name: None,
                         source_buffer: buffer,
                         view_type: BufferViewType::Geometry,
-                        offset: copy_result.vertex_region_size,
-                        length: copy_result.index_region_size,
+                        offset: vertex_bytes,
+                        length: i_total_bytes,
                     },
                 );
 
@@ -296,49 +326,6 @@ pub struct IntermediateGeometryPatch {
     pub vertex_count: u64,
     pub indices: Option<ServerGeometryIndex>,
     pub patch_type: PrimitiveType,
-}
-
-struct CopyResult {
-    bytes: Vec<u8>,
-    vertex_region_size: u64,
-    index_region_size: u64,
-}
-
-fn copy_bytes<V: Vertex>(
-    v: &[V],
-    index: &IndexType,
-) -> Result<CopyResult, BufferBuildError> {
-    let mut bytes: Vec<u8> = Vec::new();
-
-    let vertex_bytes =
-        try_cast_slice(v).map_err(|_| BufferBuildError::InternalError)?;
-
-    let i_total_bytes = index.total_byte_count();
-
-    bytes.reserve(vertex_bytes.len() + i_total_bytes);
-
-    bytes.extend_from_slice(vertex_bytes);
-
-    fn try_cast<T: Pod>(t: &[T]) -> Result<&[u8], BufferBuildError> {
-        try_cast_slice(t).map_err(|_| BufferBuildError::InternalError)
-    }
-
-    let blank = Vec::<u8>::new();
-
-    let slice = match index {
-        IndexType::Points(x) => try_cast(x)?,
-        IndexType::Lines(x) => try_cast(x)?,
-        IndexType::Triangles(x) => try_cast(x)?,
-        _ => blank.as_slice(),
-    };
-
-    bytes.extend_from_slice(slice);
-
-    Ok(CopyResult {
-        bytes,
-        vertex_region_size: vertex_bytes.len() as u64,
-        index_region_size: i_total_bytes as u64,
-    })
 }
 
 #[cfg(test)]
@@ -388,7 +375,13 @@ mod tests {
         let index_list = vec![[0, 1, 2]];
         let index = IndexType::Triangles(index_list.as_slice());
 
-        let result = copy_bytes(verts.as_slice(), &index).unwrap();
+        let source = VertexSource {
+            name: None,
+            vertex: verts.as_slice(),
+            index,
+        };
+
+        let result = source.pack_bytes().unwrap();
 
         assert_eq!(
             result.bytes.len(),
@@ -407,9 +400,7 @@ mod tests {
 
     #[test]
     fn common_pack() {
-        let (tx, _rx) = tokio::sync::broadcast::channel(16);
-
-        let mut state = ServerState::new(tx);
+        let state = ServerState::new();
 
         let verts = vec![
             VertexTexture {
@@ -438,12 +429,21 @@ mod tests {
             index: index.clone(),
         };
 
-        let _result = source.build_mesh(&mut state).unwrap();
+        let mut lock = state.lock().unwrap();
 
-        state.buffers.inspect(NooID::new(0, 0), |f| {
+        let packed = source.pack_bytes().unwrap();
+
+        let _result = source
+            .build_states(
+                &mut lock,
+                BufferRepresentation::new_from_bytes(packed.bytes.clone()),
+            )
+            .unwrap();
+
+        lock.buffers.inspect(NooID::new(0, 0), |f| {
             let bytes = f.representation.bytes().unwrap().bytes();
 
-            let pack_res = copy_bytes(verts.as_slice(), &index).unwrap();
+            let pack_res = source.pack_bytes().unwrap();
 
             assert_eq!(bytes, pack_res.bytes);
         });

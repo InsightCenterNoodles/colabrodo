@@ -1,10 +1,7 @@
 //! An example NOODLES server that provides cube geometry for clients.
 
 use colabrodo_server::{
-    server::{AsyncServer, DefaultCommand, NoInit, ServerOptions},
-    server_bufferbuilder::{self, IndexType, VertexMinimal},
-    server_messages::*,
-    server_state::{MethodException, ServerState, UserServerState},
+    server::*, server_bufferbuilder::*, server_messages::*,
 };
 
 /// Build the actual cube geometry.
@@ -68,7 +65,7 @@ fn make_cube(server_state: &mut ServerState) -> ServerGeometryPatch {
     ];
     let index_list = IndexType::Triangles(index_list.as_slice());
 
-    let test_source = server_bufferbuilder::VertexSource {
+    let test_source = VertexSource {
         name: Some("Cube".to_string()),
         vertex: verts.as_slice(),
         index: index_list,
@@ -103,90 +100,40 @@ fn make_cube(server_state: &mut ServerState) -> ServerGeometryPatch {
     }
 }
 
-/// Example implementation of a server
-struct CubeServer {
-    state: ServerState,
+fn setup(state: &mut ServerStatePtr) {
+    let mut state_lock = state.lock().unwrap();
 
-    cube_entity: Option<ComponentReference<ServerEntityState>>,
-}
+    let cube = make_cube(&mut state_lock);
 
-/// All server states should use this trait...
-impl UserServerState for CubeServer {
-    /// Some code will need mutable access to the core server state
-    fn mut_state(&mut self) -> &mut ServerState {
-        &mut self.state
-    }
+    let geom = state_lock.geometries.new_component(ServerGeometryState {
+        name: Some("Cube Geom".to_string()),
+        patches: vec![cube],
+    });
 
-    /// Some code will need non-mutable access to the core server state
-    fn state(&self) -> &ServerState {
-        &self.state
-    }
-
-    /// When a method invoke is received, it will be validated and then passed here for processing.
-    fn invoke(
-        &mut self,
-        _method: ComponentReference<MethodState>,
-        _context: colabrodo_server::server_state::InvokeObj,
-        _client_id: uuid::Uuid,
-        _args: Vec<ciborium::value::Value>,
-    ) -> colabrodo_server::server_state::MethodResult {
-        Err(MethodException::method_not_found(None))
-    }
-}
-
-/// And servers that use the provided tokio infrastructure should impl this trait, too...
-impl AsyncServer for CubeServer {
-    type CommandType = DefaultCommand;
-    type InitType = NoInit;
-
-    /// When needed the network server will create our struct with this function
-    fn new(
-        tx: colabrodo_server::server_state::CallbackPtr,
-        _init: NoInit,
-    ) -> Self {
-        Self {
-            state: ServerState::new(tx),
-            cube_entity: None,
-        }
-    }
-
-    /// Any additional state can be created here.
-    fn initialize_state(&mut self) {
-        let cube = make_cube(&mut self.state);
-
-        let geom = self.state.geometries.new_component(ServerGeometryState {
-            name: Some("Cube Geom".to_string()),
-            patches: vec![cube],
-        });
-
-        self.cube_entity =
-            Some(self.state.entities.new_component(ServerEntityState {
-                name: Some("Cube".to_string()),
-                mutable: ServerEntityStateUpdatable {
-                    parent: None,
-                    transform: None,
-                    representation: Some(
-                        ServerEntityRepresentation::new_render(
-                            ServerRenderRepresentation {
-                                mesh: geom,
-                                instances: None,
-                            },
-                        ),
-                    ),
-                    ..Default::default()
+    state_lock.entities.new_owned_component(ServerEntityState {
+        name: Some("Cube".to_string()),
+        mutable: ServerEntityStateUpdatable {
+            parent: None,
+            transform: None,
+            representation: Some(ServerEntityRepresentation::new_render(
+                ServerRenderRepresentation {
+                    mesh: geom,
+                    instances: None,
                 },
-            }));
-    }
-
-    // If we had some kind of out-of-band messaging to the server, it would be handled here
-    fn handle_command(&mut self, _: Self::CommandType) {
-        // pass
-    }
+            )),
+            ..Default::default()
+        },
+    });
 }
 
 #[tokio::main]
 async fn main() {
     println!("Connect clients to localhost:50000");
     let opts = ServerOptions::default();
-    colabrodo_server::server::server_main::<CubeServer>(opts, NoInit {}).await;
+
+    let mut state = ServerState::new();
+
+    setup(&mut state);
+
+    server_main(opts, state).await;
 }

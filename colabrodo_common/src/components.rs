@@ -44,14 +44,17 @@ pub struct MethodArg {
 
 #[serde_with::skip_serializing_none]
 #[derive(Debug, Default, Serialize, Deserialize)]
-pub struct MethodState {
+pub struct MethodState<Extra> {
     pub name: String,
     pub doc: Option<String>,
     pub return_doc: Option<String>,
     pub arg_doc: Vec<MethodArg>,
+
+    #[serde(skip)]
+    pub state: Extra,
 }
 
-impl ComponentMessageIDs for MethodState {
+impl<Extra> ComponentMessageIDs for MethodState<Extra> {
     fn update_message_id() -> ServerMessageIDs {
         ServerMessageIDs::Unknown
     }

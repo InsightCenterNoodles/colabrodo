@@ -72,10 +72,9 @@ impl UserServerState for PublishTableExample {
 
 impl AsyncServer for PublishTableExample {
     type CommandType = DefaultCommand;
-    type InitType = NoInit;
 
-    fn new(tx: CallbackPtr, _init: Self::InitType) -> Self {
-        let mut state = ServerState::new(tx);
+    fn initialize_state(&mut self, state: &mut ServerState) {
+        let mut state = ServerState::new();
 
         // Create a new table ID
         let table = state.tables.new_component(ServerTableState {

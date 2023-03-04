@@ -5,31 +5,33 @@ use std::fmt::Debug;
 use std::sync::Arc;
 use std::sync::Mutex;
 
+use crate::server_messages::MethodSignalContent;
+use crate::server_messages::Recorder;
+pub use crate::server_messages::{ComponentReference, ServerMethodState};
+pub use crate::server_state::MethodResult;
+use crate::server_state::Output;
+pub use crate::server_state::{InvokeObj, ServerState, ServerStatePtr};
+pub use ciborium;
+use colabrodo_common::client_communication::{
+    AllClientMessages, ClientInvokeMessage, ClientRootMessage, InvokeIDType,
+};
+use colabrodo_common::common::ServerMessageIDs;
+use colabrodo_common::server_communication::ExceptionCodes;
+use colabrodo_common::server_communication::MessageMethodReply;
+use colabrodo_common::server_communication::MethodException;
 use futures_util::SinkExt;
 use futures_util::StreamExt;
 use log;
 use log::log_enabled;
+use thiserror::Error;
+pub use tokio;
 use tokio::{
     net::{TcpListener, TcpStream},
     sync::{broadcast, mpsc},
 };
 use tokio_tungstenite;
 use tokio_tungstenite::tungstenite::Message as WSMessage;
-
-use crate::server_state;
-use crate::server_state::Output;
-pub use crate::server_state::{
-    CallbackPtr, InvokeObj, ServerState, UserServerState,
-};
-
-pub use tokio;
-
-pub use ciborium;
-
 pub use uuid;
-
-pub use crate::server_messages::{ComponentReference, MethodState};
-pub use crate::server_state::MethodResult;
 
 // We have a fun structure here.
 // First there is a thread for handling the server state, which is controlled through queues.
@@ -61,12 +63,12 @@ pub struct ClientRecord {
 struct FromClientMessage(uuid::Uuid, Vec<u8>);
 
 #[derive(Debug)]
-enum ToServerMessage<CommandType> {
+enum ToServerMessage {
     ClientConnected(ClientRecord),
     Client(FromClientMessage),
     ClientClosed(uuid::Uuid),
     //Shutdown,
-    Command(CommandType),
+    //Command(CommandType),
 }
 
 pub struct ServerOptions {
@@ -81,40 +83,45 @@ impl Default for ServerOptions {
     }
 }
 
-#[derive(Debug)]
-/// A placeholder if the user server doesn't support commands
-pub struct DefaultCommand {}
+// #[derive(Debug)]
+// /// A placeholder if the user server doesn't support commands
+// pub struct DefaultCommand {}
 
-#[derive(Debug)]
-/// A placeholder if the user server doesn't support initialization arguments
-pub struct NoInit {}
+// #[derive(Debug)]
+// /// A placeholder if the user server doesn't support initialization arguments
+// pub struct NoInit {}
 
 /// Trait for user servers to implement
-pub trait AsyncServer: UserServerState {
-    /// Type to use for the handle command callback
-    type CommandType;
+// pub trait AsyncServer {
+//     /// Type to use for the handle command callback
+//     type CommandType;
 
-    /// Type to use for additional initialization
-    type InitType;
+//     /// Called when a new client connects. This is before any introduction is received
+//     #[allow(unused_variables)]
+//     fn client_connected(&mut self, record: ClientRecord) {}
 
-    /// Called when our framework needs to create the user state
-    fn new(tx: server_state::CallbackPtr, init: Self::InitType) -> Self;
+//     /// Called when a client disconnects.
+//     #[allow(unused_variables)]
+//     fn client_disconnected(&mut self, client_id: uuid::Uuid) {}
 
-    /// Called after the user state has been created. Extra setup can happen here.
-    fn initialize_state(&mut self) {}
+//     /// Called when an async command is received
+//     #[allow(unused_variables)]
+//     fn handle_command(&mut self, command: Self::CommandType) {}
 
-    /// Called when a new client connects. This is before any introduction is received
-    #[allow(unused_variables)]
-    fn client_connected(&mut self, record: ClientRecord) {}
-
-    /// Called when a client disconnects.
-    #[allow(unused_variables)]
-    fn client_disconnected(&mut self, client_id: uuid::Uuid) {}
-
-    /// Called when an async command is received
-    #[allow(unused_variables)]
-    fn handle_command(&mut self, command: Self::CommandType) {}
-}
+//     // #[allow(unused_variables)]
+//     // fn invoke(
+//     //     &mut self,
+//     //     server_state: &mut ServerState,
+//     //     method: ComponentReference<MethodState>,
+//     //     context: InvokeObj,
+//     //     client_id: uuid::Uuid,
+//     //     args: Vec<value::Value>,
+//     // ) -> MethodResult {
+//     //     Err(MethodException::method_not_found(Some(
+//     //         "No methods are available",
+//     //     )))
+//     // }
+// }
 
 /// Public entry point to the server process.
 ///
@@ -141,29 +148,11 @@ pub trait AsyncServer: UserServerState {
 /// colabrodo_common::server_tokio::server_main::<MyServer>(opts);
 ///
 /// ```
-pub async fn server_main<T>(opts: ServerOptions, init: T::InitType)
-where
-    T: AsyncServer + 'static,
-    T::CommandType: Debug + std::marker::Send,
-    <T as AsyncServer>::InitType: std::marker::Send,
-{
-    server_main_with_command_queue::<T>(opts, init, None).await;
-}
+pub async fn server_main(opts: ServerOptions, state: Arc<Mutex<ServerState>>) {
+    let bcast_send = state.lock().unwrap().new_broadcast_send();
 
-pub async fn server_main_with_command_queue<T>(
-    opts: ServerOptions,
-    init: T::InitType,
-    command_queue: Option<mpsc::Receiver<T::CommandType>>,
-) where
-    T: AsyncServer + 'static,
-    T::CommandType: Debug + std::marker::Send,
-    <T as AsyncServer>::InitType: std::marker::Send,
-{
     // channel for task control
     let (stop_tx, _stop_rx) = tokio::sync::broadcast::channel::<u8>(1);
-
-    // channel for messages to be sent to all clients
-    let (bcast_send, bcast_recv) = broadcast::channel(16);
 
     // channel for server to recv messages
     let (to_server_send, to_server_recv) = tokio::sync::mpsc::channel(16);
@@ -179,12 +168,12 @@ pub async fn server_main_with_command_queue<T>(
     log::info!("NOODLES server accepting clients @ {local_addy}");
 
     let stop_watch_task =
-        tokio::spawn(shutdown_watcher(bcast_recv, stop_tx.clone()));
+        tokio::spawn(shutdown_watcher(bcast_send.subscribe(), stop_tx.clone()));
 
     // move the listener off to start accepting clients
     // it needs a handle for the broadcast channel to hand to new clients
     // and a handle to the to_server stream.
-    let h1 = tokio::spawn(client_connect_task::<T>(
+    let h1 = tokio::spawn(client_connect_task(
         listener,
         bcast_send.clone(),
         to_server_send.clone(),
@@ -192,21 +181,15 @@ pub async fn server_main_with_command_queue<T>(
         stop_tx.subscribe(),
     ));
 
-    if let Some(q) = command_queue {
-        tokio::spawn(command_sender::<T>(q, to_server_send.clone()));
-    }
+    // if let Some(q) = command_queue {
+    //     tokio::spawn(command_sender::<T>(q, to_server_send.clone()));
+    // }
 
     // let state_handle = thread::spawn(move || {
 
     // });
 
-    server_state_loop::<T>(
-        bcast_send.clone(),
-        init,
-        to_server_recv,
-        stop_tx.subscribe(),
-    )
-    .await;
+    server_state_loop(state, to_server_recv, stop_tx.subscribe()).await;
 
     //server_message_pump(bcast_send, from_server_recv, to_server_send.clone())
     //    .await;
@@ -237,22 +220,22 @@ async fn shutdown_watcher(
     }
 }
 
-async fn command_sender<T>(
-    mut command_queue: mpsc::Receiver<T::CommandType>,
-    to_server_send: tokio::sync::mpsc::Sender<ToServerMessage<T::CommandType>>,
-) where
-    T: AsyncServer + 'static,
-    T::CommandType: std::marker::Send + Debug + 'static,
-{
-    log::debug!("Launching command sender");
-    while let Some(msg) = command_queue.recv().await {
-        to_server_send
-            .send(ToServerMessage::Command(msg))
-            .await
-            .unwrap();
-    }
-    log::debug!("Done with command sender");
-}
+// async fn command_sender<T>(
+//     mut command_queue: mpsc::Receiver<T::CommandType>,
+//     to_server_send: tokio::sync::mpsc::Sender<ToServerMessage>,
+// ) where
+//     T: AsyncServer + 'static,
+//     T::CommandType: std::marker::Send + Debug + 'static,
+// {
+//     log::debug!("Launching command sender");
+//     while let Some(msg) = command_queue.recv().await {
+//         to_server_send
+//             .send(ToServerMessage::Command(msg))
+//             .await
+//             .unwrap();
+//     }
+//     log::debug!("Done with command sender");
+// }
 
 // Task to construct a listening socket
 async fn listen(opts: &ServerOptions) -> TcpListener {
@@ -263,16 +246,13 @@ async fn listen(opts: &ServerOptions) -> TcpListener {
 
 // Task that waits for a new client to connect and spawns a new client
 // handler task
-async fn client_connect_task<T>(
+async fn client_connect_task(
     listener: TcpListener,
     bcast_send: broadcast::Sender<Output>,
-    to_server_send: tokio::sync::mpsc::Sender<ToServerMessage<T::CommandType>>,
+    to_server_send: tokio::sync::mpsc::Sender<ToServerMessage>,
     stop_tx: tokio::sync::broadcast::Sender<u8>,
     mut stop_rx: tokio::sync::broadcast::Receiver<u8>,
-) where
-    T: AsyncServer + 'static,
-    T::CommandType: std::marker::Send + Debug + 'static,
-{
+) {
     log::debug!("Starting client connect task");
 
     loop {
@@ -280,7 +260,7 @@ async fn client_connect_task<T>(
             _ = stop_rx.recv() => break,
             acc = listener.accept() => {
                 if let Ok((stream, _)) = acc {
-                    tokio::spawn(client_handler::<T>(
+                    tokio::spawn(client_handler(
                         stream,
                         to_server_send.clone(),
                         bcast_send.subscribe(),
@@ -296,21 +276,12 @@ async fn client_connect_task<T>(
 
 /// handles server state; the state itself is not thread safe, so we isolate it
 /// to this task.
-async fn server_state_loop<T>(
-    tx: server_state::CallbackPtr,
-    init: T::InitType,
-    mut from_world: tokio::sync::mpsc::Receiver<
-        ToServerMessage<T::CommandType>,
-    >,
+async fn server_state_loop(
+    server_state: Arc<Mutex<ServerState>>,
+    mut from_world: tokio::sync::mpsc::Receiver<ToServerMessage>,
     mut stop_rx: tokio::sync::broadcast::Receiver<u8>,
-) where
-    T: AsyncServer,
-    T::CommandType: std::marker::Send,
-{
+) {
     log::debug!("Starting server state thread");
-    let server_state = Arc::new(Mutex::new(T::new(tx, init)));
-
-    server_state.lock().unwrap().initialize_state();
 
     let mut client_map = HashMap::<uuid::Uuid, ClientRecord>::new();
 
@@ -321,7 +292,6 @@ async fn server_state_loop<T>(
                 match msg {
                     ToServerMessage::ClientConnected(cr) => {
                         client_map.insert(cr.id, cr.clone());
-                        server_state.lock().unwrap().client_connected(cr)
                     }
                     ToServerMessage::Client(client_msg) => {
                         // handle a message from a client, and write any replies
@@ -333,9 +303,8 @@ async fn server_state_loop<T>(
 
                         let client = client_map.get(&client_msg.0).unwrap();
 
-                        let result = {
-                            server_state::handle_next(
-                                Arc::clone(&server_state),
+                        let result = handle_next(
+                                &server_state,
                                 client_msg.1,
                                 client_msg.0,
                                 |out| {
@@ -345,24 +314,22 @@ async fn server_state_loop<T>(
                                     }
                                     client.sender.send(out).unwrap();
                                 },
-                            )
-                        };
+                            ).await;
 
                         if let Err(x) = result {
                             log::warn!("Unable to handle message from client: {x:?}");
                         }
                     }
                     ToServerMessage::ClientClosed(id) => {
-                        server_state.lock().unwrap().client_disconnected(id);
                         client_map.remove(&id);
                     }
                     // ToServerMessage::Shutdown => {
                     //     stop_tx.send(1).unwrap();
                     //     break;
                     // }
-                    ToServerMessage::Command(comm_msg) => {
-                        server_state.lock().unwrap().handle_command(comm_msg);
-                    }
+                    //ToServerMessage::Command(comm_msg) => {
+                        //user_state.handle_command(comm_msg);
+                    //}
                 }
             }
         }
@@ -372,16 +339,12 @@ async fn server_state_loop<T>(
 }
 
 /// Task for each client that has joined up
-async fn client_handler<'a, T>(
+async fn client_handler(
     stream: TcpStream,
-    to_server_send: tokio::sync::mpsc::Sender<ToServerMessage<T::CommandType>>,
+    to_server_send: tokio::sync::mpsc::Sender<ToServerMessage>,
     mut bcast_recv: broadcast::Receiver<Output>,
     stop_tx: tokio::sync::broadcast::Sender<u8>,
-) -> Result<(), ()>
-where
-    T: AsyncServer,
-    T::CommandType: std::marker::Send + Debug + 'a,
-{
+) -> Result<(), ()> {
     let addr = stream
         .peer_addr()
         .expect("Connected stream missing peer address");
@@ -504,6 +467,197 @@ where
     h2.await.unwrap();
 
     log::info!("Client closed.");
+
+    Ok(())
+}
+
+// =============================================================================
+
+/// Helper function to determine if a method is indeed attached to a given target.
+fn find_method_in_state(
+    method: &ComponentReference<ServerMethodState>,
+    state: &Option<Vec<ComponentReference<ServerMethodState>>>,
+) -> bool {
+    match state {
+        None => false,
+        Some(x) => {
+            for m in x {
+                if m.id() == method.id() {
+                    return true;
+                }
+            }
+            false
+        }
+    }
+}
+
+/// Helper function to actually invoke a method
+///
+/// Determines if the method exists, can be invoked on the target, etc, and if so, dispatches to the user server
+async fn invoke_helper(
+    state: &Arc<Mutex<ServerState>>,
+    client_id: uuid::Uuid,
+    invoke: ClientInvokeMessage,
+) -> MethodResult {
+    let signal;
+
+    {
+        let lock = state.lock().unwrap();
+
+        let method = lock.methods.resolve(invoke.method).ok_or_else(|| {
+            MethodException {
+                code: ExceptionCodes::MethodNotFound as i32,
+                ..Default::default()
+            }
+        })?;
+
+        // get context
+
+        let context = match invoke.context {
+            None => Some(InvokeObj::Document),
+            Some(id) => match id {
+                InvokeIDType::Entity(eid) => {
+                    lock.entities.resolve(eid).map(InvokeObj::Entity)
+                }
+                InvokeIDType::Table(eid) => {
+                    lock.tables.resolve(eid).map(InvokeObj::Table)
+                }
+                InvokeIDType::Plot(eid) => {
+                    lock.plots.resolve(eid).map(InvokeObj::Plot)
+                }
+            },
+        };
+
+        let context = context.ok_or_else(|| MethodException {
+            code: ExceptionCodes::MethodNotFound as i32,
+            ..Default::default()
+        })?;
+
+        // make sure the object has the method attached
+
+        let has_method = match &context {
+            InvokeObj::Document => {
+                find_method_in_state(&method, &lock.comm.methods_list)
+            }
+            InvokeObj::Entity(x) => {
+                find_method_in_state(&method, &x.0.get().mutable.methods_list)
+            }
+            InvokeObj::Plot(x) => {
+                find_method_in_state(&method, &x.0.get().mutable.methods_list)
+            }
+            InvokeObj::Table(x) => {
+                find_method_in_state(&method, &x.0.get().mutable.methods_list)
+            }
+        };
+
+        if !has_method {
+            return Err(MethodException {
+                code: ExceptionCodes::MethodNotFound as i32,
+                ..Default::default()
+            });
+        }
+
+        // send it along
+        signal = lock
+            .methods
+            .inspect(method.id(), |m| m.state.dest.clone())
+            .unwrap();
+    }
+
+    let msg = MethodSignalContent {
+        context: invoke.context,
+        args: invoke.args,
+        from: client_id,
+    };
+
+    if let Some(s) = signal {
+        return (*s).activate(msg);
+    }
+
+    return Err(MethodException {
+        code: ExceptionCodes::InternalError as i32,
+        ..Default::default()
+    });
+}
+
+#[derive(Error, Debug)]
+pub enum ServerError {
+    #[error("Decode error")]
+    DecodeError(String),
+    #[error("Root message is not valid")]
+    InvalidRootMessage(String),
+}
+
+/// Drive state changes by handling the next message to the server.
+///
+/// This function takes a user server state, a message, and a writeback function. The message is assumed to be encoded in CBOR. If a specific message is needed to be sent back, the `write` function argument will be called with the content; it is up to user code to determine how to send that to the client.
+pub async fn handle_next<F>(
+    state: &Arc<Mutex<ServerState>>,
+    msg: Vec<u8>,
+    client_id: uuid::Uuid,
+    write: F,
+) -> Result<(), ServerError>
+where
+    F: Fn(Vec<u8>),
+{
+    log::debug!("Handling next message...");
+    // extract a typed message from the input stream
+    let root_message = ciborium::de::from_reader(msg.as_slice());
+
+    let root_message: ClientRootMessage = root_message
+        .map_err(|_| ServerError::InvalidRootMessage("Unable to extract root client message; this should just be a CBOR array.".to_string()))?;
+
+    for message in root_message.list {
+        match message {
+            AllClientMessages::Intro(_) => {
+                // dump current state to the client. The serde handler should
+                // do the right thing here and make one big list of messages
+                // to send back
+                log::debug!("Client joined, providing initial state");
+                let mut recorder = Vec::<u8>::new();
+                {
+                    let lock = state.lock().unwrap();
+                    ciborium::ser::into_writer(&*lock, &mut recorder).unwrap();
+                }
+                write(recorder);
+            }
+            AllClientMessages::Invoke(invoke) => {
+                log::debug!("Next message is invoke...");
+                // copy the reply ident
+                let reply_id = invoke.invoke_id.clone();
+
+                // invoke the method and get the result or error
+                let result = invoke_helper(&state, client_id, invoke).await;
+
+                // if we have a reply id, then we can ship a response. Otherwise, we just skip this step.
+                if let Some(resp) = reply_id {
+                    // Format a reply object
+                    let mut reply = MessageMethodReply {
+                        invoke_id: resp,
+                        ..Default::default()
+                    };
+
+                    // only fill in a certain field if a reply or exception...
+                    match result {
+                        Err(x) => {
+                            reply.method_exception = Some(x);
+                        }
+                        Ok(result) => {
+                            reply.result = result;
+                        }
+                    }
+
+                    // now send it back
+                    let recorder = Recorder::record(
+                        ServerMessageIDs::MsgMethodReply as u32,
+                        &reply,
+                    );
+
+                    write(recorder.data);
+                }
+            }
+        }
+    }
 
     Ok(())
 }

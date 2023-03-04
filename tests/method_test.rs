@@ -44,37 +44,15 @@ fn ping_pong(
     Ok(Some(ciborium::value::Value::Array(args)))
 }
 
-impl UserServerState for PingPongServer {
-    fn mut_state(&mut self) -> &mut ServerState {
-        return &mut self.state;
-    }
-
-    fn state(&self) -> &ServerState {
-        return &self.state;
-    }
-
-    fn invoke(
-        &mut self,
-        method: ComponentReference<MethodState>,
-        context: colabrodo_server::server_state::InvokeObj,
-        _client_id: uuid::Uuid,
-        args: Vec<ciborium::value::Value>,
-    ) -> MethodResult {
-        let function = self.method_list.get(&method).unwrap();
-        (function)(self, &context, args)
-    }
-}
-
 impl AsyncServer for PingPongServer {
     type CommandType = DefaultCommand;
     type InitType = NoInit;
 
     fn new(
+        &mut state: ServerState,
         tx: colabrodo_server::server_state::CallbackPtr,
         _init: NoInit,
     ) -> Self {
-        let mut state = ServerState::new(tx.clone());
-
         let sig = state.signals.new_component(SignalState {
             name: "test_signal".to_string(),
             doc: Some("This is a test signal".to_string()),
