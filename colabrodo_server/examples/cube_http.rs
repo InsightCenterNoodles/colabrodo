@@ -7,7 +7,7 @@ use colabrodo_server::{
 /// Build the actual cube geometry.
 ///
 /// This uses the simple helper tools to build a geometry buffer; you don't have to use this feature if you don't want to.
-fn make_cube(
+async fn make_cube(
     server_state: &mut ServerState,
     mut link: AssetServerLink,
 ) -> ServerGeometryPatch {
@@ -89,18 +89,23 @@ fn make_cube(
         },
     });
 
+    let pack = test_source.pack_bytes().unwrap();
+
     // Return a new mesh with this geometry/material
     // Unlike the other cube example, we use a callback to describe how to store the data. Our callback uses the link to the asset server to create a new asset, and publish the URL.
-    let intermediate = test_source.build_mesh_with(server_state, |data| {
-        let url = link.add_asset(
+
+    let url = link
+        .add_asset(
             create_asset_id(),
-            Asset::new_from_slice(data.as_slice()),
-        );
-        println!("Cube asset URL is at {url}");
-        colabrodo_server::server_messages::BufferRepresentation::new_from_url(
-            &url,
+            Asset::new_from_slice(pack.bytes.as_slice()),
         )
-    }).unwrap();
+        .await;
+
+    println!("Cube asset URL is at {url}");
+
+    let intermediate = test_source
+        .build_states(server_state, BufferRepresentation::new_from_url(&url))
+        .unwrap();
 
     // build the cube with our material
 
@@ -113,10 +118,10 @@ fn make_cube(
     }
 }
 
-fn setup(state: &mut ServerStatePtr, link: AssetServerLink) {
+async fn setup(state: &mut ServerStatePtr, link: AssetServerLink) {
     let mut state_lock = state.lock().unwrap();
 
-    let cube = make_cube(&mut state_lock, link);
+    let cube = make_cube(&mut state_lock, link).await;
 
     let geom = state_lock.geometries.new_component(ServerGeometryState {
         name: Some("Cube Geom".to_string()),
@@ -158,7 +163,7 @@ async fn main() {
 
     let mut state = ServerState::new();
 
-    setup(&mut state, link);
+    setup(&mut state, link).await;
 
     server_main(opts, state).await;
 }

@@ -177,9 +177,9 @@ impl<'a> IndexType<'a> {
 }
 
 pub struct PackResult {
-    bytes: Vec<u8>,
-    vertex_region_size: u64,
-    index_region_size: u64,
+    pub bytes: Vec<u8>,
+    pub vertex_region_size: u64,
+    pub index_region_size: u64,
 }
 
 #[derive(Debug)]

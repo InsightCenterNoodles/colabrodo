@@ -125,7 +125,7 @@ where
 /// A trait to describe how the client library interacts with client state.
 pub trait UserClientState: Debug {
     /// The type holding methods
-    type MethodL: ComponentList<MethodState>;
+    type MethodL: ComponentList<ClientMethodState>;
     /// The type holding signals
     type SignalL: ComponentList<SignalState>;
 

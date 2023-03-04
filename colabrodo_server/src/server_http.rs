@@ -291,22 +291,19 @@ impl AssetServerLink {
         }
     }
 
-    pub fn send_command(
+    pub async fn send_command(
         &mut self,
         command: AssetServerCommand,
     ) -> AssetServerReply {
-        let h = tokio::runtime::Handle::current();
-
         self.tx_to_server.send(command).unwrap();
 
-        let j = h.block_on((|| async {
-            self.rx_from_server.recv().await.unwrap()
-        })());
-        j
+        self.rx_from_server.recv().await.unwrap()
     }
 
-    pub fn add_asset(&mut self, id: uuid::Uuid, asset: Asset) -> String {
-        let reply = self.send_command(AssetServerCommand::Register(id, asset));
+    pub async fn add_asset(&mut self, id: uuid::Uuid, asset: Asset) -> String {
+        let reply = self
+            .send_command(AssetServerCommand::Register(id, asset))
+            .await;
 
         match reply {
             AssetServerReply::Registered(rid, url) => {
@@ -319,8 +316,8 @@ impl AssetServerLink {
         }
     }
 
-    pub fn remove_asset(&mut self, id: uuid::Uuid) {
-        let reply = self.send_command(AssetServerCommand::Unregister(id));
+    pub async fn remove_asset(&mut self, id: uuid::Uuid) {
+        let reply = self.send_command(AssetServerCommand::Unregister(id)).await;
 
         match reply {
             AssetServerReply::Unregistered(rid) => {
@@ -332,8 +329,8 @@ impl AssetServerLink {
         }
     }
 
-    pub fn shutdown(&mut self) {
-        let reply = self.send_command(AssetServerCommand::Shutdown);
+    pub async fn shutdown(&mut self) {
+        let reply = self.send_command(AssetServerCommand::Shutdown).await;
 
         match reply {
             AssetServerReply::ShuttingDown => {}
@@ -396,16 +393,18 @@ mod tests {
         tokio::spawn(async move {
             link.wait_for_start().await;
 
-            let url = link.add_asset(
-                new_id,
-                Asset::InMemory(Bytes::from(vec![10, 20, 30, 40])),
-            );
+            let url = link
+                .add_asset(
+                    new_id,
+                    Asset::InMemory(Bytes::from(vec![10, 20, 30, 40])),
+                )
+                .await;
 
             let content = fetch_url(url.parse().unwrap()).await.unwrap();
 
             assert_eq!(content, vec![10, 20, 30, 40]);
 
-            link.shutdown();
+            link.shutdown().await;
         });
 
         asset_server.await;

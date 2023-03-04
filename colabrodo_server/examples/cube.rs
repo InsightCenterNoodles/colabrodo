@@ -86,8 +86,15 @@ fn make_cube(server_state: &mut ServerState) -> ServerGeometryPatch {
         },
     });
 
+    let pack = test_source.pack_bytes().unwrap();
+
     // Return a new mesh with this geometry/material
-    let intermediate = test_source.build_mesh(server_state).unwrap();
+    let intermediate = test_source
+        .build_states(
+            server_state,
+            BufferRepresentation::new_from_bytes(pack.bytes),
+        )
+        .unwrap();
 
     // build the cube with our material
 

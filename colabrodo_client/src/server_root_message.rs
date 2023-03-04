@@ -251,7 +251,7 @@ pub struct ClientCommonTagged<Nested> {
 
 #[allow(clippy::enum_variant_names)] // These all start wtih Msg to match spec
 pub enum FromServer {
-    MsgMethodCreate(ClientCommonTagged<MethodState>),
+    MsgMethodCreate(ClientCommonTagged<ClientMethodState>),
     MsgMethodDelete(CommonDeleteMessage),
     MsgSignalCreate(ClientCommonTagged<SignalState>),
     MsgSignalDelete(CommonDeleteMessage),

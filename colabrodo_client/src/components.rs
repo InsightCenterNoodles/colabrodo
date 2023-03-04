@@ -8,12 +8,14 @@ pub use colabrodo_common::components::{
     SamplerState, SignalState,
 };
 
+pub type ClientMethodState = MethodState<u64>;
+
 /// Trait to allow extracting names from certain components
 pub trait NamedComponent {
     fn name(&self) -> Option<&String>;
 }
 
-impl NamedComponent for MethodState {
+impl NamedComponent for ClientMethodState {
     fn name(&self) -> Option<&String> {
         Some(&self.name)
     }
