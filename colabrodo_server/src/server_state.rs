@@ -663,9 +663,9 @@ mod tests {
             BufferState::new_from_url("http://wombat.com", 1024),
         );
 
-        state_lock.buffer_views.new_component(
-            BufferViewState::new_from_whole_buffer(component_b),
-        );
+        state_lock
+            .buffer_views
+            .new_component(BufferViewState::new_from_whole_buffer(component_b));
 
         // messages
 
@@ -745,14 +745,29 @@ mod tests {
             .unwrap(),
         ));
 
+        messages.push_back(encode(
+            cbor!(
+                [
+                    11,
+                    {
+                        "id" => [0, 1],
+                    }
+                ]
+            )
+            .unwrap(),
+        ));
+
         while let Ok(msg) = recv.try_recv() {
             //println!("{msg:02X?}");
-            let truth = messages.pop_front().unwrap();
 
             let msg = match msg {
                 Output::Broadcast(x) => x,
                 _ => panic!("Wrong message"),
             };
+
+            println!("GOT: {:?}", decode(&msg));
+
+            let truth = messages.pop_front().unwrap();
 
             assert_eq!(
                 decode(&truth),
