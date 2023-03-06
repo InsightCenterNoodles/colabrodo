@@ -353,6 +353,8 @@ pub enum UserClientError {
 pub enum IncomingMessage<T: UserClientState> {
     /// Message from the server
     NetworkMessage(Vec<u8>),
+    /// Socket shutdown from the server
+    Closed,
     /// Message from an out of band command stream
     Command(T::CommandType),
 }
@@ -400,11 +402,14 @@ where
     // Stream to go from async world to the sync std stream
     let (inter_channel_tx, inter_channel_rx) = tokio::sync::mpsc::channel(16);
 
+    let worker_stop_tx = stop_tx.clone();
+
     let h1 = std::thread::spawn(move || {
         debug!("Creating client worker thread...");
         client_worker_thread::<T>(
             to_client_thread_rx,
             from_client_thread_tx.clone(),
+            worker_stop_tx,
             a,
         )
     });
@@ -447,12 +452,19 @@ where
         tokio::select! {
             _ = stop_rx.recv() => break,
             msg = socket_rx.next() => {
-                let data = msg.unwrap().unwrap().into_data();
 
-                inter_channel_tx
-                    .send(IncomingMessage::NetworkMessage(data))
-                    .await
-                    .unwrap();
+                match msg.unwrap() {
+                    Ok(x) => {
+                        inter_channel_tx
+                        .send(IncomingMessage::NetworkMessage(x.into_data()))
+                        .await
+                        .unwrap()
+                    },
+                    Err(_) => {
+                        inter_channel_tx.send(IncomingMessage::Closed).await.unwrap();
+                        break;
+                    },
+                }
             }
         }
     }
@@ -532,6 +544,7 @@ async fn forward_task(
 fn client_worker_thread<T>(
     input: std::sync::mpsc::Receiver<IncomingMessage<T>>,
     output: tokio::sync::mpsc::Sender<OutgoingMessage>,
+    stopper: tokio::sync::broadcast::Sender<u8>,
     a: T::ArgumentType,
 ) where
     T: UserClientState + 'static,
@@ -546,10 +559,15 @@ fn client_worker_thread<T>(
             IncomingMessage::NetworkMessage(bytes) => {
                 handle_next(&mut t, bytes.as_slice()).unwrap();
             }
+            IncomingMessage::Closed => {
+                break;
+            }
             IncomingMessage::Command(c) => t.on_command(c),
         }
     }
     debug!("Ending client worker thread");
+
+    stopper.send(1).unwrap();
 }
 
 //pub fn make_invoke_message

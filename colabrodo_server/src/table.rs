@@ -11,8 +11,9 @@ use closure::closure;
 pub use colabrodo_common::table::{Selection, TableColumnInfo, TableInitData};
 use colabrodo_common::{
     arg_to_tuple,
+    client_communication::InvokeIDType,
     common::strings,
-    components::{MethodArg, MethodState, SignalState},
+    components::{MethodArg, SignalState},
     server_communication::{ExceptionCodes, MethodException, ServerMessageID},
     tf_to_cbor,
     value_tools::*,
@@ -26,8 +27,82 @@ use tokio::sync::mpsc;
 
 // =============================================================================
 
-#[derive(Debug, Clone)]
-pub struct CreateTableMethods {
+fn resolve_manager<'a>(
+    m: &MethodSignalContent,
+    state: &'a mut ServerState,
+    managed_tables: &'a Arc<Mutex<ManagedTables>>,
+) -> Result<
+    (
+        ComponentReference<ServerTableState>,
+        &'a Box<dyn TableTrait>,
+        &'a TableManager,
+    ),
+    MethodException,
+> {
+    let table = m
+        .context
+        .and_then(|m| match m {
+            InvokeIDType::Table(tid) => state.tables.resolve(tid),
+            _ => None,
+        })
+        .ok_or_else(|| MethodException::method_not_found(None))?;
+    let mut lock = managed_tables.lock().unwrap();
+    let manager = lock
+        .managed_tables
+        .get(&table)
+        .ok_or_else(|| MethodException::method_not_found(None))?;
+
+    let table_id = table.id();
+
+    let &r = state
+        .tables
+        .inspect(table_id, |t| t.managed_table.as_ref())
+        .flatten()
+        .ok_or_else(|| MethodException::method_not_found(None))?;
+
+    Ok((table, &r, manager))
+}
+
+fn table_subscribe(
+    state: &mut ServerState,
+    m: MethodSignalContent,
+    managed_tables: Arc<Mutex<ManagedTables>>,
+) -> MethodResult {
+    let (table, dyn_table, mut manager) =
+        resolve_manager(&m, state, &managed_tables)?;
+
+    manager.subscribers.insert(
+        m.from,
+        state.get_client_info(m.from).unwrap().sender.clone(),
+    );
+
+    let ret = dyn_table.get_init_data();
+
+    log::debug!("Subscribing client {} to table {}", m.from, table.id());
+
+    Ok(Some(ret.to_cbor()))
+}
+
+fn table_insert(
+    state: &mut ServerState,
+    m: MethodSignalContent,
+    managed_tables: Arc<Mutex<ManagedTables>>,
+) -> MethodResult {
+    let (table, dyn_table, mut manager) =
+        resolve_manager(&m, state, &managed_tables)?;
+
+    manager.insert(from_cbor(m.args.get(0))?);
+}
+
+// =============================================================================
+
+#[derive(Default)]
+struct ManagedTables {
+    managed_tables:
+        HashMap<ComponentReference<ServerTableState>, Arc<Mutex<TableManager>>>,
+}
+
+struct TableController {
     sig_reset: ComponentReference<SignalState>,
     sig_updated: ComponentReference<SignalState>,
     sig_row_remove: ComponentReference<SignalState>,
@@ -45,11 +120,10 @@ pub struct CreateTableMethods {
     valid_method_hash: HashSet<ComponentReference<ServerMethodState>>,
 }
 
-impl CreateTableMethods {
-    /// Creates and resolves table related methods and signals.
-    ///
-    /// This does not currently check if the methods have already been created, so do not call this more than once. Instead, clone or move the resulting object around.
-    pub fn new(state: Arc<Mutex<ServerState>>) -> Self {
+impl TableController {
+    fn new(state: Arc<Mutex<ServerState>>) -> Arc<Mutex<TableController>> {
+        let managed_tables = Arc::new(Mutex::new(ManagedTables::default()));
+
         let mut lock = state.lock().unwrap();
 
         let mthd_subscribe = lock.methods.new_component(ServerMethodState {
@@ -57,12 +131,11 @@ impl CreateTableMethods {
             doc: Some("Subscribe to the given table".to_string()),
             return_doc: Some("Initial table data structure".to_string()),
             arg_doc: vec![],
-            state: MethodHandlerSlot::new_from_closure(closure!(
-                clone state, |m|{
-                    let x = state.lock();
-                    Ok(None)
-                }
-            )),
+            state: MethodHandlerSlot::new_from_closure(
+                closure!(clone managed_tables, |s, m| {
+                   table_subscribe(s, m, managed_tables)
+                }),
+            ),
         });
         let mthd_insert = lock.methods.new_component(ServerMethodState {
             name: strings::MTHD_TBL_INSERT.to_string(),
@@ -203,7 +276,7 @@ impl CreateTableMethods {
         signal_set.insert(sig_row_remove.clone());
         signal_set.insert(sig_selection_update.clone());
 
-        Self {
+        Arc::new(Mutex::new(Self {
             sig_reset,
             sig_updated,
             sig_row_remove,
@@ -218,16 +291,29 @@ impl CreateTableMethods {
 
             valid_signal_hash: signal_set,
             valid_method_hash: method_set,
-        }
+
+            managed_tables: HashMap::new(),
+        }))
     }
 
-    /// Register signals and methods with a given table
     fn attach(
-        &self,
-        state: &mut ServerState,
-        table: &ComponentReference<ServerTableState>,
+        &mut self,
+        table: ComponentReference<ServerTableState>,
+        state: Arc<Mutex<ServerState>>,
     ) {
-        let methods_to_update = state
+        let tid = table.id();
+
+        let lock = state.lock().unwrap();
+
+        if lock
+            .tables
+            .inspect(tid, |t| t.managed_table.is_none())
+            .unwrap_or(true)
+        {
+            return;
+        }
+
+        let methods_to_update = lock
             .tables
             .inspect(table.id(), |t| {
                 let mut existing = HashSet::new();
@@ -246,7 +332,7 @@ impl CreateTableMethods {
                 self.valid_method_hash.iter().cloned().collect()
             });
 
-        let signals_to_update = state
+        let signals_to_update = lock
             .tables
             .inspect(table.id(), |t| {
                 let mut existing = HashSet::new();
@@ -271,16 +357,9 @@ impl CreateTableMethods {
             ..Default::default()
         };
 
-        update.patch(table);
-    }
+        update.patch(&table);
 
-    fn is_table_message(
-        &self,
-        method: &ComponentReference<ServerMethodState>,
-    ) -> bool {
-        let ret = self.valid_method_hash.contains(method);
-        log::debug!("Checking if method is a table method: {ret}");
-        ret
+        self.managed_tables.insert(table, Default::default());
     }
 }
 
@@ -333,50 +412,21 @@ pub trait TableTrait {
 /// These tables will need to be informed when table-related methods are called from clients, as well as specific clients that are subscribing. For that reason, make sure to check [`Self::is_relevant_method()`], and, if this returns true, call [`Self::consume_relevant_method()`]. When a client leaves, call [`Self::forget_client()`]
 ///
 /// Manipulating the provided table won't broadcast changes; make sure to use the available public methods to modify the table.
-#[derive(Debug)]
-pub struct TableStore<T: TableTrait> {
-    init_info: CreateTableMethods,
-    table_id: ComponentReference<ServerTableState>,
-    table_type: T,
-    subscribers: HashMap<uuid::Uuid, mpsc::UnboundedSender<Vec<u8>>>,
+pub(crate) struct TableManager {
+    table: Box<dyn TableTrait>,
+    pub(crate) subscribers: HashMap<uuid::Uuid, mpsc::UnboundedSender<Vec<u8>>>,
 }
 
-impl<T: TableTrait> TableStore<T> {
-    /// Create a new managed table
-    pub fn new(
-        state: &mut ServerState,
-        init: CreateTableMethods,
-        table_id: ComponentReference<ServerTableState>,
-        table: T,
-    ) -> Self {
-        init.attach(state, &table_id);
-        Self {
-            init_info: init,
-            table_id,
-            table_type: table,
-            subscribers: Default::default(),
-        }
-    }
-
-    fn subscribe(
-        &mut self,
-        id: uuid::Uuid,
-        sender: mpsc::UnboundedSender<Vec<u8>>,
-    ) -> TableInitData {
-        log::debug!("Subscribing {id}");
-        self.subscribers.insert(id, sender);
-        self.table_type.get_init_data()
-    }
-
+impl TableManager {
     /// Inform the managed table that a client has gone away.
     pub fn forget_client(&mut self, id: uuid::Uuid) {
         log::debug!("Forgetting {id}");
         self.subscribers.remove(&id);
     }
 
-    /// Insert data into the table
+    /// Insert data into the table KEEP THESE AS THEY ARE THE USER INTERFACE
     pub fn insert(&mut self, new_data: Vec<Vec<Value>>) -> Option<()> {
-        let (keys, fixed) = self.table_type.insert_data(new_data)?;
+        let (keys, fixed) = self.table.insert_data(new_data)?;
 
         let args = tf_to_cbor![keys, fixed];
 

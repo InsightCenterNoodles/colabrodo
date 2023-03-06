@@ -20,6 +20,7 @@ pub use colabrodo_common::components::{
 
 use crate::server_state::ComponentCell;
 use crate::server_state::MethodResult;
+use crate::server_state::ServerState;
 
 // Traits ==============================================
 
@@ -37,7 +38,11 @@ pub struct MethodSignalContent {
 }
 
 pub trait MethodHandler {
-    fn activate(&self, message: MethodSignalContent) -> MethodResult;
+    fn activate(
+        &self,
+        state: &mut ServerState,
+        message: MethodSignalContent,
+    ) -> MethodResult;
 }
 
 pub struct MethodHandlerSlot {
@@ -45,12 +50,16 @@ pub struct MethodHandlerSlot {
 }
 
 struct ClosureMethodHandler {
-    f: Box<dyn Fn(MethodSignalContent) -> MethodResult>,
+    f: Box<dyn Fn(&mut ServerState, MethodSignalContent) -> MethodResult>,
 }
 
 impl MethodHandler for ClosureMethodHandler {
-    fn activate(&self, message: MethodSignalContent) -> MethodResult {
-        (self.f)(message)
+    fn activate(
+        &self,
+        state: &mut ServerState,
+        message: MethodSignalContent,
+    ) -> MethodResult {
+        (self.f)(state, message)
     }
 }
 
@@ -66,7 +75,7 @@ impl MethodHandlerSlot {
 
     pub fn new_from_closure<C>(function: C) -> Self
     where
-        C: Fn(MethodSignalContent) -> MethodResult + 'static,
+        C: Fn(&mut ServerState, MethodSignalContent) -> MethodResult + 'static,
     {
         Self::new(ClosureMethodHandler {
             f: Box::new(function),
@@ -278,12 +287,21 @@ pub struct ServerTableStateUpdatable {
 }
 
 #[serde_with::skip_serializing_none]
-#[derive(Debug, Default, Serialize)]
+#[derive(Default, Serialize)]
 pub struct ServerTableState {
     pub name: Option<String>,
 
     #[serde(flatten)]
     pub mutable: ServerTableStateUpdatable,
+}
+
+impl Debug for ServerTableState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ServerTableState")
+            .field("name", &self.name)
+            .field("mutable", &self.mutable)
+            .finish()
+    }
 }
 
 impl ComponentMessageIDs for ServerTableState {

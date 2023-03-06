@@ -6,6 +6,7 @@
 //!
 //!
 
+use crate::server::ClientRecord;
 use crate::server_messages::*;
 use ciborium::value;
 pub use colabrodo_common::common::{
@@ -329,7 +330,7 @@ impl<T: Serialize + ComponentMessageIDs + Debug> ServerComponentList<T> {
         }
     }
 
-    pub fn inspect(&self, id: NooID) -> Option<&T> {
+    fn inspect(&self, id: NooID) -> Option<&T> {
         self.list.get(&id)
     }
 
@@ -442,6 +443,8 @@ pub struct ServerState {
     pub entities: PubUserCompList<ServerEntityState>,
 
     pub(crate) comm: ServerDocumentUpdate,
+
+    pub(crate) active_client_info: HashMap<uuid::Uuid, ClientRecord>,
 }
 
 /// A dummy struct for use when we need a message with no content. Terrible.
@@ -508,6 +511,8 @@ impl ServerState {
             entities: PubUserCompList::new(bcast_send),
 
             comm: Default::default(),
+
+            active_client_info: Default::default(),
         }))
     }
 
@@ -517,6 +522,11 @@ impl ServerState {
 
     pub fn new_broadcast_send(&self) -> broadcast::Sender<Output> {
         self.tx.clone()
+    }
+
+    pub fn shutdown(&self) {
+        log::debug!("Server attempting shutdown...");
+        self.tx.send(Output::Shutdown).unwrap();
     }
 
     /// Update the document's methods and signals
@@ -553,6 +563,10 @@ impl ServerState {
         );
 
         self.tx.send(Output::Broadcast(recorder.data)).unwrap();
+    }
+
+    pub fn get_client_info(&self, id: uuid::Uuid) -> Option<&ClientRecord> {
+        self.active_client_info.get(&id)
     }
 
     /// A helper function for serialization, returns the count of all components
@@ -635,7 +649,7 @@ mod tests {
     fn build_server_state() {
         // we test by encoding to cbor and then decoding.
         // messages can be encoded different ways, ie, indefinite size of maps, etc.
-        let mut state = ServerState::new();
+        let state = ServerState::new();
 
         let mut state_lock = state.lock().unwrap();
 
@@ -750,7 +764,7 @@ mod tests {
 
     #[test]
     fn cascade_delete() {
-        let mut state = ServerState::new();
+        let state = ServerState::new();
 
         let mut state_lock = state.lock().unwrap();
 
@@ -784,7 +798,7 @@ mod tests {
 
     #[test]
     fn check_lookup_inspect() {
-        let mut state = ServerState::new();
+        let state = ServerState::new();
 
         let mut state_lock = state.lock().unwrap();
 

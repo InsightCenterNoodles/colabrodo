@@ -1,49 +1,68 @@
 use colabrodo_client::client::*;
 use colabrodo_client::components::*;
-use colabrodo_server::server::ciborium;
+use colabrodo_server::server::ciborium::value;
 use colabrodo_server::server::tokio;
 use colabrodo_server::server::tokio::runtime;
 use colabrodo_server::server::*;
-use colabrodo_server::server_state::*;
-
-use colabrodo_server::server::ciborium::value;
 
 use log;
-use std::backtrace::Backtrace;
-use std::collections::HashMap;
-use std::panic;
 use std::process::abort;
 use std::time::Duration;
 
-type Function = fn(
-    &mut PingPongServer,
-    &InvokeObj,
-    Vec<ciborium::value::Value>,
-) -> MethodResult;
+fn setup(state: ServerStatePtr) {
+    let mut state_lock = state.lock().unwrap();
 
-struct PingPongServer {
-    state: ServerState,
+    let sig = state_lock.signals.new_owned_component(SignalState {
+        name: "test_signal".to_string(),
+        doc: Some("This is a test signal".to_string()),
+        arg_doc: vec![MethodArg {
+            name: "value".to_string(),
+            doc: Some("Some value for testing".to_string()),
+        }],
+    });
 
-    method_list: HashMap<ComponentReference<MethodState>, Function>,
-    test_signal: ComponentReference<SignalState>,
+    let method = state_lock.methods.new_owned_component(MethodState {
+        name: "ping_pong".to_string(),
+        doc: Some(
+            "This method just replies with what you send it.".to_string(),
+        ),
+        return_doc: None,
+        arg_doc: vec![MethodArg {
+            name: "First arg".to_string(),
+            doc: Some("Example doc".to_string()),
+        }],
+        state: MethodHandlerSlot::new_from_closure(move |s, m| {
+            let sig = sig.clone();
+            s.issue_signal(
+                &sig,
+                None,
+                vec![value::Value::Text("Hi there".to_string())],
+            );
+            log::info!("Sending reply...");
+            Ok(Some(ciborium::value::Value::Array(m.args)))
+        }),
+    });
+
+    let shutdown_m = state_lock.methods.new_owned_component(MethodState {
+        name: "shutdown".to_string(),
+        doc: None,
+        return_doc: None,
+        arg_doc: vec![],
+        state: MethodHandlerSlot::new_from_closure(|s, _| {
+            log::info!("Shutdown method invoked");
+            s.shutdown();
+            Ok(None)
+        }),
+    });
+
+    state_lock.update_document(ServerDocumentUpdate {
+        methods_list: Some(vec![method, shutdown_m]),
+        ..Default::default()
+    })
 }
 
-fn ping_pong(
-    _state: &mut PingPongServer,
-    _context: &InvokeObj,
-    args: Vec<ciborium::value::Value>,
-) -> MethodResult {
-    log::info!("Sending signal...");
-    _state.state().issue_signal(
-        &_state.test_signal,
-        None,
-        vec![value::Value::Text("Hi there".to_string())],
-    );
-
-    log::info!("Sending reply...");
-    Ok(Some(ciborium::value::Value::Array(args)))
-}
-
+// ========================================
+/*
 impl AsyncServer for PingPongServer {
     type CommandType = DefaultCommand;
     type InitType = NoInit;
@@ -103,7 +122,7 @@ impl AsyncServer for PingPongServer {
         log::debug!("Last client left, shutting down...");
         self.state.output().send(Output::Shutdown).unwrap();
     }
-}
+} */
 
 // =============================================================================
 
@@ -111,7 +130,7 @@ impl AsyncServer for PingPongServer {
 struct ExampleState {
     sender: tokio::sync::mpsc::Sender<OutgoingMessage>,
 
-    methods: BasicComponentList<MethodState>,
+    methods: BasicComponentList<ClientMethodState>,
     signals: BasicComponentList<SignalState>,
     buffers: BasicComponentList<BufferState>,
     buffer_views: BasicComponentList<ClientBufferViewState>,
@@ -134,10 +153,23 @@ impl ExampleState {
     fn decrement(&mut self) {
         self.counter -= 1;
 
-        if self.counter <= 0 {
-            self.sender.blocking_send(OutgoingMessage::Close).unwrap();
-
+        if self.counter == 1 {
             log::info!("Closing connection to server.");
+
+            let id = self.methods.get_id_by_name("shutdown").unwrap();
+
+            log::info!("Found shutdown message ID: {id:?}");
+
+            self.sender
+                .blocking_send(OutgoingMessage::MethodInvoke(
+                    ClientInvokeMessage {
+                        method: *id,
+                        context: None,
+                        invoke_id: Some("shutdown_id".to_string()),
+                        args: vec![],
+                    },
+                ))
+                .unwrap();
         }
     }
 }
@@ -148,7 +180,7 @@ struct ExampleStateArgument {}
 struct ExampleStateCommand {}
 
 impl UserClientState for ExampleState {
-    type MethodL = BasicComponentList<MethodState>;
+    type MethodL = BasicComponentList<ClientMethodState>;
     type SignalL = BasicComponentList<SignalState>;
     type BufferL = BasicComponentList<BufferState>;
     type BufferViewL = BasicComponentList<ClientBufferViewState>;
@@ -257,20 +289,24 @@ impl UserClientState for ExampleState {
         self.decrement()
     }
     fn on_method_reply(&mut self, method_reply: MessageMethodReply) {
-        log::info!("Method reply: {method_reply:?}");
+        if self.counter == 2 {
+            log::info!("Method reply: {method_reply:?}");
 
-        assert_eq!(method_reply.invoke_id, "specific_id");
+            assert_eq!(method_reply.invoke_id, "specific_id");
 
-        assert!(method_reply.method_exception.is_none());
+            assert!(method_reply.method_exception.is_none());
 
-        let reply_data = method_reply.result.unwrap();
+            let reply_data = method_reply.result.unwrap();
 
-        assert_eq!(
-            reply_data.as_array().unwrap()[0].as_text().unwrap(),
-            "This is specific text"
-        );
+            assert_eq!(
+                reply_data.as_array().unwrap()[0].as_text().unwrap(),
+                "This is specific text"
+            );
 
-        self.decrement();
+            self.decrement();
+        } else if self.counter < 0 {
+            self.sender.blocking_send(OutgoingMessage::Close).unwrap();
+        }
     }
     fn on_document_ready(&mut self) {
         log::info!("Document is ready, calling method...");
@@ -306,11 +342,12 @@ fn do_server() {
         let opts = ServerOptions {
             host: "127.0.0.1:50000".to_string(),
         };
-        colabrodo_server::server::server_main::<PingPongServer>(
-            opts,
-            NoInit {},
-        )
-        .await;
+
+        let state = ServerState::new();
+
+        setup(state.clone());
+
+        server_main(opts, state).await;
     });
 
     log::info!("Done with server");
@@ -347,12 +384,6 @@ fn main() {
     // for some reason using one runtime causes a stall.
     // in the meantime, test with threads
     env_logger::init();
-
-    panic::set_hook(Box::new(|info| {
-        let stack = Backtrace::force_capture();
-        println!("Got panic: Info:{info} \n\n Trace: {stack}");
-        std::process::abort();
-    }));
 
     let h1 = std::thread::spawn(|| do_server());
 

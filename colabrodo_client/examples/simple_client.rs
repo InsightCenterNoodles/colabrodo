@@ -81,7 +81,7 @@ where
 
 #[derive(Debug, Default)]
 struct ExampleState {
-    methods: ExampleComponentList<MethodState>,
+    methods: ExampleComponentList<ClientMethodState>,
     signals: ExampleComponentList<SignalState>,
     buffers: ExampleComponentList<BufferState>,
     buffer_views: ExampleComponentList<ClientBufferViewState>,
@@ -107,7 +107,7 @@ struct ExampleStateArgument {}
 struct ExampleStateCommand {}
 
 impl UserClientState for ExampleState {
-    type MethodL = ExampleComponentList<MethodState>;
+    type MethodL = ExampleComponentList<ClientMethodState>;
     type SignalL = ExampleComponentList<SignalState>;
     type BufferL = ExampleComponentList<BufferState>;
     type BufferViewL = ExampleComponentList<ClientBufferViewState>;

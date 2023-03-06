@@ -14,7 +14,7 @@ fn setup(state: ServerStatePtr) {
     let mut state_lock = state.lock().unwrap();
 
     let function = closure!(
-        move ping_pong_state, |m : MethodSignalContent|{
+        move ping_pong_state, |_s: &mut ServerState, m : MethodSignalContent|{
             log::info!("Function called {}", ping_pong_state.count);
             Ok(Some(ciborium::value::Value::Array(m.args)))
         }

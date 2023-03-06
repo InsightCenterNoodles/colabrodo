@@ -1,13 +1,15 @@
 //! A tokio powered server framework. Users can plug in a user server struct to this framework to obtain a coroutine powered NOODLES server.
 
-use std::collections::HashMap;
 use std::fmt::Debug;
 use std::sync::Arc;
 use std::sync::Mutex;
 
 use crate::server_messages::MethodSignalContent;
 use crate::server_messages::Recorder;
-pub use crate::server_messages::{ComponentReference, ServerMethodState};
+pub use crate::server_messages::{
+    ComponentReference, MethodHandlerSlot, ServerDocumentUpdate,
+    ServerMethodState,
+};
 pub use crate::server_state::MethodResult;
 use crate::server_state::Output;
 pub use crate::server_state::{InvokeObj, ServerState, ServerStatePtr};
@@ -212,6 +214,7 @@ async fn shutdown_watcher(
     stop_tx: tokio::sync::broadcast::Sender<u8>,
 ) {
     while let Ok(msg) = server_bcast.recv().await {
+        log::debug!("WATCHER GOT A MESSAGE");
         if let Output::Shutdown = msg {
             log::debug!("Server is asking to stop, broadcasting stop bit");
             stop_tx.send(1).unwrap();
@@ -283,15 +286,15 @@ async fn server_state_loop(
 ) {
     log::debug!("Starting server state thread");
 
-    let mut client_map = HashMap::<uuid::Uuid, ClientRecord>::new();
-
     loop {
         tokio::select! {
             _ = stop_rx.recv() => break,
             Some(msg) = from_world.recv() => {
                 match msg {
                     ToServerMessage::ClientConnected(cr) => {
-                        client_map.insert(cr.id, cr.clone());
+                        let mut lock = server_state.lock().unwrap();
+
+                        lock.active_client_info.insert(cr.id, cr.clone());
                     }
                     ToServerMessage::Client(client_msg) => {
                         // handle a message from a client, and write any replies
@@ -301,7 +304,11 @@ async fn server_state_loop(
                             debug_cbor(&client_msg.1);
                         }
 
-                        let client = client_map.get(&client_msg.0).unwrap();
+                        let client = {
+                            let lock = server_state.lock().unwrap();
+
+                            lock.active_client_info.get(&client_msg.0).cloned().unwrap()
+                        };
 
                         let result = handle_next(
                                 &server_state,
@@ -321,7 +328,9 @@ async fn server_state_loop(
                         }
                     }
                     ToServerMessage::ClientClosed(id) => {
-                        client_map.remove(&id);
+                        let mut lock = server_state.lock().unwrap();
+
+                        lock.active_client_info.remove(&id);
                     }
                     // ToServerMessage::Shutdown => {
                     //     stop_tx.send(1).unwrap();
@@ -371,12 +380,15 @@ async fn client_handler(
     // single-client replies
     let (out_tx, mut out_rx) = mpsc::unbounded_channel();
 
+    let (client_stop_tx, mut client_stop_rx) = broadcast::channel(1);
+
     let mut socket_stopper = stop_tx.subscribe();
     let h1 = tokio::spawn(async move {
         // task that just sends data to the socket
         loop {
             tokio::select! {
                 _ = socket_stopper.recv() => break,
+                _ = client_stop_rx.recv() => break,
                 data = out_rx.recv() => {
                     if let Some(data) = data {
                         // for each message, just send it along
@@ -394,10 +406,12 @@ async fn client_handler(
     // task that takes broadcast information and sends it to the out queue
     let h2 = {
         let this_tx = out_tx.clone();
+        let mut this_client_stopper = client_stop_tx.subscribe();
         tokio::spawn(async move {
             loop {
                 tokio::select! {
                         _ = bcast_stopper.recv() => break,
+                        _ = this_client_stopper.recv() => break,
                         bcast = bcast_recv.recv() => {
                 // take each message from the broadcast channel and add it to the
                 // queue
@@ -462,6 +476,8 @@ async fn client_handler(
         .unwrap();
 
     log::info!("Closing client, waiting for tasks...");
+
+    client_stop_tx.send(1).unwrap();
 
     h1.await.unwrap();
     h2.await.unwrap();
@@ -571,13 +587,14 @@ async fn invoke_helper(
     };
 
     if let Some(s) = signal {
-        return (*s).activate(msg);
+        let mut lock = state.lock().unwrap();
+        return (*s).activate(&mut lock, msg);
     }
 
-    return Err(MethodException {
+    Err(MethodException {
         code: ExceptionCodes::InternalError as i32,
         ..Default::default()
-    });
+    })
 }
 
 #[derive(Error, Debug)]
@@ -627,7 +644,7 @@ where
                 let reply_id = invoke.invoke_id.clone();
 
                 // invoke the method and get the result or error
-                let result = invoke_helper(&state, client_id, invoke).await;
+                let result = invoke_helper(state, client_id, invoke).await;
 
                 // if we have a reply id, then we can ship a response. Otherwise, we just skip this step.
                 if let Some(resp) = reply_id {
