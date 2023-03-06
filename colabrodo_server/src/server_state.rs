@@ -664,7 +664,7 @@ mod tests {
         );
 
         state_lock.buffer_views.new_component(
-            BufferViewState::new_from_whole_buffer(component_b.clone()),
+            BufferViewState::new_from_whole_buffer(component_b),
         );
 
         // messages

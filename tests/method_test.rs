@@ -5,7 +5,7 @@ use colabrodo_server::server::tokio;
 use colabrodo_server::server::tokio::runtime;
 use colabrodo_server::server::*;
 
-use log;
+
 use std::process::abort;
 use std::time::Duration;
 
@@ -385,11 +385,11 @@ fn main() {
     // in the meantime, test with threads
     env_logger::init();
 
-    let h1 = std::thread::spawn(|| do_server());
+    let h1 = std::thread::spawn(do_server);
 
     std::thread::sleep(Duration::from_secs(2));
 
-    let h2 = std::thread::spawn(|| do_client());
+    let h2 = std::thread::spawn(do_client);
 
     h2.join().unwrap();
     h1.join().unwrap();

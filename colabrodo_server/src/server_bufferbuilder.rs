@@ -245,7 +245,7 @@ where
 
         let buffer = server_state.buffers.new_component(BufferState {
             name: self.name.as_ref().map(|x| format!("{x}_buffer")),
-            size: total_bytes as u64,
+            size: total_bytes,
             representation,
         });
 
@@ -436,7 +436,7 @@ mod tests {
         let _result = source
             .build_states(
                 &mut lock,
-                BufferRepresentation::new_from_bytes(packed.bytes.clone()),
+                BufferRepresentation::new_from_bytes(packed.bytes),
             )
             .unwrap();
 

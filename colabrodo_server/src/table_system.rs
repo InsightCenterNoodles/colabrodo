@@ -337,7 +337,7 @@ fn resolve_manager(
 
 fn translate_result(ret: Option<()>) -> MethodResult {
     if ret.is_some() {
-        return Ok(None);
+        Ok(None)
     } else {
         Err(MethodException::internal_error(None))
     }

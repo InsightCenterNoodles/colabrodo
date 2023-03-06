@@ -103,7 +103,7 @@ fn make_cube(server_state: &mut ServerState) -> ServerGeometryPatch {
         vertex_count: intermediate.vertex_count,
         indices: intermediate.indices,
         patch_type: intermediate.patch_type,
-        material: material,
+        material,
     }
 }
 

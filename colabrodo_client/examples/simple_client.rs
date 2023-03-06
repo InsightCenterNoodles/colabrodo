@@ -17,7 +17,7 @@ fn get_type_name<T>() -> String {
         tname = &tname[..index];
     }
 
-    if let Some(index) = tname.rfind(":") {
+    if let Some(index) = tname.rfind(':') {
         tname = &tname[(index + 1)..];
     }
 
@@ -289,14 +289,14 @@ fn dump_table(t: &ManagedTable<BasicTable>) {
         print!("{}\t", h.name)
     }
 
-    print!("\n");
+    println!();
 
     for (_key, value) in t.table_data().current_data() {
         for col in value {
             print_value(col);
             print!("\t");
         }
-        print!("\n");
+        println!();
     }
 }
 

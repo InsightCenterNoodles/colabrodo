@@ -45,12 +45,15 @@ pub trait MethodHandler {
     ) -> MethodResult;
 }
 
+#[derive(Default)]
 pub struct MethodHandlerSlot {
     pub(crate) dest: Option<Rc<dyn MethodHandler>>,
 }
 
+type Callback = dyn Fn(&mut ServerState, MethodSignalContent) -> MethodResult;
+
 struct ClosureMethodHandler {
-    f: Box<dyn Fn(&mut ServerState, MethodSignalContent) -> MethodResult>,
+    f: Box<Callback>,
 }
 
 impl MethodHandler for ClosureMethodHandler {
@@ -86,12 +89,6 @@ impl MethodHandlerSlot {
 impl Debug for MethodHandlerSlot {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("MethodHandlerSlot").finish()
-    }
-}
-
-impl Default for MethodHandlerSlot {
-    fn default() -> Self {
-        Self { dest: None }
     }
 }
 
