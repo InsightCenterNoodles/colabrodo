@@ -1,10 +1,13 @@
 use clap::Parser;
 use colabrodo_client::client::*;
 use colabrodo_client::components::*;
-use colabrodo_client::table::BasicTable;
+//use colabrodo_client::table::BasicTable;
 use std::collections::HashMap;
 use std::fmt::Debug;
+use std::sync::Arc;
+use std::sync::Mutex;
 
+/*
 // =============================================================================
 
 /// A cleaner way to print out type names
@@ -300,6 +303,8 @@ fn dump_table(t: &ManagedTable<BasicTable>) {
     }
 }
 
+ */
+
 // =============================================================================
 
 #[derive(Parser)]
@@ -314,16 +319,25 @@ pub struct Arguments {
 
 // =============================================================================
 
+fn callback(_client: &mut ClientState, msg: &FromServer) {
+    println!("Message: {msg:?}");
+}
+
 #[tokio::main]
 async fn main() {
     env_logger::init();
     let args = Arguments::parse();
 
-    start_client::<ExampleState>(
+    let channels = ClientChannels::new();
+
+    let state = ClientState::new_with_callback(&channels, callback);
+
+    start_client(
         args.address,
         "Simple Client".to_string(),
-        ExampleStateArgument {},
+        state.clone(),
+        channels,
     )
     .await
-    .unwrap()
+    .unwrap();
 }

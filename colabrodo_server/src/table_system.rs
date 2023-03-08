@@ -8,7 +8,6 @@ use colabrodo_common::{
     arg_to_tuple,
     client_communication::InvokeIDType,
     common::strings,
-    components::SignalState,
     server_communication::{MethodException, ServerMessageID},
     tf_to_cbor,
     value_tools::*,
@@ -31,25 +30,26 @@ use crate::{
 
 #[derive(Clone)]
 pub struct TableSignals {
-    sig_reset: ComponentReference<SignalState>,
-    sig_updated: ComponentReference<SignalState>,
-    sig_row_remove: ComponentReference<SignalState>,
-    sig_selection_update: ComponentReference<SignalState>,
+    sig_reset: ComponentReference<ServerSignalState>,
+    sig_updated: ComponentReference<ServerSignalState>,
+    sig_row_remove: ComponentReference<ServerSignalState>,
+    sig_selection_update: ComponentReference<ServerSignalState>,
 }
 
 impl TableSignals {
     fn new(state: &mut Arc<Mutex<ServerState>>) -> Self {
         let mut lock = state.lock().unwrap();
 
-        let sig_reset = lock.signals.new_component(SignalState {
+        let sig_reset = lock.signals.new_component(ServerSignalState {
             name: strings::SIG_TBL_RESET.to_string(),
             doc: Some("The table context has been reset.".to_string()),
             arg_doc: vec![MethodArg {
                 name: "table_init".to_string(),
                 doc: Some("New table data".to_string()),
             }],
+            ..Default::default()
         });
-        let sig_updated = lock.signals.new_component(SignalState {
+        let sig_updated = lock.signals.new_component(ServerSignalState {
             name: strings::SIG_TBL_UPDATED.to_string(),
             doc: Some("The table rows have been updated".to_string()),
             arg_doc: vec![
@@ -62,23 +62,29 @@ impl TableSignals {
                     doc: Some("New/updated rows".to_string()),
                 },
             ],
+            ..Default::default()
         });
-        let sig_row_remove = lock.signals.new_component(SignalState {
+        let sig_row_remove = lock.signals.new_component(ServerSignalState {
             name: strings::SIG_TBL_ROWS_REMOVED.to_string(),
             doc: Some("Rows have been removed from the table".to_string()),
             arg_doc: vec![MethodArg {
                 name: "key_list".to_string(),
                 doc: Some("Keys to remove from the table".to_string()),
             }],
+            ..Default::default()
         });
-        let sig_selection_update = lock.signals.new_component(SignalState {
-            name: strings::SIG_TBL_SELECTION_UPDATED.to_string(),
-            doc: Some("A selection for the table has been updated".to_string()),
-            arg_doc: vec![MethodArg {
-                name: "selection".to_string(),
-                doc: Some("A Selection type".to_string()),
-            }],
-        });
+        let sig_selection_update =
+            lock.signals.new_component(ServerSignalState {
+                name: strings::SIG_TBL_SELECTION_UPDATED.to_string(),
+                doc: Some(
+                    "A selection for the table has been updated".to_string(),
+                ),
+                arg_doc: vec![MethodArg {
+                    name: "selection".to_string(),
+                    doc: Some("A Selection type".to_string()),
+                }],
+                ..Default::default()
+            });
 
         Self {
             sig_reset,
@@ -103,7 +109,7 @@ pub struct TableSystem {
         Arc<Mutex<TableController>>,
     >,
 
-    valid_signal_hash: HashSet<ComponentReference<SignalState>>,
+    valid_signal_hash: HashSet<ComponentReference<ServerSignalState>>,
     valid_method_hash: HashSet<ComponentReference<ServerMethodState>>,
 }
 
@@ -458,7 +464,7 @@ impl TableController {
 
     fn broadcast(
         &self,
-        signal: &ComponentReference<SignalState>,
+        signal: &ComponentReference<ServerSignalState>,
         args: Vec<Value>,
     ) {
         let data = {

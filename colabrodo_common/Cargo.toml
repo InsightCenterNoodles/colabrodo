@@ -5,12 +5,13 @@ edition = "2021"
 
 [dependencies]
 colabrodo_macros = { path = "../colabrodo_macros" }
-ciborium = "0.2.0"
-ciborium-io = { version = "0.2.0", features = ["alloc"] }
-serde = "1.0.152"
-serde_with = "2.2.0"
-log = "0.4"
-thiserror = "1.0"
+ciborium = {workspace = true}
+ciborium-io = {workspace = true}
+serde = {workspace = true}
+serde_with = {workspace = true}
+log = {workspace = true}
+thiserror = {workspace = true}
 num-traits = "0.2"
 num-derive = "0.3"
+url = {workspace = true}
 

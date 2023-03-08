@@ -425,7 +425,7 @@ pub struct ServerState {
     tx: CallbackPtr,
 
     pub methods: PubUserCompList<ServerMethodState>,
-    pub signals: PubUserCompList<SignalState>,
+    pub signals: PubUserCompList<ServerSignalState>,
 
     pub buffers: PubUserCompList<BufferState>,
     pub buffer_views: PubUserCompList<ServerBufferViewState>,
@@ -549,7 +549,7 @@ impl ServerState {
     /// This will panic if the broadcast queue is unable to accept more content.
     pub fn issue_signal(
         &self,
-        signals: &ComponentReference<SignalState>,
+        signals: &ComponentReference<ServerSignalState>,
         context: Option<ServerSignalInvokeObj>,
         arguments: Vec<value::Value>,
     ) {

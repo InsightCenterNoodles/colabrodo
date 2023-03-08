@@ -13,9 +13,8 @@ use colabrodo_common::types::*;
 use colabrodo_common::components::*;
 
 pub use colabrodo_common::components::{
-    AttributeSemantic, BufferRepresentation, BufferState, BufferViewType,
-    GeometryIndex, LightState, MethodArg, MethodState, PrimitiveType,
-    SamplerState, SignalState,
+    AttributeSemantic, BufferState, BufferViewType, GeometryIndex, LightState,
+    MethodArg, MethodState, PrimitiveType, SamplerState, SignalState,
 };
 
 use crate::server_state::ComponentCell;
@@ -197,6 +196,7 @@ impl Recorder {
 // Messages ==============================================
 
 pub type ServerMethodState = MethodState<MethodHandlerSlot>;
+pub type ServerSignalState = SignalState<()>;
 
 // =======================================================
 
@@ -226,7 +226,7 @@ pub struct ServerEntityStateUpdatable {
     pub tags: Option<Vec<String>>,
 
     pub methods_list: Option<Vec<ComponentReference<ServerMethodState>>>,
-    pub signals_list: Option<Vec<ComponentReference<SignalState>>>,
+    pub signals_list: Option<Vec<ComponentReference<ServerSignalState>>>,
 
     pub influence: Option<BoundingBox>,
     pub visible: Option<bool>,
@@ -280,7 +280,7 @@ pub type ServerGeometryState = GeometryState<
 pub struct ServerTableStateUpdatable {
     pub meta: Option<String>,
     pub methods_list: Option<Vec<ComponentReference<ServerMethodState>>>,
-    pub signals_list: Option<Vec<ComponentReference<SignalState>>>,
+    pub signals_list: Option<Vec<ComponentReference<ServerSignalState>>>,
 }
 
 #[serde_with::skip_serializing_none]
@@ -323,7 +323,7 @@ pub struct ServerPlotStateUpdatable {
     pub table: Option<ComponentReference<ServerTableState>>,
 
     pub methods_list: Option<Vec<ComponentReference<ServerMethodState>>>,
-    pub signals_list: Option<Vec<ComponentReference<SignalState>>>,
+    pub signals_list: Option<Vec<ComponentReference<ServerSignalState>>>,
 }
 
 #[serde_with::skip_serializing_none]
@@ -445,7 +445,7 @@ impl ImageStateHelpers for ServerImageState {
     fn new_from_url(url: &str) -> Self {
         Self {
             name: None,
-            source: ImageSource::new_uri(Url::new_from_slice(url)),
+            source: ImageSource::new_uri(url.parse().unwrap()),
         }
     }
 }
@@ -517,5 +517,5 @@ impl ComponentMessageIDs for ServerLightState {
 
 pub type ServerDocumentUpdate = DocumentUpdate<
     ComponentReference<ServerMethodState>,
-    ComponentReference<SignalState>,
+    ComponentReference<ServerSignalState>,
 >;

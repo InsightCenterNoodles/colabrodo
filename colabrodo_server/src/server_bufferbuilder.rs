@@ -146,6 +146,13 @@ pub enum BufferBuildError {
 
 // =============================================================================
 
+pub enum BufferRepresentation {
+    Bytes(Vec<u8>),
+    Url(String),
+}
+
+// =============================================================================
+
 #[derive(Debug, Clone)]
 pub enum IndexType<'a> {
     UnindexedPoints,
@@ -243,10 +250,23 @@ where
 
         let total_bytes = vertex_bytes + i_total_bytes;
 
+        let mut bytes_source = None;
+        let mut url_source = None;
+
+        match representation {
+            BufferRepresentation::Bytes(x) => {
+                bytes_source = Some(ByteBuff::new(x))
+            }
+            BufferRepresentation::Url(x) => {
+                url_source = Some(x.parse().unwrap())
+            }
+        }
+
         let buffer = server_state.buffers.new_component(BufferState {
             name: self.name.as_ref().map(|x| format!("{x}_buffer")),
             size: total_bytes,
-            representation,
+            inline_bytes: bytes_source,
+            uri_bytes: url_source,
         });
 
         let vertex_view =
@@ -434,14 +454,11 @@ mod tests {
         let packed = source.pack_bytes().unwrap();
 
         let _result = source
-            .build_states(
-                &mut lock,
-                BufferRepresentation::new_from_bytes(packed.bytes),
-            )
+            .build_states(&mut lock, BufferRepresentation::Bytes(packed.bytes))
             .unwrap();
 
         lock.buffers.inspect(NooID::new(0, 0), |f| {
-            let bytes = f.representation.bytes().unwrap().bytes();
+            let bytes = f.inline_bytes.as_ref().unwrap().bytes();
 
             let pack_res = source.pack_bytes().unwrap();
 

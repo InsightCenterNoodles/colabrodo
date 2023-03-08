@@ -104,7 +104,7 @@ async fn make_cube(
     println!("Cube asset URL is at {url}");
 
     let intermediate = test_source
-        .build_states(server_state, BufferRepresentation::new_from_url(&url))
+        .build_states(server_state, BufferRepresentation::Url(url))
         .unwrap();
 
     // build the cube with our material

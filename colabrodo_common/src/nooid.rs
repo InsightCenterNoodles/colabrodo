@@ -1,5 +1,5 @@
 use ciborium::{cbor, value};
-use serde::{de::Visitor, ser::SerializeTuple, Deserialize};
+use serde::{de::Visitor, ser::SerializeTuple, Deserialize, Serialize};
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 pub struct NooID {
@@ -112,3 +112,58 @@ impl From<NooID> for value::Value {
         cbor!([item.slot, item.gen]).unwrap()
     }
 }
+
+// =============================================================================
+
+#[derive(
+    Copy, Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize,
+)]
+pub struct MethodID(pub NooID);
+#[derive(
+    Copy, Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize,
+)]
+pub struct SignalID(pub NooID);
+#[derive(
+    Copy, Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize,
+)]
+pub struct EntityID(pub NooID);
+#[derive(
+    Copy, Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize,
+)]
+pub struct PlotID(pub NooID);
+#[derive(
+    Copy, Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize,
+)]
+pub struct BufferID(pub NooID);
+#[derive(
+    Copy, Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize,
+)]
+pub struct BufferViewID(pub NooID);
+#[derive(
+    Copy, Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize,
+)]
+pub struct MaterialID(pub NooID);
+#[derive(
+    Copy, Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize,
+)]
+pub struct ImageID(pub NooID);
+#[derive(
+    Copy, Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize,
+)]
+pub struct TextureID(pub NooID);
+#[derive(
+    Copy, Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize,
+)]
+pub struct SamplerID(pub NooID);
+#[derive(
+    Copy, Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize,
+)]
+pub struct LightID(pub NooID);
+#[derive(
+    Copy, Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize,
+)]
+pub struct GeometryID(pub NooID);
+#[derive(
+    Copy, Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize,
+)]
+pub struct TableID(pub NooID);

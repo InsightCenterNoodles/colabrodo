@@ -470,14 +470,13 @@ async fn client_handler(
 
     //stop_tx.send(1).unwrap();
 
-    to_server_send
+    let _ = to_server_send
         .send(ToServerMessage::ClientClosed(client_id))
-        .await
-        .unwrap();
+        .await;
 
     log::info!("Closing client, waiting for tasks...");
 
-    client_stop_tx.send(1).unwrap();
+    let _ = client_stop_tx.send(1);
 
     h1.await.unwrap();
     h2.await.unwrap();

@@ -1,6 +1,4 @@
 use colabrodo_macros::DeltaPatch;
-use serde::de::Error;
-use serde::Deserializer;
 use serde::{Deserialize, Serialize};
 use serde_with::{self, serde_as, DefaultOnError};
 
@@ -21,16 +19,6 @@ pub trait DeltaPatch {
 pub trait UpdatableWith {
     type Substate;
     fn update(&mut self, s: Self::Substate);
-}
-
-// =============================================================================
-
-fn check_exclusion<const N: usize>(v: &[bool; N]) -> bool {
-    let mut sum: u32 = 0;
-    for x in v {
-        sum += *x as u32;
-    }
-    sum == 1
 }
 
 // =============================================================================
@@ -72,13 +60,16 @@ impl<Extra> ComponentMessageIDs for MethodState<Extra> {
 
 #[serde_with::skip_serializing_none]
 #[derive(Debug, Default, Serialize, Deserialize)]
-pub struct SignalState {
+pub struct SignalState<Extra> {
     pub name: String,
     pub doc: Option<String>,
     pub arg_doc: Vec<MethodArg>,
+
+    #[serde(skip)]
+    pub state: Extra,
 }
 
-impl ComponentMessageIDs for SignalState {
+impl<Extra> ComponentMessageIDs for SignalState<Extra> {
     fn update_message_id() -> ServerMessageIDs {
         ServerMessageIDs::Unknown
     }
@@ -96,58 +87,13 @@ impl ComponentMessageIDs for SignalState {
 
 #[serde_with::skip_serializing_none]
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
-pub struct BufferRepresentation {
-    inline_bytes: Option<ByteBuff>,
-    uri_bytes: Option<Url>,
-}
-
-impl BufferRepresentation {
-    pub fn new_from_bytes(bytes: Vec<u8>) -> Self {
-        Self {
-            inline_bytes: Some(ByteBuff::new(bytes)),
-            uri_bytes: None,
-        }
-    }
-
-    pub fn new_from_url(url: &str) -> Self {
-        Self {
-            inline_bytes: None,
-            uri_bytes: Some(Url::new_from_slice(url)),
-        }
-    }
-
-    pub fn bytes(&self) -> Option<&ByteBuff> {
-        self.inline_bytes.as_ref()
-    }
-
-    pub fn uri(&self) -> Option<&Url> {
-        self.uri_bytes.as_ref()
-    }
-}
-
-#[serde_with::skip_serializing_none]
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct BufferState {
     pub name: Option<String>,
 
     pub size: u64,
 
-    #[serde(flatten, deserialize_with = "deserialize_buffer_state")]
-    pub representation: BufferRepresentation,
-}
-
-fn deserialize_buffer_state<'de, D>(
-    deserializer: D,
-) -> Result<BufferRepresentation, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let ret = BufferRepresentation::deserialize(deserializer)?;
-    if !check_exclusion(&[ret.inline_bytes.is_some(), ret.uri_bytes.is_some()])
-    {
-        return Err(Error::duplicate_field("duplicate buffer representation"));
-    }
-    Ok(ret)
+    pub inline_bytes: Option<ByteBuff>,
+    pub uri_bytes: Option<url::Url>,
 }
 
 impl BufferState {
@@ -155,10 +101,8 @@ impl BufferState {
         Self {
             name: None,
             size: bytes.len() as u64,
-            representation: BufferRepresentation {
-                inline_bytes: Some(ByteBuff::new(bytes)),
-                uri_bytes: None,
-            },
+            inline_bytes: Some(ByteBuff::new(bytes)),
+            uri_bytes: None,
         }
     }
 
@@ -166,10 +110,8 @@ impl BufferState {
         Self {
             name: None,
             size: buffer_size,
-            representation: BufferRepresentation {
-                inline_bytes: None,
-                uri_bytes: Some(Url::new_from_slice(url)),
-            },
+            inline_bytes: None,
+            uri_bytes: Some(url.parse().unwrap()),
         }
     }
 }
@@ -330,7 +272,7 @@ impl<BufferViewRef, MaterialRef> ComponentMessageIDs
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct ImageSource<BufferViewRef> {
     buffer_source: Option<BufferViewRef>,
-    uri_source: Option<Url>,
+    uri_source: Option<url::Url>,
 }
 
 impl<BufferViewRef> ImageSource<BufferViewRef> {
@@ -341,7 +283,7 @@ impl<BufferViewRef> ImageSource<BufferViewRef> {
         }
     }
 
-    pub fn new_uri(uri: Url) -> Self {
+    pub fn new_uri(uri: url::Url) -> Self {
         Self {
             buffer_source: None,
             uri_source: Some(uri),
@@ -623,7 +565,7 @@ pub struct PlotState<TableRef, MethodRef, SignalRef> {
     pub name: Option<String>,
 
     #[serde(flatten)]
-    pub(crate) mutable: PlotStateUpdatable<TableRef, MethodRef, SignalRef>,
+    pub mutable: PlotStateUpdatable<TableRef, MethodRef, SignalRef>,
 }
 
 impl<TableRef, MethodRef, SignalRef> UpdatableWith
@@ -692,7 +634,7 @@ pub struct TextRepresentation {
 #[serde_with::skip_serializing_none]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct WebRepresentation {
-    pub source: Url,
+    pub source: url::Url,
     pub height: Option<f32>,
     pub width: Option<f32>,
 }
@@ -914,7 +856,7 @@ impl<
 
 #[cfg(test)]
 mod tests {
-    use crate::components::{BufferRepresentation, BufferState};
+    use crate::components::BufferState;
 
     #[test]
     fn buffer_state_serde() {
@@ -931,16 +873,8 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
-    fn bad_buffer_state_serde() {
-        let rep = BufferState {
-            name: Some("Test".to_string()),
-            size: 1024,
-            representation: BufferRepresentation {
-                inline_bytes: None,
-                uri_bytes: None,
-            },
-        };
+    fn buffer_state_serde_url() {
+        let rep = BufferState::new_from_url("http://wombat.com", 1024);
 
         let mut pack = Vec::<u8>::new();
 

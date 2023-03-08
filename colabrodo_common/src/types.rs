@@ -1,8 +1,5 @@
-use ciborium::tag::Required;
 use serde::de::Error;
 use serde::{de::Visitor, Deserialize, Serialize};
-
-use crate::nooid::NooID;
 
 #[derive(Debug, Copy, Clone, Deserialize, Serialize, Default)]
 pub enum Format {
@@ -43,7 +40,7 @@ pub struct BoundingBox {
 // =============================================================================
 
 /// A struct to represent an array of bytes, for proper serialization to CBOR
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, Default, PartialEq, Eq)]
 pub struct ByteBuff(Vec<u8>);
 
 impl ByteBuff {
@@ -105,28 +102,14 @@ impl<'de> Deserialize<'de> for ByteBuff {
 
 // =============================================================================
 
-/// A struct to represent a URL, for proper serialization to CBOR
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub struct Url(Required<String, 32>);
-
-impl Url {
-    pub fn new(url: String) -> Self {
-        Self(Required(url))
-    }
-    pub fn new_from_slice(url: &str) -> Self {
-        Self(Required(url.to_string()))
-    }
-}
-
-// =============================================================================
-
 #[derive(Debug, Serialize, Deserialize)]
-pub struct CommonDeleteMessage {
-    pub id: NooID,
+pub struct CommonDeleteMessage<IDType> {
+    pub id: IDType,
 }
 
 #[cfg(test)]
 mod tests {
+
     use serde::{Deserialize, Serialize};
 
     #[derive(Debug, PartialEq, Serialize, Deserialize)]
@@ -136,7 +119,7 @@ mod tests {
 
     #[derive(Debug, PartialEq, Serialize, Deserialize)]
     struct TestUrlStruct {
-        data: super::Url,
+        data: url::Url,
     }
 
     #[test]
@@ -161,7 +144,7 @@ mod tests {
     #[test]
     fn url_serde() {
         let to_pack = TestUrlStruct {
-            data: super::Url::new("http://google.com".to_string()),
+            data: "http://google.com".parse().unwrap(),
         };
 
         let mut pack = Vec::<u8>::new();
@@ -173,6 +156,37 @@ mod tests {
                 Ok(x) => x,
                 Err(x) => panic!("Unpack failed: {x:?}"),
             };
+
+        assert_eq!(to_pack, other);
+    }
+
+    #[test]
+    fn url_opt_serde() {
+        #[derive(Debug, PartialEq, Deserialize, Serialize)]
+        struct Thingy {
+            v: Option<url::Url>,
+        }
+
+        #[derive(Debug, PartialEq, Deserialize, Serialize)]
+        struct Host {
+            #[serde(flatten)]
+            parts: Thingy,
+        }
+
+        let to_pack = Host {
+            parts: Thingy {
+                v: Some("http://google.com".parse().unwrap()),
+            },
+        };
+
+        let mut pack = Vec::<u8>::new();
+
+        ciborium::ser::into_writer(&to_pack, &mut pack).expect("Pack");
+
+        let other: Host = match ciborium::de::from_reader(pack.as_slice()) {
+            Ok(x) => x,
+            Err(x) => panic!("Unpack failed: {x:?}"),
+        };
 
         assert_eq!(to_pack, other);
     }
