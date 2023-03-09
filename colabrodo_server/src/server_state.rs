@@ -619,7 +619,7 @@ pub type MethodResult = Result<Option<value::Value>, MethodException>;
 mod tests {
     use std::collections::VecDeque;
 
-    use ciborium::{cbor, tag::Required, value::Value};
+    use ciborium::{cbor, value::Value};
     use colabrodo_common::types::ByteBuff;
 
     use super::*;
