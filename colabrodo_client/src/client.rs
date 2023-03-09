@@ -434,18 +434,6 @@ pub async fn invoke_method(
 
 // =============================================================================
 
-// {
-
-//     #[allow(unused_variables)]
-//     fn on_signal_invoke(&mut self, signal: ClientMessageSignalInvoke) {}
-//     #[allow(unused_variables)]
-//     fn on_method_reply(&mut self, method_reply: MessageMethodReply) {}
-
-//     fn on_document_ready(&mut self) {}
-
-//     fn on_command(&mut self, _c: Self::CommandType) {}
-// }
-
 #[derive(Error, Debug)]
 pub enum UserClientNext {
     #[error("Decode error")]
