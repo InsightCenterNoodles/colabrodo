@@ -160,30 +160,30 @@ pub trait CommComponent {
 
 impl CommComponent for ClientEntityState {
     fn method_list(&self) -> Option<&[MethodID]> {
-        self.mutable.methods_list.as_ref().map(|f| f.as_slice())
+        self.mutable.methods_list.as_deref()
     }
 
     fn signal_list(&self) -> Option<&[SignalID]> {
-        self.mutable.signals_list.as_ref().map(|f| f.as_slice())
+        self.mutable.signals_list.as_deref()
     }
 }
 
 impl CommComponent for ClientPlotState {
     fn method_list(&self) -> Option<&[MethodID]> {
-        self.mutable.methods_list.as_ref().map(|f| f.as_slice())
+        self.mutable.methods_list.as_deref()
     }
 
     fn signal_list(&self) -> Option<&[SignalID]> {
-        self.mutable.signals_list.as_ref().map(|f| f.as_slice())
+        self.mutable.signals_list.as_deref()
     }
 }
 
 impl CommComponent for ClientTableState {
     fn method_list(&self) -> Option<&[MethodID]> {
-        self.mutable.methods_list.as_ref().map(|f| f.as_slice())
+        self.mutable.methods_list.as_deref()
     }
 
     fn signal_list(&self) -> Option<&[SignalID]> {
-        self.mutable.signals_list.as_ref().map(|f| f.as_slice())
+        self.mutable.signals_list.as_deref()
     }
 }

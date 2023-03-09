@@ -98,9 +98,7 @@ pub async fn connect_table<T: TableDataStorage + Send + 'static>(
         ResolvedTableIDs::new(&lock)
     };
 
-    if resolved_ids.mthd_subscribe.is_none() {
-        return None;
-    }
+    resolved_ids.mthd_subscribe?;
 
     log::debug!("Subscribing to table...");
 
@@ -333,7 +331,7 @@ async fn signal_watcher<T: TableDataStorage + Send + 'static>(
         Some(())
     }));
 
-    tokio::spawn(exec_listener(sel_update_stream, table.clone(), |l, msg| {
+    tokio::spawn(exec_listener(sel_update_stream, table, |l, msg| {
         let selection = arg_to_tuple!(msg, Selection)?;
         l.table_storage.update_selection(selection.0);
         Some(())

@@ -23,7 +23,7 @@ pub struct Arguments {
 fn dump_value(v: &Value) {
     match v {
         Value::Integer(x) => print!("{}", i128::from(*x)),
-        Value::Bytes(b) => print!("{:?}", b),
+        Value::Bytes(b) => print!("{b:?}"),
         Value::Float(f) => print!("{f}"),
         Value::Text(s) => print!("{s}"),
         Value::Bool(b) => print!("{b}"),
@@ -66,7 +66,7 @@ impl ReportingTable {
         for c in &self.header {
             print!("{}\t", c.name);
         }
-        print!("\n");
+        println!();
         for (k, v) in &self.data {
             print!("{k}\t");
 
@@ -75,7 +75,7 @@ impl ReportingTable {
                 print!("\t");
             }
 
-            print!("\n");
+            println!();
         }
     }
 }

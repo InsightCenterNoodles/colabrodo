@@ -703,7 +703,7 @@ mod tests {
         struct ComplexMsg {
             id: NooID,
             size: u32,
-            uri_bytes: ciborium::tag::Required<String, 32>,
+            uri_bytes: String,
         }
 
         let complex_message = (
@@ -711,7 +711,7 @@ mod tests {
             ComplexMsg {
                 id: NooID::new(0, 1),
                 size: 1024,
-                uri_bytes: Required("http://wombat.com".to_string()),
+                uri_bytes: "http://wombat.com/".to_string(),
             },
         );
 

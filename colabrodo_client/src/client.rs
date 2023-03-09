@@ -181,7 +181,7 @@ where
     fn can_sub(&self, id: IDType, signal: SignalID) -> bool {
         if let Some(state) = self.list.components.get(&id) {
             if let Some(list) = state.signal_list() {
-                return list.iter().find(|&&f| f == signal).is_some();
+                return list.iter().any(|&f| f == signal);
             }
         }
         false
@@ -344,7 +344,7 @@ impl ClientState {
     pub fn subscribe_signal(&mut self, signal: SignalID) -> Option<SignalRecv> {
         if let Some(list) = &mut self.document_communication.signals_list {
             log::debug!("Searching for signal {signal:?} in {list:?}");
-            if list.iter().find(|&&f| f == signal).is_some() {
+            if list.iter().any(|&f| f == signal) {
                 return Some(
                     self.signal_subs
                         .entry(signal)
@@ -408,11 +408,17 @@ pub async fn invoke_method(
     });
 
     {
-        let mut lock = state.lock().unwrap();
+        // careful not to hold a lock across an await...
 
-        lock.method_subs.insert(invoke_id, res_tx);
+        let sender = {
+            let mut lock = state.lock().unwrap();
 
-        lock.sender.send(content).await.map_err(|_| {
+            lock.method_subs.insert(invoke_id, res_tx);
+
+            lock.sender.clone()
+        };
+
+        sender.send(content).await.map_err(|_| {
             MethodException::internal_error(Some(
                 "Unable to send method invocation.",
             ))
@@ -656,6 +662,12 @@ pub struct ClientChannels {
 
     from_client_tx: tokio::sync::mpsc::Sender<OutgoingMessage>,
     from_client_rx: tokio::sync::mpsc::Receiver<OutgoingMessage>,
+}
+
+impl Default for ClientChannels {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ClientChannels {
