@@ -6,6 +6,7 @@ use colabrodo_macros::UpdatableStateItem;
 use core::fmt::Debug;
 use serde::Serialize;
 use std::sync::Arc;
+use std::sync::Mutex;
 
 use colabrodo_common::common;
 use colabrodo_common::types::*;
@@ -46,7 +47,7 @@ pub trait MethodHandler {
 
 #[derive(Default)]
 pub struct MethodHandlerSlot {
-    pub(crate) dest: Option<Arc<dyn MethodHandler>>,
+    pub(crate) dest: Option<Arc<Mutex<dyn MethodHandler>>>,
 }
 
 type Callback = dyn Fn(&mut ServerState, MethodSignalContent) -> MethodResult;
@@ -71,7 +72,7 @@ impl MethodHandlerSlot {
         F: MethodHandler + 'static,
     {
         Self {
-            dest: Some(Arc::new(f)),
+            dest: Some(Arc::new(Mutex::new(f))),
         }
     }
 

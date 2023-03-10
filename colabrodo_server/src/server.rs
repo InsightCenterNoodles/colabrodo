@@ -540,7 +540,10 @@ async fn invoke_helper(
 
     if let Some(s) = signal {
         let mut lock = state.lock().unwrap();
-        return (*s).activate(&mut lock, msg);
+
+        let func = s.lock().unwrap();
+
+        return (*func).activate(&mut lock, msg);
     }
 
     Err(MethodException {

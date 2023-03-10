@@ -22,7 +22,6 @@ use indexmap::IndexMap;
 use serde::{ser::SerializeSeq, Serialize};
 use std::collections::HashMap;
 use std::fmt::Debug;
-use std::rc::{Rc, Weak};
 use std::sync::{Arc, Mutex};
 use tokio::sync::broadcast::{self, Sender};
 
