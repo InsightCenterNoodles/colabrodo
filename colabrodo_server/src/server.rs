@@ -4,6 +4,7 @@ use std::fmt::Debug;
 use std::sync::Arc;
 use std::sync::Mutex;
 
+use crate::server_messages::MethodReference;
 use crate::server_messages::MethodSignalContent;
 use crate::server_messages::Recorder;
 pub use crate::server_messages::{
@@ -15,7 +16,7 @@ use crate::server_state::Output;
 pub use crate::server_state::{InvokeObj, ServerState, ServerStatePtr};
 pub use ciborium;
 use colabrodo_common::client_communication::{
-    AllClientMessages, ClientInvokeMessage, ClientRootMessage, InvokeIDType,
+    AllClientMessages, ClientRootMessage, InvokeIDType, MethodInvokeMessage,
 };
 use colabrodo_common::common::ServerMessageIDs;
 use colabrodo_common::server_communication::ExceptionCodes;
@@ -490,8 +491,8 @@ async fn client_handler(
 
 /// Helper function to determine if a method is indeed attached to a given target.
 fn find_method_in_state(
-    method: &ComponentReference<ServerMethodState>,
-    state: &Option<Vec<ComponentReference<ServerMethodState>>>,
+    method: &MethodReference,
+    state: &Option<Vec<MethodReference>>,
 ) -> bool {
     match state {
         None => false,
@@ -512,7 +513,7 @@ fn find_method_in_state(
 async fn invoke_helper(
     state: &Arc<Mutex<ServerState>>,
     client_id: uuid::Uuid,
-    invoke: ClientInvokeMessage,
+    invoke: MethodInvokeMessage,
 ) -> MethodResult {
     let signal;
 

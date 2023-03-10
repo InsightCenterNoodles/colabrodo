@@ -167,3 +167,115 @@ pub struct GeometryID(pub NooID);
     Copy, Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize,
 )]
 pub struct TableID(pub NooID);
+
+pub trait IDClass:
+    core::fmt::Debug + Copy + Clone + Serialize + std::hash::Hash + PartialEq + Eq
+{
+    fn new(n: NooID) -> Self;
+    fn as_nooid(&self) -> NooID;
+}
+
+impl IDClass for MethodID {
+    fn new(n: NooID) -> Self {
+        Self(n)
+    }
+    fn as_nooid(&self) -> NooID {
+        self.0
+    }
+}
+impl IDClass for SignalID {
+    fn new(n: NooID) -> Self {
+        Self(n)
+    }
+    fn as_nooid(&self) -> NooID {
+        self.0
+    }
+}
+impl IDClass for EntityID {
+    fn new(n: NooID) -> Self {
+        Self(n)
+    }
+    fn as_nooid(&self) -> NooID {
+        self.0
+    }
+}
+impl IDClass for PlotID {
+    fn new(n: NooID) -> Self {
+        Self(n)
+    }
+    fn as_nooid(&self) -> NooID {
+        self.0
+    }
+}
+impl IDClass for TableID {
+    fn new(n: NooID) -> Self {
+        Self(n)
+    }
+    fn as_nooid(&self) -> NooID {
+        self.0
+    }
+}
+impl IDClass for BufferID {
+    fn new(n: NooID) -> Self {
+        Self(n)
+    }
+    fn as_nooid(&self) -> NooID {
+        self.0
+    }
+}
+impl IDClass for BufferViewID {
+    fn new(n: NooID) -> Self {
+        Self(n)
+    }
+    fn as_nooid(&self) -> NooID {
+        self.0
+    }
+}
+impl IDClass for MaterialID {
+    fn new(n: NooID) -> Self {
+        Self(n)
+    }
+    fn as_nooid(&self) -> NooID {
+        self.0
+    }
+}
+impl IDClass for ImageID {
+    fn new(n: NooID) -> Self {
+        Self(n)
+    }
+    fn as_nooid(&self) -> NooID {
+        self.0
+    }
+}
+impl IDClass for TextureID {
+    fn new(n: NooID) -> Self {
+        Self(n)
+    }
+    fn as_nooid(&self) -> NooID {
+        self.0
+    }
+}
+impl IDClass for SamplerID {
+    fn new(n: NooID) -> Self {
+        Self(n)
+    }
+    fn as_nooid(&self) -> NooID {
+        self.0
+    }
+}
+impl IDClass for LightID {
+    fn new(n: NooID) -> Self {
+        Self(n)
+    }
+    fn as_nooid(&self) -> NooID {
+        self.0
+    }
+}
+impl IDClass for GeometryID {
+    fn new(n: NooID) -> Self {
+        Self(n)
+    }
+    fn as_nooid(&self) -> NooID {
+        self.0
+    }
+}

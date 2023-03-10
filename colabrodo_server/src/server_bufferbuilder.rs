@@ -352,7 +352,7 @@ pub struct IntermediateGeometryPatch {
 mod tests {
     use std::mem;
 
-    use colabrodo_common::nooid::NooID;
+    use colabrodo_common::nooid::{BufferID, NooID};
 
     use crate::server_state::*;
 
@@ -457,7 +457,7 @@ mod tests {
             .build_states(&mut lock, BufferRepresentation::Bytes(packed.bytes))
             .unwrap();
 
-        lock.buffers.inspect(NooID::new(0, 0), |f| {
+        lock.buffers.inspect(BufferID(NooID::new(0, 0)), |f| {
             let bytes = f.inline_bytes.as_ref().unwrap().bytes();
 
             let pack_res = source.pack_bytes().unwrap();

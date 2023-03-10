@@ -15,10 +15,16 @@ pub fn emit_optional_patch_function(input: TokenStream) -> TokenStream {
 
     let host_name = name_string.as_str().strip_suffix("Updatable").unwrap();
 
+    let id_name = host_name
+        .strip_prefix("Server")
+        .unwrap()
+        .strip_suffix("State")
+        .unwrap();
+
     let mut ret_impl = format!(
         "
         impl UpdatableStateItem for {name} {{
-            type HostState = ComponentReference<{host_name}>;
+            type HostState = ComponentReference<{id_name}ID, {host_name}>;
             fn patch(self, h: &Self::HostState){{
 
                 if log::log_enabled!(log::Level::Debug) {{

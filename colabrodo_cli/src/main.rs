@@ -9,13 +9,13 @@ use colabrodo_client::mapped_client::{
     self, handle_next, id_for_message, lookup, MappedNoodlesClient, NooValueMap,
 };
 use colabrodo_common::client_communication::{
-    ClientIntroductionMessage, ClientInvokeMessage, ClientMessageID,
+    ClientMessageID, IntroductionMessage, MethodInvokeMessage,
 };
 use colabrodo_common::common::{
     ComponentType, MessageArchType, ServerMessageIDs,
 };
 
-use colabrodo_common::nooid::NooID;
+use colabrodo_common::nooid::*;
 use futures_util::{future, pin_mut, SinkExt, StreamExt};
 
 use tokio::runtime;
@@ -282,8 +282,8 @@ async fn cli_main() {
     // send introduction
     {
         let introduction = (
-            ClientIntroductionMessage::message_id(),
-            ClientIntroductionMessage {
+            IntroductionMessage::message_id(),
+            IntroductionMessage {
                 client_name: "Rusty CLI".to_string(),
             },
         );
@@ -555,9 +555,9 @@ fn call_method(
         let invoke_identifier = uuid::Uuid::new_v4().to_string();
 
         let content = (
-            ClientInvokeMessage::message_id(),
-            ClientInvokeMessage {
-                method: selected_id,
+            MethodInvokeMessage::message_id(),
+            MethodInvokeMessage {
+                method: MethodID(selected_id),
                 invoke_id: Some(invoke_identifier.clone()),
                 args: collect_args(prompts),
                 ..Default::default()

@@ -2,11 +2,11 @@
 pub use crate::server_root_message::FromServer;
 use crate::{components::*, server_root_message::*};
 use ciborium::value::Value;
-pub use colabrodo_common::client_communication::ClientInvokeMessage;
+pub use colabrodo_common::client_communication::MethodInvokeMessage;
 pub use colabrodo_common::server_communication::MessageMethodReply;
 use colabrodo_common::{
     client_communication::{
-        ClientIntroductionMessage, ClientMessageID, InvokeIDType,
+        ClientMessageID, IntroductionMessage, InvokeIDType,
     },
     components::LightState,
     nooid::*,
@@ -395,13 +395,13 @@ pub async fn invoke_method(
 
     let (res_tx, res_rx) = tokio::sync::oneshot::channel();
 
-    let content = OutgoingMessage::MethodInvoke(ClientInvokeMessage {
-        method: method_id.0,
+    let content = OutgoingMessage::MethodInvoke(MethodInvokeMessage {
+        method: method_id,
         context: match context {
             InvokeContext::Document => None,
-            InvokeContext::Entity(id) => Some(InvokeIDType::Entity(id.0)),
-            InvokeContext::Table(id) => Some(InvokeIDType::Table(id.0)),
-            InvokeContext::Plot(id) => Some(InvokeIDType::Plot(id.0)),
+            InvokeContext::Entity(id) => Some(InvokeIDType::Entity(id)),
+            InvokeContext::Table(id) => Some(InvokeIDType::Table(id)),
+            InvokeContext::Plot(id) => Some(InvokeIDType::Plot(id)),
         },
         invoke_id: Some(invoke_id.to_string()),
         args,
@@ -651,7 +651,7 @@ pub enum OutgoingMessage {
     /// Instruct client machinery to shut down
     Close,
     /// Invoke a message on the server
-    MethodInvoke(ClientInvokeMessage),
+    MethodInvoke(MethodInvokeMessage),
 }
 
 // =============================================================================
@@ -729,8 +729,8 @@ pub async fn start_client(
     // Send the initial introduction message
     {
         let content = (
-            ClientIntroductionMessage::message_id(),
-            ClientIntroductionMessage { client_name: name },
+            IntroductionMessage::message_id(),
+            IntroductionMessage { client_name: name },
         );
 
         let mut buffer = Vec::<u8>::new();
@@ -805,7 +805,7 @@ async fn forward_task(
                         break;
                     }
                     OutgoingMessage::MethodInvoke(x) => {
-                        let tuple = (ClientInvokeMessage::message_id(), x);
+                        let tuple = (MethodInvokeMessage::message_id(), x);
                         ciborium::ser::into_writer(&tuple, &mut buffer).unwrap()
                     }
                 }

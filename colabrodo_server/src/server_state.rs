@@ -13,7 +13,7 @@ pub use colabrodo_common::common::{
     ComponentType, MessageArchType, ServerMessageIDs,
 };
 use colabrodo_common::components::*;
-use colabrodo_common::nooid::NooID;
+use colabrodo_common::nooid::*;
 pub use colabrodo_common::server_communication::{
     ExceptionCodes, MessageMethodReply, MessageSignalInvoke, MethodException,
     SignalInvokeObj,
@@ -40,17 +40,19 @@ pub type CallbackPtr = Sender<Output>;
 /// A struct to manage the lifetime of a component. Holds the id of the component, and the list that contains it.
 /// When this struct goes out of scope, the ID is deleted for recycling and the component is erased.
 /// Thus, this should be held in an Rc.
-pub struct ComponentCell<T>
+pub struct ComponentCell<IDType, T>
 where
     T: Serialize + ComponentMessageIDs + Debug,
+    IDType: IDClass,
 {
-    id: NooID,
-    host: Rc<RefCell<ServerComponentList<T>>>,
+    id: IDType,
+    host: Rc<RefCell<ServerComponentList<IDType, T>>>,
 }
 
-impl<T> Debug for ComponentCell<T>
+impl<IDType, T> Debug for ComponentCell<IDType, T>
 where
     T: Debug + Serialize + ComponentMessageIDs + Debug,
+    IDType: IDClass,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ComponentCell")
@@ -59,13 +61,14 @@ where
     }
 }
 
-impl<T> Drop for ComponentCell<T>
+impl<IDType, T> Drop for ComponentCell<IDType, T>
 where
     T: Serialize + ComponentMessageIDs + Debug,
+    IDType: IDClass,
 {
     fn drop(&mut self) {
         log::debug!(
-            "Deleting Component {} {}",
+            "Deleting Component {} {:?}",
             std::any::type_name::<T>(),
             self.id
         );
@@ -83,18 +86,19 @@ where
     }
 }
 
-impl<T> ComponentCell<T>
+impl<IDType, T> ComponentCell<IDType, T>
 where
     T: Serialize + ComponentMessageIDs + Debug,
+    IDType: IDClass,
 {
     /// Obtain the ID of the managed component
-    pub fn id(&self) -> NooID {
+    pub fn id(&self) -> IDType {
         self.id
     }
 
     /// Obtain the component. This is done in a somewhat roundabout way,
     /// As the containing list is a mutable shared item.
-    pub fn get(&self) -> ComponentCellGuard<T> {
+    pub fn get(&self) -> ComponentCellGuard<IDType, T> {
         ComponentCellGuard {
             guard: self.host.borrow(),
             id: self.id,
@@ -103,7 +107,7 @@ where
     }
 
     /// Obtain the component for mutation. Should not be called by users directly, only for our updating infrastructure.
-    pub(crate) fn borrow_mut(&self) -> ComponentCellGuardMut<T> {
+    pub(crate) fn borrow_mut(&self) -> ComponentCellGuardMut<IDType, T> {
         //std::cell::Ref::map(self.host.borrow(), |x| &x.get_data_mut(self.id))
         ComponentCellGuardMut {
             guard: self.host.borrow_mut(),
@@ -117,36 +121,19 @@ where
     }
 }
 
-pub struct ComponentCellGuard<'a, T>
+pub struct ComponentCellGuard<'a, IDType, T>
 where
     T: Serialize + ComponentMessageIDs + Debug,
+    IDType: IDClass,
 {
-    guard: Ref<'a, ServerComponentList<T>>,
-    id: NooID,
+    guard: Ref<'a, ServerComponentList<IDType, T>>,
+    id: IDType,
 }
 
-impl<'a, T> std::ops::Deref for ComponentCellGuard<'a, T>
+impl<'a, IDType, T> std::ops::Deref for ComponentCellGuard<'a, IDType, T>
 where
     T: Serialize + ComponentMessageIDs + Debug,
-{
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        self.guard.get_data(self.id).unwrap()
-    }
-}
-
-pub struct ComponentCellGuardMut<'a, T>
-where
-    T: Serialize + ComponentMessageIDs + Debug,
-{
-    guard: RefMut<'a, ServerComponentList<T>>,
-    id: NooID,
-}
-
-impl<'a, T> std::ops::Deref for ComponentCellGuardMut<'a, T>
-where
-    T: Serialize + ComponentMessageIDs + Debug,
+    IDType: IDClass,
 {
     type Target = T;
 
@@ -155,9 +142,31 @@ where
     }
 }
 
-impl<'a, T> std::ops::DerefMut for ComponentCellGuardMut<'a, T>
+pub struct ComponentCellGuardMut<'a, IDType, T>
 where
     T: Serialize + ComponentMessageIDs + Debug,
+    IDType: IDClass,
+{
+    guard: RefMut<'a, ServerComponentList<IDType, T>>,
+    id: IDType,
+}
+
+impl<'a, IDType, T> std::ops::Deref for ComponentCellGuardMut<'a, IDType, T>
+where
+    T: Serialize + ComponentMessageIDs + Debug,
+    IDType: IDClass,
+{
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        self.guard.get_data(self.id).unwrap()
+    }
+}
+
+impl<'a, IDType, T> std::ops::DerefMut for ComponentCellGuardMut<'a, IDType, T>
+where
+    T: Serialize + ComponentMessageIDs + Debug,
+    IDType: IDClass,
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.guard.get_data_mut(self.id).unwrap()
@@ -169,13 +178,15 @@ where
 /// It is used primarily to make a distinction when serializing lists
 /// of component pointers: this will serialize the actual component content.
 #[derive(Debug)]
-struct ComponentPtr<T>(Rc<ComponentCell<T>>)
-where
-    T: Serialize + ComponentMessageIDs + Debug;
-
-impl<T> Serialize for ComponentPtr<T>
+struct ComponentPtr<IDType, T>(Rc<ComponentCell<IDType, T>>)
 where
     T: Serialize + ComponentMessageIDs + Debug,
+    IDType: IDClass;
+
+impl<IDType, T> Serialize for ComponentPtr<IDType, T>
+where
+    T: Serialize + ComponentMessageIDs + Debug,
+    IDType: IDClass,
 {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -185,9 +196,10 @@ where
     }
 }
 
-impl<T> Clone for ComponentPtr<T>
+impl<IDType, T> Clone for ComponentPtr<IDType, T>
 where
     T: Serialize + ComponentMessageIDs + Debug,
+    IDType: IDClass,
 {
     fn clone(&self) -> Self {
         Self(self.0.clone())
@@ -199,22 +211,27 @@ where
 /// A list of components. Has the list of content, and a list of id managed pointers.
 /// We use a split list here to reduce the amount of RefCells we would otherwise be throwing around.
 /// Also included is a sink for broadcast messages, and a list of free ids for recycling.
-struct ServerComponentList<T>
+struct ServerComponentList<IDType, T>
 where
     T: Serialize + ComponentMessageIDs + Debug,
+    IDType: IDClass,
 {
     // this list HAS to be sorted at the moment.
     // as in most cases parent object IDs are lower in the slot list.
     // however, this is not guaranteed, and some clients scream if it is not
     // true.
-    list: IndexMap<NooID, T>,
-    id_list: HashMap<NooID, Weak<ComponentCell<T>>>,
+    list: IndexMap<IDType, T>,
+    id_list: HashMap<IDType, Weak<ComponentCell<IDType, T>>>,
     broadcast: CallbackPtr,
-    free_list: Vec<NooID>,
-    owned_list: Vec<Rc<ComponentCell<T>>>,
+    free_list: Vec<IDType>,
+    owned_list: Vec<Rc<ComponentCell<IDType, T>>>,
 }
 
-impl<T: Serialize + ComponentMessageIDs + Debug> ServerComponentList<T> {
+impl<
+        IDType: IDClass + Serialize,
+        T: Serialize + ComponentMessageIDs + Debug,
+    > ServerComponentList<IDType, T>
+{
     fn new(tx: CallbackPtr) -> Self {
         Self {
             list: IndexMap::new(),
@@ -231,19 +248,23 @@ impl<T: Serialize + ComponentMessageIDs + Debug> ServerComponentList<T> {
     }
 
     /// Obtain a new id. Either generates a new ID if there are no free slots. If there are free slots, reuse and bump the generation.
-    fn provision_id(&mut self) -> NooID {
+    fn provision_id(&mut self) -> IDType {
         if self.free_list.is_empty() {
-            return NooID::new_with_slot(self.list.len().try_into().unwrap());
+            return IDType::new(NooID::new_with_slot(
+                self.list.len().try_into().unwrap(),
+            ));
         }
 
-        NooID::next_generation(self.free_list.pop().unwrap())
+        IDType::new(NooID::next_generation(
+            self.free_list.pop().unwrap().as_nooid(),
+        ))
     }
 
     /// Inform us that the given ID (slot) is free to be used again.
     /// This returns the component we destroyed.
     ///
     /// The reason for this is if we delete an item from a list that triggers (through rc ptrs) a delete from the same list. We need to move the reference out of here so calling code can safely release their borrow before dropping again.
-    fn return_id(&mut self, id: NooID) -> Option<T> {
+    fn return_id(&mut self, id: IDType) -> Option<T> {
         // write the delete message
         let recorder = Recorder::record(
             T::delete_message_id() as u32,
@@ -262,12 +283,12 @@ impl<T: Serialize + ComponentMessageIDs + Debug> ServerComponentList<T> {
     fn new_component(
         &mut self,
         new_t: T,
-        host: Rc<RefCell<ServerComponentList<T>>>,
-    ) -> ComponentReference<T> {
+        host: Rc<RefCell<ServerComponentList<IDType, T>>>,
+    ) -> ComponentReference<IDType, T> {
         let new_id = self.provision_id();
 
         log::info!(
-            "Adding Component {} {}",
+            "Adding Component {} {:?}",
             std::any::type_name::<T>(),
             new_id
         );
@@ -288,7 +309,7 @@ impl<T: Serialize + ComponentMessageIDs + Debug> ServerComponentList<T> {
         // After broadcast, actually insert the content
         self.list.insert(new_id, new_t);
 
-        let cell = ComponentCell::<T> { id: new_id, host };
+        let cell = ComponentCell::<IDType, T> { id: new_id, host };
 
         let cell = Rc::new(cell);
 
@@ -300,8 +321,8 @@ impl<T: Serialize + ComponentMessageIDs + Debug> ServerComponentList<T> {
     fn new_owned_component(
         &mut self,
         new_t: T,
-        host: Rc<RefCell<ServerComponentList<T>>>,
-    ) -> ComponentReference<T> {
+        host: Rc<RefCell<ServerComponentList<IDType, T>>>,
+    ) -> ComponentReference<IDType, T> {
         let ret = self.new_component(new_t, host);
         self.owned_list.push(ret.0.clone());
         ret
@@ -313,24 +334,24 @@ impl<T: Serialize + ComponentMessageIDs + Debug> ServerComponentList<T> {
     }
 
     /// Get a reference to a component by ID
-    fn get_data(&self, id: NooID) -> Option<&T> {
+    fn get_data(&self, id: IDType) -> Option<&T> {
         self.list.get(&id)
     }
 
     /// Get a mutable reference to a component by ID
-    fn get_data_mut(&mut self, id: NooID) -> Option<&mut T> {
+    fn get_data_mut(&mut self, id: IDType) -> Option<&mut T> {
         self.list.get_mut(&id)
     }
 
     /// Get a pointer to a component by ID
-    fn resolve(&self, id: NooID) -> Option<ComponentReference<T>> {
+    fn resolve(&self, id: IDType) -> Option<ComponentReference<IDType, T>> {
         match self.id_list.get(&id) {
             None => None,
             Some(x) => x.upgrade().map(ComponentReference::new),
         }
     }
 
-    fn inspect(&self, id: NooID) -> Option<&T> {
+    fn inspect(&self, id: IDType) -> Option<&T> {
         self.list.get(&id)
     }
 
@@ -354,16 +375,18 @@ impl<T: Serialize + ComponentMessageIDs + Debug> ServerComponentList<T> {
 
 /// User facing list of components
 /// Internally this is a shared pointer to our internal list, as our components need a reference to this list as well.
-pub struct PubUserCompList<T>
+pub struct PubUserCompList<IDType, T>
 where
     T: Serialize + ComponentMessageIDs + Debug,
+    IDType: IDClass,
 {
-    list: Rc<RefCell<ServerComponentList<T>>>,
+    list: Rc<RefCell<ServerComponentList<IDType, T>>>,
 }
 
-impl<T> PubUserCompList<T>
+impl<IDType, T> PubUserCompList<IDType, T>
 where
     T: Serialize + ComponentMessageIDs + Debug,
+    IDType: IDClass,
 {
     /// Create a new list
     fn new(tx: CallbackPtr) -> Self {
@@ -373,25 +396,28 @@ where
     }
 
     /// Create a new component. Initial state for the component should be provided, and in return a reference to the new component is given.
-    pub fn new_component(&mut self, new_t: T) -> ComponentReference<T> {
+    pub fn new_component(&mut self, new_t: T) -> ComponentReference<IDType, T> {
         self.list
             .borrow_mut()
             .new_component(new_t, self.list.clone())
     }
 
-    pub fn new_owned_component(&mut self, new_t: T) -> ComponentReference<T> {
+    pub fn new_owned_component(
+        &mut self,
+        new_t: T,
+    ) -> ComponentReference<IDType, T> {
         self.list
             .borrow_mut()
             .new_owned_component(new_t, self.list.clone())
     }
 
     /// Discover a component by its ID. If the ID is invalid, returns None
-    pub fn resolve(&self, id: NooID) -> Option<ComponentReference<T>> {
+    pub fn resolve(&self, id: IDType) -> Option<ComponentReference<IDType, T>> {
         self.list.borrow().resolve(id)
     }
 
     /// Inspect the contents of a component
-    pub fn inspect<F, R>(&self, id: NooID, f: F) -> Option<R>
+    pub fn inspect<F, R>(&self, id: IDType, f: F) -> Option<R>
     where
         F: FnOnce(&T) -> R,
     {
@@ -424,23 +450,23 @@ where
 pub struct ServerState {
     tx: CallbackPtr,
 
-    pub methods: PubUserCompList<ServerMethodState>,
-    pub signals: PubUserCompList<ServerSignalState>,
+    pub methods: PubUserCompList<MethodID, ServerMethodState>,
+    pub signals: PubUserCompList<SignalID, ServerSignalState>,
 
-    pub buffers: PubUserCompList<BufferState>,
-    pub buffer_views: PubUserCompList<ServerBufferViewState>,
+    pub buffers: PubUserCompList<BufferID, BufferState>,
+    pub buffer_views: PubUserCompList<BufferViewID, ServerBufferViewState>,
 
-    pub samplers: PubUserCompList<SamplerState>,
-    pub images: PubUserCompList<ServerImageState>,
-    pub textures: PubUserCompList<ServerTextureState>,
+    pub samplers: PubUserCompList<SamplerID, SamplerState>,
+    pub images: PubUserCompList<ImageID, ServerImageState>,
+    pub textures: PubUserCompList<TextureID, ServerTextureState>,
 
-    pub materials: PubUserCompList<ServerMaterialState>,
-    pub geometries: PubUserCompList<ServerGeometryState>,
+    pub materials: PubUserCompList<MaterialID, ServerMaterialState>,
+    pub geometries: PubUserCompList<GeometryID, ServerGeometryState>,
 
-    pub tables: PubUserCompList<ServerTableState>,
-    pub plots: PubUserCompList<ServerPlotState>,
+    pub tables: PubUserCompList<TableID, ServerTableState>,
+    pub plots: PubUserCompList<PlotID, ServerPlotState>,
 
-    pub entities: PubUserCompList<ServerEntityState>,
+    pub entities: PubUserCompList<EntityID, ServerEntityState>,
 
     pub(crate) comm: ServerDocumentUpdate,
 
@@ -549,14 +575,14 @@ impl ServerState {
     /// This will panic if the broadcast queue is unable to accept more content.
     pub fn issue_signal(
         &self,
-        signals: &ComponentReference<ServerSignalState>,
+        signals: &SignalReference,
         context: Option<ServerSignalInvokeObj>,
         arguments: Vec<value::Value>,
     ) {
         let recorder = Recorder::record(
             ServerMessageIDs::MsgSignalInvoke as u32,
             &MessageSignalInvoke {
-                id: signals.id(),
+                id: signals.id().as_nooid(),
                 context,
                 signal_data: arguments,
             },
@@ -592,23 +618,17 @@ pub type ServerStatePtr = Arc<Mutex<ServerState>>;
 #[derive(Clone)]
 pub enum InvokeObj {
     Document,
-    Entity(ComponentReference<ServerEntityState>),
-    Table(ComponentReference<ServerTableState>),
-    Plot(ComponentReference<ServerPlotState>),
+    Entity(EntityReference),
+    Table(TableReference),
+    Plot(PlotReference),
 }
 
 /// Helper enum to describe the target of a signal invocation
-pub type ServerSignalInvokeObj = SignalInvokeObj<
-    ComponentReference<ServerEntityState>,
-    ComponentReference<ServerTableState>,
-    ComponentReference<ServerPlotState>,
->;
+pub type ServerSignalInvokeObj =
+    SignalInvokeObj<EntityReference, TableReference, PlotReference>;
 
-pub type ServerMessageSignalInvoke = MessageSignalInvoke<
-    ComponentReference<ServerEntityState>,
-    ComponentReference<ServerTableState>,
-    ComponentReference<ServerPlotState>,
->;
+pub type ServerMessageSignalInvoke =
+    MessageSignalInvoke<EntityReference, TableReference, PlotReference>;
 
 /// The result of a method invocation.
 ///

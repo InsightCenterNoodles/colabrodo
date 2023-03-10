@@ -30,10 +30,10 @@ use crate::{
 
 #[derive(Clone)]
 pub struct TableSignals {
-    sig_reset: ComponentReference<ServerSignalState>,
-    sig_updated: ComponentReference<ServerSignalState>,
-    sig_row_remove: ComponentReference<ServerSignalState>,
-    sig_selection_update: ComponentReference<ServerSignalState>,
+    sig_reset: SignalReference,
+    sig_updated: SignalReference,
+    sig_row_remove: SignalReference,
+    sig_selection_update: SignalReference,
 }
 
 impl TableSignals {
@@ -104,13 +104,10 @@ pub struct TableSystem {
 
     signals: TableSignals,
 
-    managed_tables: HashMap<
-        ComponentReference<ServerTableState>,
-        Arc<Mutex<TableController>>,
-    >,
+    managed_tables: HashMap<TableReference, Arc<Mutex<TableController>>>,
 
-    valid_signal_hash: HashSet<ComponentReference<ServerSignalState>>,
-    valid_method_hash: HashSet<ComponentReference<ServerMethodState>>,
+    valid_signal_hash: HashSet<SignalReference>,
+    valid_method_hash: HashSet<MethodReference>,
 }
 
 impl TableSystem {
@@ -247,7 +244,7 @@ impl TableSystem {
 
     pub fn register_table(
         &mut self,
-        table: ComponentReference<ServerTableState>,
+        table: TableReference,
         storage: impl TableTrait + 'static,
     ) {
         self.managed_tables.insert(
@@ -267,7 +264,7 @@ impl TableSystem {
 
     fn attach(
         &mut self,
-        table: ComponentReference<ServerTableState>,
+        table: TableReference,
         state: Arc<Mutex<ServerState>>,
     ) {
         let lock = state.lock().unwrap();
@@ -442,7 +439,7 @@ fn on_table_clear(
 // =============================================================================
 
 pub struct TableController {
-    table_reference: ComponentReference<ServerTableState>,
+    table_reference: TableReference,
     signals: TableSignals,
     subscribers: HashMap<uuid::Uuid, mpsc::UnboundedSender<Vec<u8>>>,
     table: Box<dyn TableTrait>,
@@ -462,14 +459,10 @@ impl TableController {
         self.table.get_init_data()
     }
 
-    fn broadcast(
-        &self,
-        signal: &ComponentReference<ServerSignalState>,
-        args: Vec<Value>,
-    ) {
+    fn broadcast(&self, signal: &SignalReference, args: Vec<Value>) {
         let data = {
             let sig_info = ServerMessageSignalInvoke {
-                id: signal.id(),
+                id: signal.id().0,
                 context: Some(ServerSignalInvokeObj {
                     table: Some(self.table_reference.clone()),
                     ..Default::default()
