@@ -41,7 +41,7 @@ pub fn emit_optional_patch_function(input: TokenStream) -> TokenStream {
 
                 h.send_to_broadcast(recorder);
 
-                let mut host_state = h.0.borrow_mut();
+                h.0.mutate(|host_state| {{
         "
     );
 
@@ -78,7 +78,7 @@ pub fn emit_optional_patch_function(input: TokenStream) -> TokenStream {
     }
 
     // finish off each part
-    ret_impl.push_str("\n}\n}\n");
+    ret_impl.push_str("});\n}\n}\n");
 
     //print!("{}", ret_impl);
 

@@ -20,7 +20,6 @@ pub use colabrodo_common::server_communication::{
 };
 use indexmap::IndexMap;
 use serde::{ser::SerializeSeq, Serialize};
-use std::cell::{Ref, RefCell, RefMut};
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::rc::{Rc, Weak};
@@ -46,7 +45,7 @@ where
     IDType: IDClass,
 {
     id: IDType,
-    host: Rc<RefCell<ServerComponentList<IDType, T>>>,
+    host: Arc<Mutex<ServerComponentList<IDType, T>>>,
 }
 
 impl<IDType, T> Debug for ComponentCell<IDType, T>
@@ -78,7 +77,7 @@ where
         let mut _holder: Option<T>;
 
         {
-            let mut h = self.host.borrow_mut();
+            let mut h = self.host.lock().unwrap();
             _holder = h.return_id(self.id);
         }
 
@@ -96,89 +95,33 @@ where
         self.id
     }
 
-    /// Obtain the component. This is done in a somewhat roundabout way,
-    /// As the containing list is a mutable shared item.
-    pub fn get(&self) -> ComponentCellGuard<IDType, T> {
-        ComponentCellGuard {
-            guard: self.host.borrow(),
-            id: self.id,
-        }
-        //std::cell::Ref::map(self.host.borrow(), |x| x.get_data(self.id))
+    pub fn inspect<F, R>(&self, f: F) -> Option<R>
+    where
+        F: FnOnce(&T) -> R,
+    {
+        self.host.lock().unwrap().get_data(self.id).map(f)
     }
 
-    /// Obtain the component for mutation. Should not be called by users directly, only for our updating infrastructure.
-    pub(crate) fn borrow_mut(&self) -> ComponentCellGuardMut<IDType, T> {
-        //std::cell::Ref::map(self.host.borrow(), |x| &x.get_data_mut(self.id))
-        ComponentCellGuardMut {
-            guard: self.host.borrow_mut(),
-            id: self.id,
-        }
+    pub(crate) fn mutate<F, R>(&self, f: F) -> Option<R>
+    where
+        F: FnOnce(&mut T) -> R,
+    {
+        self.host.lock().unwrap().get_data_mut(self.id).map(f)
     }
 
     /// Send a given message to the server broadcast pipeline
     pub(crate) fn send_to_broadcast(&self, rec: Recorder) {
-        self.host.borrow_mut().send_to_broadcast(rec);
+        self.host.lock().unwrap().send_to_broadcast(rec);
     }
 }
 
-pub struct ComponentCellGuard<'a, IDType, T>
-where
-    T: Serialize + ComponentMessageIDs + Debug,
-    IDType: IDClass,
-{
-    guard: Ref<'a, ServerComponentList<IDType, T>>,
-    id: IDType,
-}
-
-impl<'a, IDType, T> std::ops::Deref for ComponentCellGuard<'a, IDType, T>
-where
-    T: Serialize + ComponentMessageIDs + Debug,
-    IDType: IDClass,
-{
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        self.guard.get_data(self.id).unwrap()
-    }
-}
-
-pub struct ComponentCellGuardMut<'a, IDType, T>
-where
-    T: Serialize + ComponentMessageIDs + Debug,
-    IDType: IDClass,
-{
-    guard: RefMut<'a, ServerComponentList<IDType, T>>,
-    id: IDType,
-}
-
-impl<'a, IDType, T> std::ops::Deref for ComponentCellGuardMut<'a, IDType, T>
-where
-    T: Serialize + ComponentMessageIDs + Debug,
-    IDType: IDClass,
-{
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        self.guard.get_data(self.id).unwrap()
-    }
-}
-
-impl<'a, IDType, T> std::ops::DerefMut for ComponentCellGuardMut<'a, IDType, T>
-where
-    T: Serialize + ComponentMessageIDs + Debug,
-    IDType: IDClass,
-{
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.guard.get_data_mut(self.id).unwrap()
-    }
-}
 // =============================================================================
 
 /// A shared pointer to a component. This is an internal only type.
 /// It is used primarily to make a distinction when serializing lists
 /// of component pointers: this will serialize the actual component content.
 #[derive(Debug)]
-struct ComponentPtr<IDType, T>(Rc<ComponentCell<IDType, T>>)
+struct ComponentPtr<IDType, T>(Arc<ComponentCell<IDType, T>>)
 where
     T: Serialize + ComponentMessageIDs + Debug,
     IDType: IDClass;
@@ -192,7 +135,7 @@ where
     where
         S: serde::Serializer,
     {
-        self.0.get().serialize(serializer)
+        self.0.inspect(|t| t.serialize(serializer)).unwrap()
     }
 }
 
@@ -283,7 +226,7 @@ impl<
     fn new_component(
         &mut self,
         new_t: T,
-        host: Rc<RefCell<ServerComponentList<IDType, T>>>,
+        host: Arc<Mutex<ServerComponentList<IDType, T>>>,
     ) -> ComponentReference<IDType, T> {
         let new_id = self.provision_id();
 
@@ -321,7 +264,7 @@ impl<
     fn new_owned_component(
         &mut self,
         new_t: T,
-        host: Rc<RefCell<ServerComponentList<IDType, T>>>,
+        host: Arc<Mutex<ServerComponentList<IDType, T>>>,
     ) -> ComponentReference<IDType, T> {
         let ret = self.new_component(new_t, host);
         self.owned_list.push(ret.0.clone());
@@ -351,10 +294,6 @@ impl<
         }
     }
 
-    fn inspect(&self, id: IDType) -> Option<&T> {
-        self.list.get(&id)
-    }
-
     /// Function that only exists to help serialize all items in this list
     fn dump_state_helper<S>(&self, s: &mut S) -> Result<(), S::Error>
     where
@@ -380,7 +319,7 @@ where
     T: Serialize + ComponentMessageIDs + Debug,
     IDType: IDClass,
 {
-    list: Rc<RefCell<ServerComponentList<IDType, T>>>,
+    list: Arc<Mutex<ServerComponentList<IDType, T>>>,
 }
 
 impl<IDType, T> PubUserCompList<IDType, T>
@@ -391,14 +330,15 @@ where
     /// Create a new list
     fn new(tx: CallbackPtr) -> Self {
         Self {
-            list: Rc::new(RefCell::new(ServerComponentList::new(tx))),
+            list: Arc::new(Mutex::new(ServerComponentList::new(tx))),
         }
     }
 
     /// Create a new component. Initial state for the component should be provided, and in return a reference to the new component is given.
     pub fn new_component(&mut self, new_t: T) -> ComponentReference<IDType, T> {
         self.list
-            .borrow_mut()
+            .lock()
+            .unwrap()
             .new_component(new_t, self.list.clone())
     }
 
@@ -407,13 +347,14 @@ where
         new_t: T,
     ) -> ComponentReference<IDType, T> {
         self.list
-            .borrow_mut()
+            .lock()
+            .unwrap()
             .new_owned_component(new_t, self.list.clone())
     }
 
     /// Discover a component by its ID. If the ID is invalid, returns None
     pub fn resolve(&self, id: IDType) -> Option<ComponentReference<IDType, T>> {
-        self.list.borrow().resolve(id)
+        self.list.lock().unwrap().resolve(id)
     }
 
     /// Inspect the contents of a component
@@ -421,12 +362,12 @@ where
     where
         F: FnOnce(&T) -> R,
     {
-        self.list.borrow().inspect(id).map(f)
+        self.list.lock().unwrap().get_data(id).map(f)
     }
 
     /// Ask how many components are in this list
     pub fn len(&self) -> usize {
-        self.list.borrow().len()
+        self.list.lock().unwrap().len()
     }
 
     /// Ask if the list is empty
@@ -439,7 +380,7 @@ where
     where
         S: SerializeSeq,
     {
-        self.list.borrow().dump_state_helper(s)
+        self.list.lock().unwrap().dump_state_helper(s)
     }
 }
 

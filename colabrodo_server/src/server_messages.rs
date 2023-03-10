@@ -376,7 +376,7 @@ pub trait BufferViewStateHelpers {
 
 impl BufferViewStateHelpers for ServerBufferViewState {
     fn new_from_whole_buffer(buffer: BufferReference) -> Self {
-        let buffer_size = buffer.0.get().size;
+        let buffer_size = buffer.0.inspect(|t| t.size).unwrap_or(0);
 
         Self {
             name: None,

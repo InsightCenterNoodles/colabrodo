@@ -86,46 +86,6 @@ impl Default for ServerOptions {
     }
 }
 
-// #[derive(Debug)]
-// /// A placeholder if the user server doesn't support commands
-// pub struct DefaultCommand {}
-
-// #[derive(Debug)]
-// /// A placeholder if the user server doesn't support initialization arguments
-// pub struct NoInit {}
-
-/// Trait for user servers to implement
-// pub trait AsyncServer {
-//     /// Type to use for the handle command callback
-//     type CommandType;
-
-//     /// Called when a new client connects. This is before any introduction is received
-//     #[allow(unused_variables)]
-//     fn client_connected(&mut self, record: ClientRecord) {}
-
-//     /// Called when a client disconnects.
-//     #[allow(unused_variables)]
-//     fn client_disconnected(&mut self, client_id: uuid::Uuid) {}
-
-//     /// Called when an async command is received
-//     #[allow(unused_variables)]
-//     fn handle_command(&mut self, command: Self::CommandType) {}
-
-//     // #[allow(unused_variables)]
-//     // fn invoke(
-//     //     &mut self,
-//     //     server_state: &mut ServerState,
-//     //     method: ComponentReference<MethodState>,
-//     //     context: InvokeObj,
-//     //     client_id: uuid::Uuid,
-//     //     args: Vec<value::Value>,
-//     // ) -> MethodResult {
-//     //     Err(MethodException::method_not_found(Some(
-//     //         "No methods are available",
-//     //     )))
-//     // }
-// }
-
 /// Public entry point to the server process.
 ///
 /// Note that this function will spawn a number of threads.
@@ -223,23 +183,6 @@ async fn shutdown_watcher(
         }
     }
 }
-
-// async fn command_sender<T>(
-//     mut command_queue: mpsc::Receiver<T::CommandType>,
-//     to_server_send: tokio::sync::mpsc::Sender<ToServerMessage>,
-// ) where
-//     T: AsyncServer + 'static,
-//     T::CommandType: std::marker::Send + Debug + 'static,
-// {
-//     log::debug!("Launching command sender");
-//     while let Some(msg) = command_queue.recv().await {
-//         to_server_send
-//             .send(ToServerMessage::Command(msg))
-//             .await
-//             .unwrap();
-//     }
-//     log::debug!("Done with command sender");
-// }
 
 // Task to construct a listening socket
 async fn listen(opts: &ServerOptions) -> TcpListener {
@@ -556,13 +499,22 @@ async fn invoke_helper(
                 find_method_in_state(&method, &lock.comm.methods_list)
             }
             InvokeObj::Entity(x) => {
-                find_method_in_state(&method, &x.0.get().mutable.methods_list)
+                x.0.inspect(|t| {
+                    find_method_in_state(&method, &t.mutable.methods_list)
+                })
+                .unwrap_or(false)
             }
             InvokeObj::Plot(x) => {
-                find_method_in_state(&method, &x.0.get().mutable.methods_list)
+                x.0.inspect(|t| {
+                    find_method_in_state(&method, &t.mutable.methods_list)
+                })
+                .unwrap_or(false)
             }
             InvokeObj::Table(x) => {
-                find_method_in_state(&method, &x.0.get().mutable.methods_list)
+                x.0.inspect(|t| {
+                    find_method_in_state(&method, &t.mutable.methods_list)
+                })
+                .unwrap_or(false)
             }
         };
 
