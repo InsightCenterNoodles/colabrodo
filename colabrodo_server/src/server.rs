@@ -4,8 +4,8 @@ use std::fmt::Debug;
 use std::sync::Arc;
 use std::sync::Mutex;
 
+use crate::server_messages::AsyncMethodContent;
 use crate::server_messages::MethodReference;
-use crate::server_messages::MethodSignalContent;
 use crate::server_messages::Recorder;
 pub use crate::server_messages::{
     ComponentReference, MethodHandlerSlot, ServerDocumentUpdate,
@@ -458,9 +458,7 @@ async fn invoke_helper(
     client_id: uuid::Uuid,
     invoke: MethodInvokeMessage,
 ) -> MethodResult {
-    let signal;
-
-    {
+    let signal = {
         let lock = state.lock().unwrap();
 
         let method = lock.methods.resolve(invoke.method).ok_or_else(|| {
@@ -526,24 +524,24 @@ async fn invoke_helper(
         }
 
         // send it along
-        signal = lock
-            .methods
-            .inspect(method.id(), |m| m.state.dest.clone())
-            .unwrap();
-    }
+        lock.methods
+            .inspect(method.id(), |m| m.state.clone())
+            .unwrap()
+    };
 
-    let msg = MethodSignalContent {
+    let msg = AsyncMethodContent {
+        state: state.clone(),
         context: invoke.context,
         args: invoke.args,
         from: client_id,
     };
 
-    if let Some(s) = signal {
-        let mut lock = state.lock().unwrap();
+    if let Some(s) = signal.channels {
+        let mut func = s.lock().unwrap();
 
-        let func = s.lock().unwrap();
-
-        return (*func).activate(&mut lock, msg);
+        if let Some(rep) = func.activate(msg).await {
+            return rep.result;
+        }
     }
 
     Err(MethodException {

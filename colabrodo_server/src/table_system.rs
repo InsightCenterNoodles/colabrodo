@@ -128,11 +128,9 @@ impl TableSystem {
             doc: Some("Subscribe to the given table".to_string()),
             return_doc: Some("Initial table data structure".to_string()),
             arg_doc: vec![],
-            state: MethodHandlerSlot::new_from_closure(
-                closure!(clone ret, |s, m| {
-                   on_table_subscribe(s, m, ret.clone())
-                }),
-            ),
+            state: MethodHandlerSlot::assign(closure!(clone ret, |m| {
+                on_table_subscribe(m, ret.clone())
+            })),
         });
 
         let tbl_insert = lock.methods.new_owned_component(ServerMethodState {
@@ -146,11 +144,9 @@ impl TableSystem {
                         .to_string(),
                 ),
             }],
-            state: MethodHandlerSlot::new_from_closure(
-                closure!(clone ret, |s, m| {
-                   on_table_insert(s, m, ret.clone())
-                }),
-            ),
+            state: MethodHandlerSlot::assign(closure!(clone ret, |m| {
+               on_table_insert(m, ret.clone())
+            })),
         });
 
         let tbl_update = lock.methods.new_owned_component(ServerMethodState {
@@ -170,11 +166,9 @@ impl TableSystem {
                     ),
                 },
             ],
-            state: MethodHandlerSlot::new_from_closure(
-                closure!(clone ret, |s, m| {
-                   on_table_update(s, m, ret.clone())
-                }),
-            ),
+            state: MethodHandlerSlot::assign(closure!(clone ret, |m| {
+               on_table_update(m, ret.clone())
+            })),
         });
 
         let tbl_remove = lock.methods.new_owned_component(ServerMethodState {
@@ -185,11 +179,9 @@ impl TableSystem {
                 name: "keys".to_string(),
                 doc: Some("A list of keys to remove.".to_string()),
             }],
-            state: MethodHandlerSlot::new_from_closure(
-                closure!(clone ret, |s, m| {
-                   on_table_remove(s, m, ret.clone())
-                }),
-            ),
+            state: MethodHandlerSlot::assign(closure!(clone ret, |m| {
+               on_table_remove(m, ret.clone())
+            })),
         });
 
         let tbl_clear = lock.methods.new_owned_component(ServerMethodState {
@@ -197,11 +189,9 @@ impl TableSystem {
             doc: Some("Ask to clear all data in the table".to_string()),
             return_doc: None,
             arg_doc: vec![],
-            state: MethodHandlerSlot::new_from_closure(
-                closure!(clone ret, |s, m| {
-                   on_table_clear(s, m, ret.clone())
-                }),
-            ),
+            state: MethodHandlerSlot::assign(closure!(clone ret, |m| {
+               on_table_clear(m, ret.clone())
+            })),
         });
 
         let tbl_up_sel = lock.methods.new_owned_component(ServerMethodState {
@@ -212,11 +202,9 @@ impl TableSystem {
                 name: "selection".to_string(),
                 doc: Some("A selection object".to_string()),
             }],
-            state: MethodHandlerSlot::new_from_closure(
-                closure!(clone ret, |s, m| {
-                   on_table_update_selection(s, m, ret.clone())
-                }),
-            ),
+            state: MethodHandlerSlot::assign(closure!(clone ret, |m| {
+               on_table_update_selection(m, ret.clone())
+            })),
         });
 
         {
@@ -245,7 +233,7 @@ impl TableSystem {
     pub fn register_table(
         &mut self,
         table: TableReference,
-        storage: impl TableTrait + 'static,
+        storage: impl TableTrait + Send + 'static,
     ) {
         self.managed_tables.insert(
             table.clone(),
@@ -347,24 +335,30 @@ fn translate_result(ret: Option<()>) -> MethodResult {
 }
 
 fn on_table_subscribe(
-    state: &mut ServerState,
-    msg: MethodSignalContent,
+    msg: AsyncMethodContent,
     table_system: Arc<Mutex<TableSystem>>,
 ) -> MethodResult {
-    let controller = resolve_manager(state, msg.context, table_system)?;
+    let controller = resolve_manager(
+        &mut msg.state.lock().unwrap(),
+        msg.context,
+        table_system,
+    )?;
     let mut controller = controller.lock().unwrap();
 
-    let res = controller.on_table_subscribe(state, msg);
+    let res = controller.on_table_subscribe(msg);
 
     Ok(Some(to_cbor(&res)))
 }
 
 fn on_table_insert(
-    state: &mut ServerState,
-    msg: MethodSignalContent,
+    msg: AsyncMethodContent,
     table_system: Arc<Mutex<TableSystem>>,
 ) -> MethodResult {
-    let controller = resolve_manager(state, msg.context, table_system)?;
+    let controller = resolve_manager(
+        &mut msg.state.lock().unwrap(),
+        msg.context,
+        table_system,
+    )?;
     let mut controller = controller.lock().unwrap();
 
     let ret = controller.insert_data(
@@ -376,11 +370,14 @@ fn on_table_insert(
 }
 
 fn on_table_update(
-    state: &mut ServerState,
-    msg: MethodSignalContent,
+    msg: AsyncMethodContent,
     table_system: Arc<Mutex<TableSystem>>,
 ) -> MethodResult {
-    let controller = resolve_manager(state, msg.context, table_system)?;
+    let controller = resolve_manager(
+        &mut msg.state.lock().unwrap(),
+        msg.context,
+        table_system,
+    )?;
     let mut controller = controller.lock().unwrap();
 
     let (keys, data) = arg_to_tuple!(msg.args, Vec<i64>, Vec<Vec<Value>>)
@@ -392,11 +389,14 @@ fn on_table_update(
 }
 
 fn on_table_remove(
-    state: &mut ServerState,
-    msg: MethodSignalContent,
+    msg: AsyncMethodContent,
     table_system: Arc<Mutex<TableSystem>>,
 ) -> MethodResult {
-    let controller = resolve_manager(state, msg.context, table_system)?;
+    let controller = resolve_manager(
+        &mut msg.state.lock().unwrap(),
+        msg.context,
+        table_system,
+    )?;
     let mut controller = controller.lock().unwrap();
 
     let (keys,) = arg_to_tuple!(msg.args, Vec<i64>)
@@ -408,11 +408,14 @@ fn on_table_remove(
 }
 
 fn on_table_update_selection(
-    state: &mut ServerState,
-    msg: MethodSignalContent,
+    msg: AsyncMethodContent,
     table_system: Arc<Mutex<TableSystem>>,
 ) -> MethodResult {
-    let controller = resolve_manager(state, msg.context, table_system)?;
+    let controller = resolve_manager(
+        &mut msg.state.lock().unwrap(),
+        msg.context,
+        table_system,
+    )?;
     let mut controller = controller.lock().unwrap();
 
     let (selection,) = arg_to_tuple!(msg.args, Selection)
@@ -424,11 +427,14 @@ fn on_table_update_selection(
 }
 
 fn on_table_clear(
-    state: &mut ServerState,
-    msg: MethodSignalContent,
+    msg: AsyncMethodContent,
     table_system: Arc<Mutex<TableSystem>>,
 ) -> MethodResult {
-    let controller = resolve_manager(state, msg.context, table_system)?;
+    let controller = resolve_manager(
+        &mut msg.state.lock().unwrap(),
+        msg.context,
+        table_system,
+    )?;
     let mut controller = controller.lock().unwrap();
 
     let ret = controller.clear();
@@ -442,18 +448,16 @@ pub struct TableController {
     table_reference: TableReference,
     signals: TableSignals,
     subscribers: HashMap<uuid::Uuid, mpsc::UnboundedSender<Vec<u8>>>,
-    table: Box<dyn TableTrait>,
+    table: Box<dyn TableTrait + Send + 'static>,
 }
 
 impl TableController {
-    fn on_table_subscribe(
-        &mut self,
-        state: &mut ServerState,
-        msg: MethodSignalContent,
-    ) -> TableInitData {
+    fn on_table_subscribe(&mut self, msg: AsyncMethodContent) -> TableInitData {
+        let lock = msg.state.lock().unwrap();
+
         self.subscribers.insert(
             msg.from,
-            state.get_client_info(msg.from).unwrap().sender.clone(),
+            lock.get_client_info(msg.from).unwrap().sender.clone(),
         );
 
         self.table.get_init_data()

@@ -7,6 +7,7 @@ use core::fmt::Debug;
 use serde::Serialize;
 use std::sync::Arc;
 use std::sync::Mutex;
+use tokio::sync::mpsc;
 
 use colabrodo_common::common;
 use colabrodo_common::types::*;
@@ -20,7 +21,7 @@ pub use colabrodo_common::components::{
 
 use crate::server_state::ComponentCell;
 use crate::server_state::MethodResult;
-use crate::server_state::ServerState;
+use crate::server_state::ServerStatePtr;
 
 // Traits ==============================================
 
@@ -30,59 +31,86 @@ pub trait UpdatableStateItem {
     fn patch(self, m: &Self::HostState);
 }
 
-#[derive(Debug)]
-pub struct MethodSignalContent {
+pub struct AsyncMethodContent {
+    pub state: ServerStatePtr,
     pub context: Option<InvokeIDType>,
     pub args: Vec<value::Value>,
     pub from: uuid::Uuid,
 }
 
-pub trait MethodHandler {
-    fn activate(
-        &self,
-        state: &mut ServerState,
-        message: MethodSignalContent,
-    ) -> MethodResult;
+pub struct AsyncMethodReply {
+    pub result: MethodResult,
 }
 
 #[derive(Default)]
-pub struct MethodHandlerSlot {
-    pub(crate) dest: Option<Arc<Mutex<dyn MethodHandler>>>,
+pub struct MethodHandlerChannels {
+    pub(crate) tx: Option<mpsc::Sender<AsyncMethodContent>>,
+    pub(crate) rx: Option<mpsc::Receiver<AsyncMethodReply>>,
 }
 
-type Callback = dyn Fn(&mut ServerState, MethodSignalContent) -> MethodResult;
+async fn per_method_spinner<F>(
+    f: F,
+    mut input: mpsc::Receiver<AsyncMethodContent>,
+    output: mpsc::Sender<AsyncMethodReply>,
+) where
+    F: Fn(AsyncMethodContent) -> MethodResult + Send,
+{
+    while let Some(m) = input.recv().await {
+        let result = f(m);
 
-struct ClosureMethodHandler {
-    f: Box<Callback>,
-}
-
-impl MethodHandler for ClosureMethodHandler {
-    fn activate(
-        &self,
-        state: &mut ServerState,
-        message: MethodSignalContent,
-    ) -> MethodResult {
-        (self.f)(state, message)
+        if let Err(_) = output.send(AsyncMethodReply { result }).await {
+            return;
+        }
     }
 }
 
-impl MethodHandlerSlot {
-    pub fn new<F>(f: F) -> Self
+impl MethodHandlerChannels {
+    pub fn assign<F>(f: F) -> Self
     where
-        F: MethodHandler + 'static,
+        F: Fn(AsyncMethodContent) -> MethodResult + Send + 'static,
     {
+        let (to_tx, to_rx) = mpsc::channel(1);
+        let (from_tx, from_rx) = mpsc::channel(1);
+
+        tokio::spawn(per_method_spinner(f, to_rx, from_tx));
+
         Self {
-            dest: Some(Arc::new(Mutex::new(f))),
+            tx: Some(to_tx),
+            rx: Some(from_rx),
         }
     }
 
-    pub fn new_from_closure<C>(function: C) -> Self
+    pub(crate) async fn activate(
+        &mut self,
+        content: AsyncMethodContent,
+    ) -> Option<AsyncMethodReply> {
+        if let Some(channel) = &self.tx {
+            if let Ok(_) = channel.send(content).await {
+                if let Some(recv_channel) = &mut self.rx {
+                    return recv_channel.recv().await;
+                }
+            }
+        }
+
+        None
+    }
+}
+
+#[derive(Clone, Default)]
+pub struct MethodHandlerSlot {
+    pub(crate) channels: Option<Arc<Mutex<MethodHandlerChannels>>>,
+}
+
+impl MethodHandlerSlot {
+    pub fn assign<F>(f: F) -> Self
     where
-        C: Fn(&mut ServerState, MethodSignalContent) -> MethodResult + 'static,
+        F: Fn(AsyncMethodContent) -> MethodResult + Send + 'static,
     {
-        Self::new(ClosureMethodHandler {
-            f: Box::new(function),
-        })
+        Self {
+            channels: Some(Arc::new(Mutex::new(
+                MethodHandlerChannels::assign(f),
+            ))),
+        }
     }
 }
 

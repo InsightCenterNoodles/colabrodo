@@ -1,7 +1,6 @@
 use closure::closure;
 use colabrodo_server::{server::*, server_messages::*};
 
-
 struct PingPongState {
     count: u64,
 }
@@ -14,7 +13,7 @@ fn setup(state: ServerStatePtr) {
     let mut state_lock = state.lock().unwrap();
 
     let function = closure!(
-        move ping_pong_state, |_s: &mut ServerState, m : MethodSignalContent|{
+        move ping_pong_state, | m : AsyncMethodContent |{
             log::info!("Function called {}", ping_pong_state.count);
             Ok(Some(ciborium::value::Value::Array(m.args)))
         }
@@ -30,7 +29,7 @@ fn setup(state: ServerStatePtr) {
             name: "First arg".to_string(),
             doc: Some("Example doc".to_string()),
         }],
-        state: MethodHandlerSlot::new_from_closure(function),
+        state: MethodHandlerSlot::assign(function),
     });
 
     state_lock.update_document(ServerDocumentUpdate {

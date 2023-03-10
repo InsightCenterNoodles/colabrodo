@@ -33,8 +33,8 @@ fn setup_server(state: ServerStatePtr) {
             name: "First arg".to_string(),
             doc: Some("Example doc".to_string()),
         }],
-        state: MethodHandlerSlot::new_from_closure(move |s, m| {
-            s.issue_signal(
+        state: MethodHandlerSlot::assign(move |m| {
+            m.state.lock().unwrap().issue_signal(
                 &sig_copy,
                 None,
                 vec![value::Value::Text("Hi there".to_string())],
@@ -49,9 +49,9 @@ fn setup_server(state: ServerStatePtr) {
         doc: None,
         return_doc: None,
         arg_doc: vec![],
-        state: MethodHandlerSlot::new_from_closure(|s, _| {
+        state: MethodHandlerSlot::assign(|m| {
             log::info!("Shutdown method invoked");
-            s.shutdown();
+            m.state.lock().unwrap().shutdown();
             Ok(None)
         }),
     });
