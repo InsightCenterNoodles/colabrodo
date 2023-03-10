@@ -6,6 +6,7 @@ use colabrodo_macros::UpdatableStateItem;
 use core::fmt::Debug;
 use serde::Serialize;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use colabrodo_common::common;
 use colabrodo_common::types::*;
@@ -100,7 +101,7 @@ impl Debug for MethodHandlerSlot {
 /// This handle also hashes based on the underlying content, so it can be used in hash maps, etc.
 #[derive(Debug)]
 pub struct ComponentReference<IDType, T>(
-    pub(crate) Rc<ComponentCell<IDType, T>>,
+    pub(crate) Arc<ComponentCell<IDType, T>>,
 )
 where
     T: Serialize + ComponentMessageIDs + Debug,
@@ -111,7 +112,7 @@ where
     T: Serialize + ComponentMessageIDs + Debug,
     IDType: IDClass,
 {
-    pub fn new(ptr: Rc<ComponentCell<IDType, T>>) -> Self {
+    pub fn new(ptr: Arc<ComponentCell<IDType, T>>) -> Self {
         Self(ptr)
     }
 
@@ -165,7 +166,7 @@ where
     IDType: IDClass,
 {
     fn eq(&self, other: &Self) -> bool {
-        Rc::ptr_eq(&self.0, &other.0)
+        Arc::ptr_eq(&self.0, &other.0)
     }
 }
 

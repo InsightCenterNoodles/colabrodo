@@ -164,10 +164,10 @@ where
     // however, this is not guaranteed, and some clients scream if it is not
     // true.
     list: IndexMap<IDType, T>,
-    id_list: HashMap<IDType, Weak<ComponentCell<IDType, T>>>,
+    id_list: HashMap<IDType, std::sync::Weak<ComponentCell<IDType, T>>>,
     broadcast: CallbackPtr,
     free_list: Vec<IDType>,
-    owned_list: Vec<Rc<ComponentCell<IDType, T>>>,
+    owned_list: Vec<Arc<ComponentCell<IDType, T>>>,
 }
 
 impl<
@@ -254,9 +254,9 @@ impl<
 
         let cell = ComponentCell::<IDType, T> { id: new_id, host };
 
-        let cell = Rc::new(cell);
+        let cell = Arc::new(cell);
 
-        self.id_list.insert(new_id, Rc::downgrade(&cell));
+        self.id_list.insert(new_id, Arc::downgrade(&cell));
 
         ComponentReference(cell)
     }
