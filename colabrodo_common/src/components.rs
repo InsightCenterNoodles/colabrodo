@@ -344,7 +344,7 @@ impl<ImageStateRef, SamplerStateRef> ComponentMessageIDs
 
 // =============================================================================
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 pub enum MagFilter {
     #[serde(rename = "NEAREST")]
     Nearest,
@@ -352,7 +352,7 @@ pub enum MagFilter {
     Linear,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 pub enum MinFilter {
     #[serde(rename = "NEAREST")]
     Nearest,
@@ -362,7 +362,7 @@ pub enum MinFilter {
     LinearMipmapLinear,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 pub enum SamplerMode {
     #[serde(rename = "CLAMP_TO_EDGE")]
     Clamp,
