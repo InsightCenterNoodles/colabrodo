@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::{collections::HashMap, sync::Mutex};
 
 use hyper::body::Bytes;
+use hyper::http::HeaderValue;
 use hyper::Server;
 use hyper::{
     service::{make_service_fn, service_fn},
@@ -122,6 +123,13 @@ async fn fetch_asset(asset: Arc<Asset>) -> Result<Response<Body>> {
     }
 }
 
+fn update_headers<T>(res: &mut Response<T>) {
+    res.headers_mut().insert(
+        hyper::header::ACCESS_CONTROL_ALLOW_ORIGIN,
+        HeaderValue::from_str("*").unwrap(),
+    );
+}
+
 /// Handle a get request
 async fn handle_request(
     req: Request<Body>,
@@ -130,7 +138,11 @@ async fn handle_request(
     let asset = state.lock().unwrap().on_request(req);
 
     if let Some(asset) = asset {
-        return fetch_asset(asset).await;
+        let ret = fetch_asset(asset).await.map(|mut f| {
+            update_headers(&mut f);
+            f
+        });
+        return ret;
     }
     Ok(make_not_found_code())
 }
