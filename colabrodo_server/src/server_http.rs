@@ -1,4 +1,6 @@
-//! Tools to serve binary assets over http
+//! Tools to serve binary assets over HTTP.
+//!
+//! See the cube_http example to see how to use this module.
 
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
@@ -6,6 +8,7 @@ use std::sync::Arc;
 use std::{collections::HashMap, sync::Mutex};
 
 use hyper::body::Bytes;
+use hyper::http::HeaderValue;
 use hyper::Server;
 use hyper::{
     service::{make_service_fn, service_fn},
@@ -15,7 +18,8 @@ use tokio::fs::File;
 use tokio_util::codec::{BytesCodec, FramedRead};
 
 use tokio::sync::broadcast;
-use tokio::sync::mpsc;
+
+pub use uuid;
 
 /// An asset to be served. Assets can either be in-memory, or on-disk.
 #[derive(Debug)]
@@ -25,6 +29,7 @@ pub enum Asset {
 }
 
 impl Asset {
+    /// Create a new in-memory asset from a byte slice
     pub fn new_from_slice(bytes: &[u8]) -> Self {
         Self::InMemory(Bytes::copy_from_slice(bytes))
     }
@@ -35,8 +40,9 @@ pub fn create_asset_id() -> uuid::Uuid {
     uuid::Uuid::new_v4()
 }
 
-/// Storage for all known assets
-struct AssetStore {
+/// Storage for assets to be served
+pub struct AssetStore {
+    stop_tx: broadcast::Sender<u8>,
     host_name: String,
     asset_list: HashMap<uuid::Uuid, Arc<Asset>>,
 }
@@ -49,7 +55,10 @@ impl AssetStore {
 
         let hname = format!("http://{hname}:{p}/");
 
+        let (stop_tx, _) = broadcast::channel(2);
+
         Self {
+            stop_tx,
             host_name: hname,
             asset_list: HashMap::new(),
         }
@@ -88,6 +97,9 @@ impl AssetStore {
     }
 }
 
+/// Shared pointer to an asset store
+pub type AssetStorePtr = Arc<Mutex<AssetStore>>;
+
 /// Helper to create a page-not-found response code
 fn make_not_found_code() -> Response<Body> {
     static NOTFOUND: &[u8] = b"Not Found";
@@ -122,6 +134,14 @@ async fn fetch_asset(asset: Arc<Asset>) -> Result<Response<Body>> {
     }
 }
 
+/// Add CORS header
+fn update_headers<T>(res: &mut Response<T>) {
+    res.headers_mut().insert(
+        hyper::header::ACCESS_CONTROL_ALLOW_ORIGIN,
+        HeaderValue::from_str("*").unwrap(),
+    );
+}
+
 /// Handle a get request
 async fn handle_request(
     req: Request<Body>,
@@ -130,7 +150,11 @@ async fn handle_request(
     let asset = state.lock().unwrap().on_request(req);
 
     if let Some(asset) = asset {
-        return fetch_asset(asset).await;
+        let ret = fetch_asset(asset).await.map(|mut f| {
+            update_headers(&mut f);
+            f
+        });
+        return ret;
     }
     Ok(make_not_found_code())
 }
@@ -170,29 +194,12 @@ pub enum AssetServerReply {
 /// This constructs an asset server on the given port. The server takes a stream of commands for registering and removing assets from the store. Responses to those commands are sent back on the reply stream. Note that it is assumed that only one task will be sending and receiving commands.
 ///
 /// The function will return on an error, or after the [AssetServerCommand::Shutdown] command has been sent.
-pub async fn run_asset_server(
-    options: AssetServerOptions,
-    command_stream: mpsc::Receiver<AssetServerCommand>,
-    command_replies: mpsc::Sender<AssetServerReply>,
-) {
-    let addr: SocketAddr = options.host.parse().unwrap();
-
-    let state = Arc::new(Mutex::new(AssetStore::new(addr.port())));
-
-    {
+async fn run_asset_server(state: AssetStorePtr, addr: SocketAddr) {
+    let mut stop_rx = {
         let state = state.lock().unwrap();
         log::info!("Serving binary assets on {}", state.hostname());
-    }
-
-    let (bcast_tx, mut bcast_rx) = broadcast::channel(2);
-
-    tokio::spawn(command_handler(
-        command_stream,
-        command_replies.clone(),
-        bcast_tx.subscribe(),
-        bcast_tx,
-        state.clone(),
-    ));
+        state.stop_tx.subscribe()
+    };
 
     let make_service = make_service_fn(move |_| {
         let c = state.clone();
@@ -206,10 +213,7 @@ pub async fn run_asset_server(
 
     let server = Server::bind(&addr).serve(make_service);
 
-    command_replies
-        .send(AssetServerReply::Started)
-        .await
-        .unwrap();
+    // command_replies.send(AssetServerReply::Started).unwrap();
 
     tokio::select! {
         e = server => {
@@ -217,185 +221,40 @@ pub async fn run_asset_server(
                 log::error!("HTTP server error: {e}");
             }
         },
-        _shutdown_c = bcast_rx.recv() => {
+        _shutdown_c = stop_rx.recv() => {
         }
     }
+
+    log::debug!("Asset server shut down.");
 }
 
-/// Task to handle commands
-async fn command_handler(
-    mut command_stream: mpsc::Receiver<AssetServerCommand>,
-    command_replies: mpsc::Sender<AssetServerReply>,
-    mut bcast_rx: broadcast::Receiver<u8>,
-    bcast_tx: broadcast::Sender<u8>,
-    state: Arc<Mutex<AssetStore>>,
-) {
-    loop {
-        tokio::select! {
-            msg = command_stream.recv() => {
-                if let Some(msg) = msg {
-                    match msg {
-                        AssetServerCommand::Register(id, asset) => {
-                            let url;
-                            {
-                                let mut st = state.lock().unwrap();
-                                url = st.add_asset(id, asset);
-                            }
-                            command_replies
-                                .send(AssetServerReply::Registered(id, url))
-                                .await
-                                .unwrap();
-                        }
-                        AssetServerCommand::Unregister(id) => {
-                            {
-                                let mut st = state.lock().unwrap();
-                                st.delete_asset(&id);
-                            }
-
-                            command_replies
-                                .send(AssetServerReply::Unregistered(id))
-                                .await
-                                .unwrap();
-                        }
-                        AssetServerCommand::Shutdown => {
-                            command_replies
-                                .send(AssetServerReply::ShuttingDown)
-                                .await
-                                .unwrap();
-                            bcast_tx.send(1).unwrap();
-                        }
-                    }
-                }
-            },
-            _shutdown_c = bcast_rx.recv() => {
-                return;
-            }
-        }
-    }
+/// Add an asset to a given store
+pub fn add_asset(store: AssetStorePtr, id: uuid::Uuid, asset: Asset) -> String {
+    let mut st = store.lock().unwrap();
+    st.add_asset(id, asset)
 }
 
-pub struct AssetServerLink {
-    tx_to_server: mpsc::Sender<AssetServerCommand>,
-    rx_from_server: mpsc::Receiver<AssetServerReply>,
+/// Remove an asset from a given store
+pub fn remove_asset(store: AssetStorePtr, id: uuid::Uuid) {
+    let mut st = store.lock().unwrap();
+    st.delete_asset(&id);
 }
 
-impl AssetServerLink {
-    pub async fn wait_for_start(&mut self) {
-        let get_http_startup = self.rx_from_server.recv().await.unwrap();
-
-        match get_http_startup {
-            AssetServerReply::Started => (),
-            _ => {
-                panic!("HTTP Server could not start.");
-            }
-        }
-    }
-
-    pub fn send_command(
-        &mut self,
-        command: AssetServerCommand,
-    ) -> AssetServerReply {
-        self.tx_to_server.blocking_send(command).unwrap();
-
-        self.rx_from_server.blocking_recv().unwrap()
-    }
-
-    pub async fn send_command_async(
-        &mut self,
-        command: AssetServerCommand,
-    ) -> AssetServerReply {
-        self.tx_to_server.send(command).await.unwrap();
-
-        // Now the smart thing would be to figure out if responses are correlated to replies, but as this is a single sender, single recv situation, we can skip that for the moment
-        // TODO: robustify request and recv.
-
-        self.rx_from_server.recv().await.unwrap()
-    }
-
-    pub fn add_asset(&mut self, id: uuid::Uuid, asset: Asset) -> String {
-        let reply = self.send_command(AssetServerCommand::Register(id, asset));
-
-        match reply {
-            AssetServerReply::Registered(rid, url) => {
-                assert_eq!(rid, id);
-                url
-            }
-            _ => {
-                panic!("Unexpected message!");
-            }
-        }
-    }
-
-    pub async fn add_asset_async(
-        &mut self,
-        id: uuid::Uuid,
-        asset: Asset,
-    ) -> String {
-        let reply = self
-            .send_command_async(AssetServerCommand::Register(id, asset))
-            .await;
-
-        match reply {
-            AssetServerReply::Registered(rid, url) => {
-                assert_eq!(rid, id);
-                url
-            }
-            _ => {
-                panic!("Unexpected message!");
-            }
-        }
-    }
-
-    pub fn remove_asset(&mut self, id: uuid::Uuid) {
-        let reply = self.send_command(AssetServerCommand::Unregister(id));
-
-        match reply {
-            AssetServerReply::Unregistered(rid) => {
-                assert_eq!(rid, id);
-            }
-            _ => {
-                panic!("Unexpected message!");
-            }
-        }
-    }
-
-    pub fn shutdown(&mut self) {
-        let reply = self.send_command(AssetServerCommand::Shutdown);
-
-        match reply {
-            AssetServerReply::ShuttingDown => {}
-            _ => {
-                panic!("Unexpected message!");
-            }
-        }
-    }
-
-    pub async fn shutdown_async(&mut self) {
-        let reply = self.send_command_async(AssetServerCommand::Shutdown).await;
-
-        match reply {
-            AssetServerReply::ShuttingDown => {}
-            _ => {
-                panic!("Unexpected message!");
-            }
-        }
-    }
+/// Shutdown a given store
+pub fn shutdown(store: AssetStorePtr) {
+    let st = store.lock().unwrap();
+    st.stop_tx.send(1).unwrap();
 }
 
-/// Make an asset server with some channels already set up.
-pub fn make_asset_server(
-    options: AssetServerOptions,
-) -> (impl futures_util::Future<Output = ()>, AssetServerLink) {
-    let (tx_to_server, rx_to_server) = mpsc::channel(16);
-    let (tx_from_server, rx_from_server) = mpsc::channel(16);
+/// Make an asset server, and launch the web handler
+pub fn make_asset_server(options: AssetServerOptions) -> AssetStorePtr {
+    let addr: SocketAddr = options.host.parse().unwrap();
 
-    (
-        run_asset_server(options, rx_to_server, tx_from_server),
-        AssetServerLink {
-            tx_to_server,
-            rx_from_server,
-        },
-    )
+    let state = Arc::new(Mutex::new(AssetStore::new(addr.port())));
+
+    tokio::spawn(run_asset_server(state.clone(), addr));
+
+    state
 }
 
 #[cfg(test)]
@@ -424,31 +283,24 @@ mod tests {
     }
 
     async fn simple_structure_main() {
-        let (asset_server, mut link) = make_asset_server(AssetServerOptions {
+        let asset_server = make_asset_server(AssetServerOptions {
             host: "127.0.0.1:50001".to_string(),
             ..Default::default()
         });
 
         let new_id = create_asset_id();
 
-        tokio::spawn(async move {
-            link.wait_for_start().await;
+        let url = add_asset(
+            asset_server.clone(),
+            new_id,
+            Asset::InMemory(Bytes::from(vec![10, 20, 30, 40])),
+        );
 
-            let url = link
-                .add_asset_async(
-                    new_id,
-                    Asset::InMemory(Bytes::from(vec![10, 20, 30, 40])),
-                )
-                .await;
+        let content = fetch_url(url.parse().unwrap()).await.unwrap();
 
-            let content = fetch_url(url.parse().unwrap()).await.unwrap();
+        assert_eq!(content, vec![10, 20, 30, 40]);
 
-            assert_eq!(content, vec![10, 20, 30, 40]);
-
-            link.shutdown_async().await;
-        });
-
-        asset_server.await;
+        shutdown(asset_server);
     }
 
     #[test]

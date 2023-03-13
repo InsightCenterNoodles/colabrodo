@@ -1,32 +1,24 @@
 [package]
 name = "colabrodo_client"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 
 [dependencies]
 colabrodo_common = { path = "../colabrodo_common" }
-thiserror = "1.0"
-ciborium = "0.2.0"
-ciborium-io = { version = "0.2.0", features = ["alloc"] }
+thiserror = {workspace = true}
+ciborium = {workspace = true}
+ciborium-io = {workspace = true}
 num-traits = "0.2"
 num-derive = "0.3"
-serde = "1.0.152"
-serde_with = "2.2.0"
-tokio = { version = "1", features = ["full"] }
-tokio-tungstenite = "*"
-log = "0.4"
-url = "2.2"
+serde = {workspace = true}
+serde_with ={workspace = true}
+tokio = {workspace = true}
+tokio-tungstenite = {workspace = true}
+log = {workspace = true}
+url = {workspace = true}
 futures-util = "0.3.24"
 futures-channel = "0.3.24"
-
-[dependencies.uuid]
-version = "1.2"
-features = [
-    "v4",                
-    "fast-rng",          
-    "macro-diagnostics", 
-]
-
+uuid = {workspace = true}
 
 [dev-dependencies]
 clap = { version = "4.1", features = ["derive"] }

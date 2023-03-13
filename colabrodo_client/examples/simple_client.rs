@@ -1,229 +1,10 @@
-use std::fmt::Debug;
+use std::collections::BTreeMap;
+use std::collections::HashMap;
 
-use colabrodo_client::client::*;
-use colabrodo_client::components::*;
-
+use ciborium::value::Value;
 use clap::Parser;
-
-// =============================================================================
-
-fn get_type_name<T>() -> String {
-    let mut tname = std::any::type_name::<T>();
-
-    //find '<' and chop string at that point
-
-    if let Some(index) = tname.find('<') {
-        tname = &tname[..index];
-    }
-
-    if let Some(index) = tname.rfind(":") {
-        tname = &tname[(index + 1)..];
-    }
-
-    tname.to_string()
-}
-
-#[derive(Debug)]
-struct ExampleComponentList<State: NamedComponent> {
-    ty: String,
-    list: BasicComponentList<State>,
-}
-
-impl<State: NamedComponent> Default for ExampleComponentList<State> {
-    fn default() -> Self {
-        Self {
-            ty: get_type_name::<State>(),
-            list: Default::default(),
-        }
-    }
-}
-
-impl<State: NamedComponent> ComponentList<State> for ExampleComponentList<State>
-where
-    State: Debug,
-{
-    fn on_create(&mut self, id: NooID, state: State) {
-        println!("Create {}: {id}: {state:?}", self.ty);
-        self.list.on_create(id, state);
-    }
-
-    fn on_delete(&mut self, id: NooID) {
-        println!("Delete {}: {id}", self.ty);
-        self.list.on_delete(id);
-    }
-
-    fn find(&self, id: &NooID) -> Option<&State> {
-        self.list.find(id)
-    }
-}
-
-// =============================================================================
-
-#[derive(Debug)]
-struct ExampleUpdatableComponentList<State> {
-    ty: String,
-    list: BasicUpdatableList<State>,
-}
-
-impl<State> Default for ExampleUpdatableComponentList<State> {
-    fn default() -> Self {
-        Self {
-            ty: get_type_name::<State>(),
-            list: Default::default(),
-        }
-    }
-}
-
-impl<State> ComponentList<State> for ExampleUpdatableComponentList<State>
-where
-    State: Debug,
-{
-    fn on_create(&mut self, id: NooID, state: State) {
-        println!("Create {}: {id}: {state:?}", self.ty);
-        self.list.on_create(id, state);
-    }
-
-    fn on_delete(&mut self, id: NooID) {
-        println!("Delete {}: {id}", self.ty);
-        self.list.on_delete(id);
-    }
-
-    fn find(&self, id: &NooID) -> Option<&State> {
-        self.list.find(id)
-    }
-}
-
-impl<State> UpdatableComponentList<State>
-    for ExampleUpdatableComponentList<State>
-where
-    State: UpdatableWith + Debug,
-    State::Substate: Debug,
-{
-    fn on_update(&mut self, id: NooID, update: State::Substate) {
-        println!("Update {}: {id}: {update:?}", self.ty);
-        self.list.on_update(id, update);
-    }
-}
-
-// =============================================================================
-
-#[derive(Debug, Default)]
-struct ExampleState {
-    methods: ExampleComponentList<MethodState>,
-    signals: ExampleComponentList<SignalState>,
-    buffers: ExampleComponentList<BufferState>,
-    buffer_views: ExampleComponentList<ClientBufferViewState>,
-    samplers: ExampleComponentList<SamplerState>,
-    images: ExampleComponentList<ClientImageState>,
-    textures: ExampleComponentList<ClientTextureState>,
-    materials: ExampleUpdatableComponentList<ClientMaterialState>,
-    geometries: ExampleComponentList<ClientGeometryState>,
-    lights: ExampleUpdatableComponentList<LightState>,
-    tables: ExampleUpdatableComponentList<ClientTableState>,
-    plots: ExampleUpdatableComponentList<ClientPlotState>,
-    entities: ExampleUpdatableComponentList<ClientEntityState>,
-
-    doc: ClientDocumentUpdate,
-}
-
-struct ExampleStateArgument {}
-
-#[derive(Debug)]
-struct ExampleStateCommand {}
-
-impl UserClientState for ExampleState {
-    type MethodL = ExampleComponentList<MethodState>;
-    type SignalL = ExampleComponentList<SignalState>;
-    type BufferL = ExampleComponentList<BufferState>;
-    type BufferViewL = ExampleComponentList<ClientBufferViewState>;
-    type SamplerL = ExampleComponentList<SamplerState>;
-    type ImageL = ExampleComponentList<ClientImageState>;
-    type TextureL = ExampleComponentList<ClientTextureState>;
-    type MaterialL = ExampleUpdatableComponentList<ClientMaterialState>;
-    type GeometryL = ExampleComponentList<ClientGeometryState>;
-    type LightL = ExampleUpdatableComponentList<LightState>;
-    type TableL = ExampleUpdatableComponentList<ClientTableState>;
-    type PlotL = ExampleUpdatableComponentList<ClientPlotState>;
-    type EntityL = ExampleUpdatableComponentList<ClientEntityState>;
-
-    type CommandType = ExampleStateCommand;
-    type ArgumentType = ExampleStateArgument;
-
-    fn new(
-        _a: Self::ArgumentType,
-        _to_server: tokio::sync::mpsc::Sender<OutgoingMessage>,
-    ) -> Self {
-        Self {
-            ..Default::default()
-        }
-    }
-
-    fn method_list(&mut self) -> &mut Self::MethodL {
-        &mut self.methods
-    }
-
-    fn signal_list(&mut self) -> &mut Self::SignalL {
-        &mut self.signals
-    }
-
-    fn buffer_list(&mut self) -> &mut Self::BufferL {
-        &mut self.buffers
-    }
-
-    fn buffer_view_list(&mut self) -> &mut Self::BufferViewL {
-        &mut self.buffer_views
-    }
-
-    fn sampler_list(&mut self) -> &mut Self::SamplerL {
-        &mut self.samplers
-    }
-
-    fn image_list(&mut self) -> &mut Self::ImageL {
-        &mut self.images
-    }
-
-    fn texture_list(&mut self) -> &mut Self::TextureL {
-        &mut self.textures
-    }
-
-    fn material_list(&mut self) -> &mut Self::MaterialL {
-        &mut self.materials
-    }
-
-    fn geometry_list(&mut self) -> &mut Self::GeometryL {
-        &mut self.geometries
-    }
-
-    fn light_list(&mut self) -> &mut Self::LightL {
-        &mut self.lights
-    }
-
-    fn table_list(&mut self) -> &mut Self::TableL {
-        &mut self.tables
-    }
-
-    fn plot_list(&mut self) -> &mut Self::PlotL {
-        &mut self.plots
-    }
-
-    fn entity_list(&mut self) -> &mut Self::EntityL {
-        &mut self.entities
-    }
-
-    fn document_update(&mut self, update: ClientDocumentUpdate) {
-        self.doc.update(update);
-    }
-
-    fn on_signal_invoke(&mut self, signal: ClientMessageSignalInvoke) {
-        println!("Signal invoked {signal:?}")
-    }
-    fn on_method_reply(&mut self, method_reply: MessageMethodReply) {
-        println!("Method reply: {method_reply:?}")
-    }
-    fn on_document_ready(&mut self) {
-        println!("Document is ready!");
-    }
-}
+use colabrodo_client::client::*;
+use colabrodo_client::table::*;
 
 // =============================================================================
 
@@ -239,16 +20,171 @@ pub struct Arguments {
 
 // =============================================================================
 
+/// Print out a CBOR value in a pretty way
+fn dump_value(v: &Value) {
+    match v {
+        Value::Integer(x) => print!("{}", i128::from(*x)),
+        Value::Bytes(b) => print!("{b:?}"),
+        Value::Float(f) => print!("{f}"),
+        Value::Text(s) => print!("{s}"),
+        Value::Bool(b) => print!("{b}"),
+        Value::Null => print!("Null"),
+        Value::Tag(x, y) => {
+            print!("Tag: {x};");
+            dump_value(y)
+        }
+        Value::Array(a) => {
+            print!("[");
+            for v in a {
+                dump_value(v);
+            }
+            print!("]");
+        }
+        Value::Map(m) => {
+            print!("{{");
+            for (k, v) in m {
+                print!("(");
+                dump_value(k);
+                print!(", ");
+                dump_value(v);
+                print!(")");
+            }
+            print!("}}");
+        }
+        _ => todo!(),
+    }
+}
+
+/// A table that prints out changes
+struct ReportingTable {
+    header: Vec<TableColumnInfo>,
+    data: BTreeMap<i64, Vec<Value>>,
+    selections: HashMap<String, Selection>,
+}
+
+impl ReportingTable {
+    /// Print the whole table
+    fn dump_table(&self) {
+        print!("ID\t");
+        for c in &self.header {
+            print!("{}\t", c.name);
+        }
+        println!();
+        for (k, v) in &self.data {
+            print!("{k}\t");
+
+            for val in v {
+                dump_value(val);
+                print!("\t");
+            }
+
+            println!();
+        }
+    }
+}
+
+/// Implement required trait for our table. This will just print out changes.
+impl TableDataStorage for ReportingTable {
+    fn on_init_data(&mut self, init_data: TableInitData) {
+        println!("Initialize Table: {init_data:?}");
+        self.header = init_data.columns;
+
+        for (k, v) in init_data.keys.into_iter().zip(init_data.data.into_iter())
+        {
+            self.data.insert(k, v);
+        }
+
+        self.dump_table();
+    }
+
+    fn update_data(
+        &mut self,
+        keys: Vec<i64>,
+        updated_data: Vec<Vec<ciborium::value::Value>>,
+    ) {
+        for (k, v) in keys.into_iter().zip(updated_data.into_iter()) {
+            self.data.insert(k, v);
+        }
+
+        self.dump_table();
+    }
+
+    fn delete_data(&mut self, keys: Vec<i64>) {
+        for k in keys {
+            self.data.remove(&k);
+        }
+
+        self.dump_table();
+    }
+
+    fn update_selection(
+        &mut self,
+        selection: colabrodo_common::table::Selection,
+    ) {
+        let sel_id = selection.name.clone();
+
+        if selection.row_ranges.is_none() && selection.rows.is_none() {
+            self.selections.remove(&sel_id);
+            return;
+        }
+
+        self.selections.insert(sel_id, selection);
+    }
+
+    fn clear(&mut self) {
+        self.selections.clear();
+        self.data.clear();
+
+        self.dump_table();
+    }
+}
+
+// =============================================================================
+
+/// You can install a callback in your client to handle raw messages.
+fn callback(_client: &mut ClientState, msg: &FromServer) {
+    println!("Message: {msg:?}");
+}
+
 #[tokio::main]
 async fn main() {
     env_logger::init();
+
     let args = Arguments::parse();
 
-    start_client::<ExampleState>(
+    // Create required channels for the client
+    let channels = ClientChannels::new();
+
+    // Create the client state
+    let state = ClientState::new_with_callback(&channels, callback);
+
+    // Launch the client runner in a different thread
+    let handle = tokio::spawn(start_client(
         args.address,
         "Simple Client".to_string(),
-        ExampleStateArgument {},
-    )
-    .await
-    .unwrap()
+        state.clone(),
+        channels,
+    ));
+
+    // Wait for the clent to connect
+    wait_for_start(state.clone()).await;
+
+    // Subscribe to whichever table we can find
+    let table_list: Vec<_> = {
+        let lock = state.lock().unwrap();
+        lock.table_list.component_map().keys().cloned().collect()
+    };
+
+    let mut sub_table_list = Vec::new();
+
+    for k in table_list {
+        sub_table_list.push(
+            connect_table(state.clone(), k, BasicTable::default())
+                .await
+                .unwrap(),
+        );
+    }
+
+    // We are done, just wait for the client runner to end
+    let _ = handle.await.unwrap();
 }

@@ -1,11 +1,7 @@
 //! An example NOODLES server that provides cube geometry for clients.
 
 use colabrodo_server::{
-    server::{AsyncServer, DefaultCommand, ServerOptions},
-    server_bufferbuilder::{self, IndexType, VertexMinimal},
-    server_http::*,
-    server_messages::*,
-    server_state::{MethodException, ServerState, UserServerState},
+    server::*, server_bufferbuilder::*, server_http::*, server_messages::*,
 };
 
 /// Build the actual cube geometry.
@@ -13,8 +9,8 @@ use colabrodo_server::{
 /// This uses the simple helper tools to build a geometry buffer; you don't have to use this feature if you don't want to.
 fn make_cube(
     server_state: &mut ServerState,
-    link: &mut AssetServerLink,
-) -> ServerGeometryPatch {
+    asset_server: AssetStorePtr,
+) -> GeometryReference {
     let verts = vec![
         VertexMinimal {
             position: [-1.0, -1.0, 1.0],
@@ -72,7 +68,7 @@ fn make_cube(
     ];
     let index_list = IndexType::Triangles(index_list.as_slice());
 
-    let test_source = server_bufferbuilder::VertexSource {
+    let test_source = VertexSource {
         name: Some("Cube".to_string()),
         vertex: verts.as_slice(),
         index: index_list,
@@ -93,115 +89,51 @@ fn make_cube(
         },
     });
 
+    let pack = test_source.pack_bytes().unwrap();
+
     // Return a new mesh with this geometry/material
     // Unlike the other cube example, we use a callback to describe how to store the data. Our callback uses the link to the asset server to create a new asset, and publish the URL.
-    let intermediate = test_source.build_mesh_with(server_state, |data| {
-        let url = link.add_asset(
-            create_asset_id(),
-            Asset::new_from_slice(data.as_slice()),
-        );
-        println!("Cube asset URL is at {url}");
-        colabrodo_server::server_messages::BufferRepresentation::new_from_url(
-            &url,
+
+    let url = add_asset(
+        asset_server,
+        create_asset_id(),
+        Asset::new_from_slice(pack.bytes.as_slice()),
+    );
+
+    println!("Cube asset URL is at {url}");
+
+    // Return a new mesh with this geometry/material
+    test_source
+        .build_geometry(
+            server_state,
+            BufferRepresentation::Bytes(pack.bytes),
+            material,
         )
-    }).unwrap();
-
-    // build the cube with our material
-
-    ServerGeometryPatch {
-        attributes: intermediate.attributes,
-        vertex_count: intermediate.vertex_count,
-        indices: intermediate.indices,
-        patch_type: intermediate.patch_type,
-        material: material,
-    }
+        .unwrap()
 }
 
-/// Example implementation of a server
-struct CubeServer {
-    state: ServerState,
+/// Set up our example state
+async fn setup(state: &mut ServerStatePtr, asset_server: AssetStorePtr) {
+    let mut state_lock = state.lock().unwrap();
 
-    init: CubeServerInit,
+    // Create a cube
+    let cube = make_cube(&mut state_lock, asset_server);
 
-    cube_entity: Option<ComponentReference<ServerEntityState>>,
-}
-
-/// All server states should use this trait...
-impl UserServerState for CubeServer {
-    /// Some code will need mutable access to the core server state
-    fn mut_state(&mut self) -> &mut ServerState {
-        &mut self.state
-    }
-
-    /// Some code will need non-mutable access to the core server state
-    fn state(&self) -> &ServerState {
-        &self.state
-    }
-
-    /// When a method invoke is received, it will be validated and then passed here for processing.
-    fn invoke(
-        &mut self,
-        _method: ComponentReference<MethodState>,
-        _context: colabrodo_server::server_state::InvokeObj,
-        _args: Vec<ciborium::value::Value>,
-    ) -> colabrodo_server::server_state::MethodResult {
-        Err(MethodException::method_not_found(None))
-    }
-}
-
-struct CubeServerInit {
-    link: AssetServerLink,
-}
-
-/// And servers that use the provided tokio infrastructure should impl this trait, too...
-impl AsyncServer for CubeServer {
-    type CommandType = DefaultCommand;
-    type InitType = CubeServerInit;
-
-    /// When needed the network server will create our struct with this function
-    fn new(
-        tx: colabrodo_server::server_state::CallbackPtr,
-        init: CubeServerInit,
-    ) -> Self {
-        Self {
-            state: ServerState::new(tx),
-            init,
-            cube_entity: None,
-        }
-    }
-
-    /// Any additional state can be created here.
-    fn initialize_state(&mut self) {
-        let cube = make_cube(&mut self.state, &mut self.init.link);
-
-        let geom = self.state.geometries.new_component(ServerGeometryState {
-            name: Some("Cube Geom".to_string()),
-            patches: vec![cube],
-        });
-
-        self.cube_entity =
-            Some(self.state.entities.new_component(ServerEntityState {
-                name: Some("Cube".to_string()),
-                mutable: ServerEntityStateUpdatable {
-                    parent: None,
-                    transform: None,
-                    representation: Some(
-                        ServerEntityRepresentation::new_render(
-                            ServerRenderRepresentation {
-                                mesh: geom,
-                                instances: None,
-                            },
-                        ),
-                    ),
-                    ..Default::default()
+    // Create an entity that uses the geometry
+    state_lock.entities.new_owned_component(ServerEntityState {
+        name: Some("Cube".to_string()),
+        mutable: ServerEntityStateUpdatable {
+            parent: None,
+            transform: None,
+            representation: Some(ServerEntityRepresentation::new_render(
+                ServerRenderRepresentation {
+                    mesh: cube,
+                    instances: None,
                 },
-            }));
-    }
-
-    // If we had some kind of out-of-band messaging to the server, it would be handled here
-    fn handle_command(&mut self, _: Self::CommandType) {
-        // pass
-    }
+            )),
+            ..Default::default()
+        },
+    });
 }
 
 #[tokio::main]
@@ -209,20 +141,14 @@ async fn main() {
     println!("Connect clients to localhost:50000");
 
     // Set up the web binary asset server
-    let (asset_server, mut link) =
-        make_asset_server(AssetServerOptions::default());
-
-    // Launch it
-    tokio::spawn(asset_server);
-
-    // Wait for it to start
-    link.wait_for_start().await;
+    let asset_server = make_asset_server(AssetServerOptions::default());
 
     // Proceed as normal
     let opts = ServerOptions::default();
-    colabrodo_server::server::server_main::<CubeServer>(
-        opts,
-        CubeServerInit { link },
-    )
-    .await;
+
+    let mut state = ServerState::new();
+
+    setup(&mut state, asset_server).await;
+
+    server_main(opts, state).await;
 }

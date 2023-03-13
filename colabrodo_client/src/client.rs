@@ -1,68 +1,109 @@
-use crate::{
-    components::*,
-    server_root_message::{FromServer, ServerRootMessage},
-};
-pub use colabrodo_common::client_communication::ClientInvokeMessage;
+//! Methods and structs to create and launch NOODLES clients
+//!
+//! To create your own client:
+//! - First create a [ClientChannels] structure. This sets up required channels for client async communication.
+//! - Next, create a [ClientState].
+//! - Then launch the client with [start_client].
+//!
+//! See the simple client example to see how to set up a client, and also how to
+//! structure the code to launch tasks as soon as the client connects.
+
+pub use crate::server_root_message::FromServer;
+use crate::{components::*, server_root_message::*};
+use ciborium::value::Value;
+pub use colabrodo_common::client_communication::MethodInvokeMessage;
 pub use colabrodo_common::server_communication::MessageMethodReply;
 use colabrodo_common::{
-    client_communication::{ClientIntroductionMessage, ClientMessageID},
+    client_communication::{
+        ClientMessageID, IntroductionMessage, InvokeIDType,
+    },
     components::LightState,
+    nooid::*,
+    server_communication::MethodException,
 };
 pub use colabrodo_common::{components::UpdatableWith, nooid::NooID};
 use futures_util::{stream::SplitSink, SinkExt, StreamExt};
 use log::{debug, info};
-use std::{collections::HashMap, fmt::Debug};
+use std::{
+    collections::HashMap,
+    fmt::Debug,
+    hash::Hash,
+    sync::{Arc, Mutex},
+};
 use thiserror::Error;
-use tokio::net::TcpStream;
+use tokio::{net::TcpStream, sync::oneshot};
 use tokio_tungstenite::{connect_async, tungstenite::Message, WebSocketStream};
 use tokio_tungstenite::{tungstenite, MaybeTlsStream};
-
-/// A trait to interact with lists of immutable components
-pub trait ComponentList<State> {
-    fn on_create(&mut self, id: NooID, state: State);
-    fn on_delete(&mut self, id: NooID);
-    fn find(&self, id: &NooID) -> Option<&State>;
-}
-
-/// A trait to describe how to interact with mutable components
-pub trait UpdatableComponentList<State>: ComponentList<State>
-where
-    State: UpdatableWith,
-{
-    fn on_update(&mut self, id: NooID, update: State::Substate);
-}
 
 // =============================================================================
 
 /// A built in struct that conforms to the [ComponentList] trait.
 #[derive(Debug)]
-pub struct BasicComponentList<State>
+pub struct BasicComponentList<IDType, State>
 where
+    IDType: Eq + Hash + Copy,
     State: NamedComponent,
 {
-    name_map: HashMap<String, NooID>,
-    components: HashMap<NooID, State>,
+    name_map: HashMap<String, IDType>,
+    components: HashMap<IDType, State>,
 }
 
-impl<State> BasicComponentList<State>
+impl<IDType, State> BasicComponentList<IDType, State>
 where
+    IDType: Eq + Hash + Copy,
     State: NamedComponent,
 {
-    pub fn search_id(&self, name: &str) -> Option<&NooID> {
-        self.name_map.get(name)
+    /// Find the name of a component by an ID
+    pub fn find_name(&self, id: &IDType) -> Option<&String> {
+        self.find(id)?.name()
     }
 
-    pub fn search(&self, name: &str) -> Option<&State> {
+    /// Get a read-only copy of the ID -> State mapping
+    pub fn component_map(&self) -> &HashMap<IDType, State> {
+        &self.components
+    }
+
+    fn on_create(&mut self, id: IDType, state: State) {
+        if let Some(n) = state.name() {
+            self.name_map.insert(n.clone(), id);
+        }
+
+        self.components.insert(id, state);
+    }
+
+    fn on_delete(&mut self, id: IDType) {
+        if let Some(n) = self.find_name(&id) {
+            let n = n.clone();
+            self.name_map.remove(&n);
+        }
+
+        self.components.remove(&id);
+    }
+
+    /// Find a component state by ID
+    pub fn find(&self, id: &IDType) -> Option<&State> {
+        self.components.get(id)
+    }
+
+    /// Find a component ID by a name
+    pub fn get_id_by_name(&self, name: &str) -> Option<IDType> {
+        self.name_map.get(name).cloned()
+    }
+
+    /// Get a component state by a name
+    pub fn get_state_by_name(&self, name: &str) -> Option<&State> {
         self.find(self.name_map.get(name)?)
     }
 
-    pub fn find_name(&self, id: &NooID) -> Option<&String> {
-        self.find(id)?.name()
+    fn clear(&mut self) {
+        self.name_map.clear();
+        self.components.clear();
     }
 }
 
-impl<State> Default for BasicComponentList<State>
+impl<IDType, State> Default for BasicComponentList<IDType, State>
 where
+    IDType: Eq + Hash + Copy,
     State: NamedComponent,
 {
     fn default() -> Self {
@@ -73,67 +114,12 @@ where
     }
 }
 
-impl<State> ComponentList<State> for BasicComponentList<State>
+impl<IDType, State> BasicComponentList<IDType, State>
 where
-    State: NamedComponent,
+    IDType: Eq + Hash + Copy,
+    State: UpdatableWith + NamedComponent,
 {
-    fn on_create(&mut self, id: NooID, state: State) {
-        if let Some(n) = state.name() {
-            self.name_map.insert(n.clone(), id);
-        }
-
-        self.components.insert(id, state);
-    }
-
-    fn on_delete(&mut self, id: NooID) {
-        if let Some(n) = self.find_name(&id) {
-            let n = n.clone();
-            self.name_map.remove(&n);
-        }
-
-        self.components.remove(&id);
-    }
-
-    fn find(&self, id: &NooID) -> Option<&State> {
-        self.components.get(id)
-    }
-}
-
-// =============================================================================
-
-/// A provided container for mutable components. Can be used if your client has no requirement for extra functionality.
-#[derive(Debug)]
-pub struct BasicUpdatableList<State> {
-    components: HashMap<NooID, State>,
-}
-
-impl<State> Default for BasicUpdatableList<State> {
-    fn default() -> Self {
-        Self {
-            components: HashMap::new(),
-        }
-    }
-}
-
-impl<State> ComponentList<State> for BasicUpdatableList<State> {
-    fn on_create(&mut self, id: NooID, state: State) {
-        self.components.insert(id, state);
-    }
-
-    fn on_delete(&mut self, id: NooID) {
-        self.components.remove(&id);
-    }
-
-    fn find(&self, id: &NooID) -> Option<&State> {
-        self.components.get(id)
-    }
-}
-
-impl<State> UpdatableComponentList<State> for BasicUpdatableList<State>
-where
-    State: UpdatableWith,
-{
-    fn on_update(&mut self, id: NooID, update: State::Substate) {
+    fn on_update(&mut self, id: IDType, update: State::Substate) {
         if let Some(item) = self.components.get_mut(&id) {
             item.update(update);
         }
@@ -142,195 +128,579 @@ where
 
 // =============================================================================
 
-/// A trait to describe how the client library interacts with client state.
-pub trait UserClientState: Debug {
-    /// The type holding methods
-    type MethodL: ComponentList<MethodState>;
-    /// The type holding signals
-    type SignalL: ComponentList<SignalState>;
+/// Signals will be delivered along this channel type.
+pub type SignalRecv = tokio::sync::broadcast::Receiver<Vec<Value>>;
+type SignalSource = tokio::sync::broadcast::Sender<Vec<Value>>;
+type SignalHash = HashMap<SignalID, SignalSource>;
 
-    /// The type holding buffers
-    type BufferL: ComponentList<BufferState>;
-    /// The type holding buffer lists    
-    type BufferViewL: ComponentList<ClientBufferViewState>;
-
-    /// The type holding samplers
-    type SamplerL: ComponentList<SamplerState>;
-    /// The type holding images
-    type ImageL: ComponentList<ClientImageState>;
-    /// The type holding texture
-    type TextureL: ComponentList<ClientTextureState>;
-
-    /// The type holding materials
-    type MaterialL: UpdatableComponentList<ClientMaterialState>;
-    /// The type holding geometry
-    type GeometryL: ComponentList<ClientGeometryState>;
-
-    /// The type holding lights
-    type LightL: UpdatableComponentList<LightState>;
-
-    /// The type holding tables
-    type TableL: UpdatableComponentList<ClientTableState>;
-    /// The type holding plots
-    type PlotL: UpdatableComponentList<ClientPlotState>;
-
-    /// The type holding entities
-    type EntityL: UpdatableComponentList<ClientEntityState>;
-
-    /// The type for commands passed to the client
-    type CommandType;
-    /// The type holding arguments for your client
-    type ArgumentType;
-
-    fn new(
-        a: Self::ArgumentType,
-        to_server: tokio::sync::mpsc::Sender<OutgoingMessage>,
-    ) -> Self;
-
-    fn method_list(&mut self) -> &mut Self::MethodL;
-    fn signal_list(&mut self) -> &mut Self::SignalL;
-
-    fn buffer_list(&mut self) -> &mut Self::BufferL;
-    fn buffer_view_list(&mut self) -> &mut Self::BufferViewL;
-
-    fn sampler_list(&mut self) -> &mut Self::SamplerL;
-    fn image_list(&mut self) -> &mut Self::ImageL;
-    fn texture_list(&mut self) -> &mut Self::TextureL;
-
-    fn material_list(&mut self) -> &mut Self::MaterialL;
-    fn geometry_list(&mut self) -> &mut Self::GeometryL;
-
-    fn light_list(&mut self) -> &mut Self::LightL;
-
-    fn table_list(&mut self) -> &mut Self::TableL;
-    fn plot_list(&mut self) -> &mut Self::PlotL;
-
-    fn entity_list(&mut self) -> &mut Self::EntityL;
-
-    fn document_update(&mut self, update: ClientDocumentUpdate);
-
-    fn document_reset(&mut self) {}
-
-    #[allow(unused_variables)]
-    fn on_signal_invoke(&mut self, signal: ClientMessageSignalInvoke) {}
-    #[allow(unused_variables)]
-    fn on_method_reply(&mut self, method_reply: MessageMethodReply) {}
-
-    fn on_document_ready(&mut self) {}
-
-    fn on_command(&mut self, _c: Self::CommandType) {}
+fn fire_signal(id: SignalID, repo: &SignalHash, args: Vec<Value>) {
+    if let Some(sender) = repo.get(&id) {
+        sender.send(args).unwrap();
+    }
 }
+
+// =============================================================================
+
+/// A component list type that allows subscription to signals
+#[derive(Debug, Default)]
+pub struct SigModComponentList<IDType, State>
+where
+    IDType: Eq + Hash + Copy,
+    State: UpdatableWith + NamedComponent + CommComponent,
+{
+    list: BasicComponentList<IDType, State>,
+    signals: HashMap<IDType, SignalHash>,
+}
+
+impl<IDType, State> SigModComponentList<IDType, State>
+where
+    IDType: Eq + Hash + Copy,
+    State: UpdatableWith + NamedComponent + CommComponent,
+{
+    /// Find the name of a component by an ID
+    pub fn find_name(&self, id: &IDType) -> Option<&String> {
+        self.list.find_name(id)
+    }
+
+    /// Get a read-only copy of the ID -> State mapping
+    pub fn component_map(&self) -> &HashMap<IDType, State> {
+        self.list.component_map()
+    }
+
+    fn on_create(&mut self, id: IDType, state: State) {
+        self.list.on_create(id, state)
+    }
+
+    fn on_update(&mut self, id: IDType, update: State::Substate) {
+        self.list.on_update(id, update)
+    }
+
+    fn on_delete(&mut self, id: IDType) {
+        self.signals.remove(&id);
+        self.list.on_delete(id)
+    }
+
+    /// Find a component state by ID
+    pub fn find(&self, id: &IDType) -> Option<&State> {
+        self.list.find(id)
+    }
+
+    /// Find a component ID by a name
+    pub fn get_id_by_name(&self, name: &str) -> Option<IDType> {
+        self.list.get_id_by_name(name)
+    }
+
+    /// Get a component state by a name
+    pub fn get_state_by_name(&self, name: &str) -> Option<&State> {
+        self.list.get_state_by_name(name)
+    }
+
+    fn clear(&mut self) {
+        self.list.clear()
+    }
+
+    fn can_sub(&self, id: IDType, signal: SignalID) -> bool {
+        if let Some(state) = self.list.components.get(&id) {
+            if let Some(list) = state.signal_list() {
+                return list.iter().any(|&f| f == signal);
+            }
+        }
+        false
+    }
+
+    fn fire_signal(&self, sig_id: SignalID, id: IDType, args: Vec<Value>) {
+        if let Some(hash) = self.signals.get(&id) {
+            fire_signal(sig_id, hash, args)
+        }
+    }
+
+    /// Subscribe to a signal emitted by a component
+    ///
+    /// Takes an ID to an existing component, and an ID to a signal that is attached to that component.
+    ///
+    /// # Returns
+    ///
+    /// Returns [None] if the subscription fails (non-existing component, etc). Otherwise returns a channel to be subscribed to.
+    pub fn subscribe_signal(
+        &mut self,
+        id: IDType,
+        signal: SignalID,
+    ) -> Option<SignalRecv> {
+        if self.can_sub(id, signal) {
+            return Some(
+                self.signals
+                    .entry(id)
+                    .or_default()
+                    .entry(signal)
+                    .or_insert_with(|| tokio::sync::broadcast::channel(16).0)
+                    .subscribe(),
+            );
+        }
+        None
+    }
+
+    /// Remove a subscription to a signal on a component.
+    pub fn unsubscribe_signal(&mut self, id: IDType, signal: SignalID) {
+        if let Some(h) = self.signals.get_mut(&id) {
+            h.remove(&signal);
+        }
+    }
+}
+
+// =============================================================================
+
+/// A callback that is invoked for every message from the server
+pub type Callback = dyn Fn(&mut ClientState, &FromServer) + Send + Sync;
+
+/// Current NOODLES client state.
+///
+/// Keeps up-to-date state on all components, signal subscriptions, method invocation, etc.
+///
+/// See module-level documentation to see how to use this struct.
+pub struct ClientState {
+    sender: tokio::sync::mpsc::Sender<OutgoingMessage>,
+
+    callback: Arc<Callback>,
+
+    ready_tx: Option<oneshot::Sender<()>>,
+    ready_rx: Option<oneshot::Receiver<()>>,
+
+    pub method_list: BasicComponentList<MethodID, ClientMethodState>,
+    pub signal_list: BasicComponentList<SignalID, ClientSignalState>,
+
+    pub buffer_list: BasicComponentList<BufferID, BufferState>,
+    pub buffer_view_list:
+        BasicComponentList<BufferViewID, ClientBufferViewState>,
+
+    pub sampler_list: BasicComponentList<SamplerID, SamplerState>,
+    pub image_list: BasicComponentList<ImageID, ClientImageState>,
+    pub texture_list: BasicComponentList<TextureID, ClientTextureState>,
+
+    pub material_list: BasicComponentList<MaterialID, ClientMaterialState>,
+    pub geometry_list: BasicComponentList<GeometryID, ClientGeometryState>,
+
+    pub light_list: BasicComponentList<LightID, LightState>,
+
+    pub table_list: SigModComponentList<TableID, ClientTableState>,
+    pub plot_list: SigModComponentList<PlotID, ClientPlotState>,
+    pub entity_list: SigModComponentList<EntityID, ClientEntityState>,
+
+    pub document_communication: ClientDocumentUpdate,
+
+    signal_subs: SignalHash,
+
+    method_subs:
+        HashMap<uuid::Uuid, tokio::sync::oneshot::Sender<MessageMethodReply>>,
+}
+
+impl Debug for ClientState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ClientState")
+            .field("sender", &self.sender)
+            .field("method_list", &self.method_list)
+            .field("signal_list", &self.signal_list)
+            .field("buffer_list", &self.buffer_list)
+            .field("buffer_view_list", &self.buffer_view_list)
+            .field("sampler_list", &self.sampler_list)
+            .field("image_list", &self.image_list)
+            .field("texture_list", &self.texture_list)
+            .field("material_list", &self.material_list)
+            .field("geometry_list", &self.geometry_list)
+            .field("light_list", &self.light_list)
+            .field("table_list", &self.table_list)
+            .field("plot_list", &self.plot_list)
+            .field("entity_list", &self.entity_list)
+            .field("document_communication", &self.document_communication)
+            .field("signal_subs", &self.signal_subs)
+            .field("method_subs", &self.method_subs)
+            .finish()
+    }
+}
+
+fn blank_callback(_: &mut ClientState, _: &FromServer) {}
+
+impl ClientState {
+    /// Create a new client state, using created channels.
+    ///
+    /// Note that the given [ClientChannels] struct should not be re-used.
+    pub fn new(channels: &ClientChannels) -> Arc<Mutex<Self>> {
+        Self::new_with_callback(channels, blank_callback)
+    }
+
+    /// Create a new client state, using previously created channels, and a callback.
+    pub fn new_with_callback<C>(
+        channels: &ClientChannels,
+        cb: C,
+    ) -> Arc<Mutex<Self>>
+    where
+        C: Fn(&mut ClientState, &FromServer) + Send + Sync + 'static,
+    {
+        let (ready_tx, ready_rx) = oneshot::channel();
+
+        Arc::new(Mutex::new(Self {
+            sender: channels.from_client_tx.clone(),
+            callback: Arc::new(cb),
+            ready_tx: Some(ready_tx),
+            ready_rx: Some(ready_rx),
+            method_list: Default::default(),
+            signal_list: Default::default(),
+            buffer_list: Default::default(),
+            buffer_view_list: Default::default(),
+            sampler_list: Default::default(),
+            image_list: Default::default(),
+            texture_list: Default::default(),
+            material_list: Default::default(),
+            geometry_list: Default::default(),
+            light_list: Default::default(),
+            table_list: Default::default(),
+            plot_list: Default::default(),
+            entity_list: Default::default(),
+            document_communication: Default::default(),
+            signal_subs: Default::default(),
+            method_subs: Default::default(),
+        }))
+    }
+
+    fn clear(&mut self) {
+        self.method_list.clear();
+        self.signal_list.clear();
+        self.buffer_list.clear();
+        self.buffer_view_list.clear();
+        self.sampler_list.clear();
+        self.image_list.clear();
+        self.texture_list.clear();
+        self.material_list.clear();
+        self.geometry_list.clear();
+        self.light_list.clear();
+        self.table_list.clear();
+        self.plot_list.clear();
+        self.entity_list.clear();
+        self.document_communication = Default::default();
+        self.signal_subs.clear();
+        self.method_subs.clear();
+    }
+
+    /// Update document method/signal handlers
+    fn update_method_signals(&mut self) {
+        if let Some(siglist) = &self.document_communication.signals_list {
+            let siglist: Vec<_> = siglist
+                .iter()
+                .filter(|x| !self.signal_subs.contains_key(&x))
+                .collect();
+
+            for sid in siglist {
+                self.signal_subs.remove(sid);
+            }
+        }
+    }
+
+    /// Subscribe to a signal on the document.
+    ///
+    /// # Returns
+    ///
+    /// Returns [None] if the subscription fails (non-existing component, etc). Otherwise returns a channel to be subscribed to.
+    pub fn subscribe_signal(&mut self, signal: SignalID) -> Option<SignalRecv> {
+        if let Some(list) = &mut self.document_communication.signals_list {
+            log::debug!("Searching for signal {signal:?} in {list:?}");
+            if list.iter().any(|&f| f == signal) {
+                return Some(
+                    self.signal_subs
+                        .entry(signal)
+                        .or_insert_with(|| {
+                            tokio::sync::broadcast::channel(16).0
+                        })
+                        .subscribe(),
+                );
+            }
+        }
+        log::debug!("Unable to find requested signal: {signal:?}");
+        None
+    }
+
+    /// Unsubscribe to a document signal
+    pub fn unsubscribe_signal(&mut self, signal: SignalID) {
+        self.signal_subs.remove(&signal);
+    }
+}
+
+/// Async wait for the client to have connected and received the full document state.
+pub async fn wait_for_start(state: Arc<Mutex<ClientState>>) {
+    let rx = state.lock().unwrap().ready_rx.take();
+
+    if let Some(rx) = rx {
+        rx.await.unwrap();
+    }
+}
+
+/// Async issue a shutdown for the client and wait for all client machinery to stop.
+pub async fn shutdown(state: Arc<Mutex<ClientState>>) {
+    let sender = state.lock().unwrap().sender.clone();
+
+    sender.send(OutgoingMessage::Close).await.unwrap();
+}
+
+/// Context for a method invocation
+pub enum InvokeContext {
+    Document,
+    Entity(EntityID),
+    Table(TableID),
+    Plot(PlotID),
+}
+
+/// Invoke a method on a component.
+///
+/// # Parameters
+/// - state: The client state to invoke on
+/// - method_id: The method id to invoke
+/// - context: Component to invoke the method on
+/// - args: A list of CBOR arguments to send to the server
+///
+/// # Return
+/// If the method fails, returns an exception. If successful, the result of the invocation. Note that the method might return nothing (a void), thus it returns an optional [Value].
+pub async fn invoke_method(
+    state: Arc<Mutex<ClientState>>,
+    method_id: MethodID,
+    context: InvokeContext,
+    args: Vec<Value>,
+) -> Result<Option<Value>, MethodException> {
+    let invoke_id = uuid::Uuid::new_v4();
+
+    let (res_tx, res_rx) = tokio::sync::oneshot::channel();
+
+    let content = OutgoingMessage::MethodInvoke(MethodInvokeMessage {
+        method: method_id,
+        context: match context {
+            InvokeContext::Document => None,
+            InvokeContext::Entity(id) => Some(InvokeIDType::Entity(id)),
+            InvokeContext::Table(id) => Some(InvokeIDType::Table(id)),
+            InvokeContext::Plot(id) => Some(InvokeIDType::Plot(id)),
+        },
+        invoke_id: Some(invoke_id.to_string()),
+        args,
+    });
+
+    {
+        // careful not to hold a lock across an await...
+
+        let sender = {
+            let mut lock = state.lock().unwrap();
+
+            lock.method_subs.insert(invoke_id, res_tx);
+
+            lock.sender.clone()
+        };
+
+        sender.send(content).await.map_err(|_| {
+            MethodException::internal_error(Some(
+                "Unable to send method invocation.",
+            ))
+        })?;
+    }
+
+    let result = res_rx.await.map_err(|_| {
+        MethodException::internal_error(Some(
+            "Invocation was dropped while in progress.",
+        ))
+    })?;
+
+    if let Some(exp) = result.method_exception {
+        return Err(exp);
+    }
+
+    Ok(result.result)
+}
+
+// =============================================================================
 
 #[derive(Error, Debug)]
 pub enum UserClientNext {
     #[error("Decode error")]
     DecodeError(String),
+    #[error("Method error")]
+    MethodError,
 }
 
 /// Execute the next message from a server on your client state
-pub fn handle_next<U: UserClientState>(
-    state: &mut U,
-    message: &[u8],
+pub fn handle_next(
+    state: Arc<Mutex<ClientState>>,
+    message: Vec<u8>,
 ) -> Result<(), UserClientNext> {
-    debug!("Handling next message array");
-    let root: ServerRootMessage = ciborium::de::from_reader(message)
-        .map_err(|x| UserClientNext::DecodeError(x.to_string()))?;
+    if log::log_enabled!(log::Level::Debug) {
+        let v: ciborium::value::Value =
+            ciborium::de::from_reader(message.as_slice()).unwrap();
+        debug!("Content: {v:?}");
+    }
+
+    let root: ServerRootMessage =
+        ciborium::de::from_reader(message.as_slice()).unwrap();
+
+    debug!("Got {} messages", root.list.len());
 
     for msg in root.list {
-        handle_next_message(state, msg)?;
+        let mut state = state.lock().unwrap();
+        let cb = state.callback.clone();
+        (cb)(&mut state, &msg);
+        handle_next_message(&mut state, msg)?;
     }
 
     Ok(())
 }
 
-fn handle_next_message<U: UserClientState>(
-    state: &mut U,
+fn handle_next_message(
+    state: &mut ClientState,
     m: FromServer,
 ) -> Result<(), UserClientNext> {
     debug!("Handling next message...");
+
     match m {
-        FromServer::MsgMethodCreate(x) => {
-            state.method_list().on_create(x.id, x.content);
+        FromServer::Method(m) => match m {
+            ModMethod::Create(x) => {
+                state.method_list.on_create(x.id, x.content);
+            }
+            ModMethod::Delete(x) => state.method_list.on_delete(x.id),
+        },
+        //
+        FromServer::Signal(s) => match s {
+            ModSignal::Create(x) => {
+                state.signal_list.on_create(x.id, x.content)
+            }
+            ModSignal::Delete(x) => state.signal_list.on_delete(x.id),
+        },
+        //
+        FromServer::Entity(x) => match x {
+            ModEntity::Create(x) => {
+                state.entity_list.on_create(x.id, x.content)
+            }
+            ModEntity::Update(x) => {
+                state.entity_list.on_update(x.id, x.content)
+            }
+            ModEntity::Delete(x) => state.entity_list.on_delete(x.id),
+        },
+        //
+        FromServer::Plot(x) => match x {
+            ModPlot::Create(x) => state.plot_list.on_create(x.id, x.content),
+            ModPlot::Update(x) => state.plot_list.on_update(x.id, x.content),
+            ModPlot::Delete(x) => state.plot_list.on_delete(x.id),
+        },
+        //
+        FromServer::Buffer(s) => match s {
+            ModBuffer::Create(x) => {
+                state.buffer_list.on_create(x.id, x.content)
+            }
+            ModBuffer::Delete(x) => state.buffer_list.on_delete(x.id),
+        },
+        //
+        FromServer::BufferView(s) => match s {
+            ModBufferView::Create(x) => {
+                state.buffer_view_list.on_create(x.id, x.content)
+            }
+            ModBufferView::Delete(x) => state.buffer_view_list.on_delete(x.id),
+        },
+        //
+        FromServer::Material(s) => match s {
+            ModMaterial::Create(x) => {
+                state.material_list.on_create(x.id, x.content)
+            }
+            ModMaterial::Update(x) => {
+                state.material_list.on_update(x.id, x.content)
+            }
+            ModMaterial::Delete(x) => state.material_list.on_delete(x.id),
+        },
+        //
+        FromServer::Image(s) => match s {
+            ModImage::Create(x) => state.image_list.on_create(x.id, x.content),
+            ModImage::Delete(x) => state.image_list.on_delete(x.id),
+        },
+        //
+        FromServer::Texture(s) => match s {
+            ModTexture::Create(x) => {
+                state.texture_list.on_create(x.id, x.content)
+            }
+            ModTexture::Delete(x) => state.texture_list.on_delete(x.id),
+        },
+        //
+        FromServer::Sampler(s) => match s {
+            ModSampler::Create(x) => {
+                state.sampler_list.on_create(x.id, x.content)
+            }
+            ModSampler::Delete(x) => state.sampler_list.on_delete(x.id),
+        },
+        //
+        FromServer::Light(s) => match s {
+            ModLight::Create(x) => state.light_list.on_create(x.id, x.content),
+            ModLight::Update(x) => state.light_list.on_update(x.id, x.content),
+            ModLight::Delete(x) => state.light_list.on_delete(x.id),
+        },
+        //
+        FromServer::Geometry(s) => match s {
+            ModGeometry::Create(x) => {
+                state.geometry_list.on_create(x.id, x.content)
+            }
+            ModGeometry::Delete(x) => state.geometry_list.on_delete(x.id),
+        },
+        //
+        FromServer::Table(s) => match s {
+            ModTable::Create(x) => state.table_list.on_create(x.id, x.content),
+            ModTable::Update(x) => state.table_list.on_update(x.id, x.content),
+            ModTable::Delete(x) => state.table_list.on_delete(x.id),
+        },
+        //
+        FromServer::MsgDocumentUpdate(x) => {
+            state.document_communication = x;
+            state.update_method_signals();
         }
-        FromServer::MsgMethodDelete(x) => state.method_list().on_delete(x.id),
-        FromServer::MsgSignalCreate(x) => {
-            state.signal_list().on_create(x.id, x.content)
+        FromServer::MsgDocumentReset(_) => {
+            state.clear();
         }
-        FromServer::MsgSignalDelete(x) => state.signal_list().on_delete(x.id),
-        FromServer::MsgEntityCreate(x) => {
-            state.entity_list().on_create(x.id, x.content)
-        }
-        FromServer::MsgEntityUpdate(x) => {
-            state.entity_list().on_update(x.id, x.content)
-        }
-        FromServer::MsgEntityDelete(x) => state.entity_list().on_delete(x.id),
-        FromServer::MsgPlotCreate(x) => {
-            state.plot_list().on_create(x.id, x.content)
-        }
-        FromServer::MsgPlotUpdate(x) => {
-            state.plot_list().on_update(x.id, x.content)
-        }
-        FromServer::MsgPlotDelete(x) => state.method_list().on_delete(x.id),
-        FromServer::MsgBufferCreate(x) => {
-            state.buffer_list().on_create(x.id, x.content)
-        }
-        FromServer::MsgBufferDelete(x) => state.method_list().on_delete(x.id),
-        FromServer::MsgBufferViewCreate(x) => {
-            state.buffer_view_list().on_create(x.id, x.content)
-        }
-        FromServer::MsgBufferViewDelete(x) => {
-            state.method_list().on_delete(x.id)
-        }
-        FromServer::MsgMaterialCreate(x) => {
-            state.material_list().on_create(x.id, x.content)
-        }
-        FromServer::MsgMaterialUpdate(x) => {
-            state.material_list().on_update(x.id, x.content)
-        }
-        FromServer::MsgMaterialDelete(x) => state.method_list().on_delete(x.id),
-        FromServer::MsgImageCreate(x) => {
-            state.image_list().on_create(x.id, x.content)
-        }
-        FromServer::MsgImageDelete(x) => state.method_list().on_delete(x.id),
-        FromServer::MsgTextureCreate(x) => {
-            state.texture_list().on_create(x.id, x.content)
-        }
-        FromServer::MsgTextureDelete(x) => state.method_list().on_delete(x.id),
-        FromServer::MsgSamplerCreate(x) => {
-            state.sampler_list().on_create(x.id, x.content)
-        }
-        FromServer::MsgSamplerDelete(x) => state.method_list().on_delete(x.id),
-        FromServer::MsgLightCreate(x) => {
-            state.light_list().on_create(x.id, x.content)
-        }
-        FromServer::MsgLightUpdate(x) => {
-            state.light_list().on_update(x.id, x.content)
-        }
-        FromServer::MsgLightDelete(x) => state.method_list().on_delete(x.id),
-        FromServer::MsgGeometryCreate(x) => {
-            state.geometry_list().on_create(x.id, x.content)
-        }
-        FromServer::MsgGeometryDelete(x) => state.method_list().on_delete(x.id),
-        FromServer::MsgTableCreate(x) => {
-            state.table_list().on_create(x.id, x.content)
-        }
-        FromServer::MsgTableUpdate(x) => {
-            state.table_list().on_update(x.id, x.content)
-        }
-        FromServer::MsgTableDelete(x) => state.method_list().on_delete(x.id),
-        FromServer::MsgDocumentUpdate(x) => state.document_update(x),
-        FromServer::MsgDocumentReset(_) => state.document_reset(),
+        //
         FromServer::MsgSignalInvoke(x) => {
-            log::debug!("Signal from server");
-            state.on_signal_invoke(x)
+            let sig_id = SignalID(x.id);
+            if let Some(id) = x.context {
+                if let Some(entity) = id.entity {
+                    state.entity_list.fire_signal(
+                        sig_id,
+                        entity,
+                        x.signal_data,
+                    );
+                } else if let Some(plot) = id.plot {
+                    state.plot_list.fire_signal(sig_id, plot, x.signal_data);
+                } else if let Some(table) = id.table {
+                    state.table_list.fire_signal(sig_id, table, x.signal_data);
+                }
+            } else {
+                fire_signal(sig_id, &state.signal_subs, x.signal_data);
+            }
+
+            // log::debug!("Signal from server");
+            // state
+            //     .signal_list
+            //     .find(&x.id)
+            //     .and_then(|f| f.state.send(x.signal_data));
         }
-        FromServer::MsgMethodReply(x) => state.on_method_reply(x),
-        FromServer::MsgDocumentInitialized(_) => state.on_document_ready(),
+        FromServer::MsgMethodReply(x) => {
+            let invoke_id: uuid::Uuid = x
+                .invoke_id
+                .parse()
+                .map_err(|_| UserClientNext::MethodError)?;
+
+            if let Some(dest) = state.method_subs.remove(&invoke_id) {
+                dest.send(x).map_err(|_| UserClientNext::MethodError)?;
+            }
+        }
+        FromServer::MsgDocumentInitialized(_) => {
+            //send read
+            if let Some(tx) = state.ready_tx.take() {
+                tx.send(()).unwrap()
+            }
+        }
     }
+
     debug!("Handling next message...Done");
 
     Ok(())
 }
+
+// =============================================================================
 
 #[derive(Error, Debug)]
 pub enum UserClientError {
@@ -342,12 +712,12 @@ pub enum UserClientError {
 }
 
 /// Enumeration describing incoming messages to your client.
-#[derive(Debug)]
-pub enum IncomingMessage<T: UserClientState> {
+#[derive(Debug, Clone)]
+pub enum IncomingMessage {
     /// Message from the server
     NetworkMessage(Vec<u8>),
-    /// Message from an out of band command stream
-    Command(T::CommandType),
+    /// Socket shutdown from the server
+    Closed,
 }
 
 /// Enumeration describing outgoing messages
@@ -356,22 +726,55 @@ pub enum OutgoingMessage {
     /// Instruct client machinery to shut down
     Close,
     /// Invoke a message on the server
-    MethodInvoke(ClientInvokeMessage),
+    MethodInvoke(MethodInvokeMessage),
+}
+
+// =============================================================================
+
+/// Contains channels for incoming and outgoing messages for the client.
+///
+/// See the module level documentation to see how to use this class.
+pub struct ClientChannels {
+    to_client_tx: tokio::sync::mpsc::Sender<IncomingMessage>,
+    to_client_rx: tokio::sync::mpsc::Receiver<IncomingMessage>,
+
+    from_client_tx: tokio::sync::mpsc::Sender<OutgoingMessage>,
+    from_client_rx: tokio::sync::mpsc::Receiver<OutgoingMessage>,
+}
+
+impl Default for ClientChannels {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ClientChannels {
+    pub fn new() -> Self {
+        let (to_client_tx, to_client_rx) = tokio::sync::mpsc::channel(16);
+        let (from_client_tx, from_client_rx) = tokio::sync::mpsc::channel(16);
+
+        Self {
+            to_client_tx,
+            to_client_rx,
+            from_client_tx,
+            from_client_rx,
+        }
+    }
 }
 
 /// Start running the client machinery.
 ///
-/// Will create the given user client state type when needed
-pub async fn start_client<T>(
+/// # Parameters
+/// - url: The host to connect to
+/// - name: The name of the client to use during introduction to the server
+/// - state: The client to use
+/// - channels: Input/output channels
+pub async fn start_client(
     url: String,
     name: String,
-    a: T::ArgumentType,
-) -> Result<(), UserClientError>
-where
-    T: UserClientState + 'static + std::fmt::Debug,
-    T::CommandType: std::marker::Send + std::fmt::Debug,
-    T::ArgumentType: std::marker::Send,
-{
+    state: Arc<Mutex<ClientState>>,
+    channels: ClientChannels,
+) -> Result<(), UserClientError> {
     // create streams to stop machinery
     let (stop_tx, mut stop_rx) = tokio::sync::broadcast::channel::<u8>(1);
 
@@ -382,30 +785,22 @@ where
         .await
         .map_err(UserClientError::ConnectionError)?;
 
-    info!("Connecting to {url}...");
+    info!("Connected to {url}...");
 
     // Stream for messages going to client state
-    let (to_client_thread_tx, to_client_thread_rx) = std::sync::mpsc::channel();
+    let (to_client_thread_tx, to_client_thread_rx) =
+        (channels.to_client_tx, channels.to_client_rx);
     // Stream for messages from client state
-    let (from_client_thread_tx, from_client_thread_rx) =
-        tokio::sync::mpsc::channel(16);
+    let (_, from_client_thread_rx) =
+        (channels.from_client_tx, channels.from_client_rx);
 
-    // Stream to go from async world to the sync std stream
-    let (inter_channel_tx, inter_channel_rx) = tokio::sync::mpsc::channel(16);
+    let worker_stop_tx = stop_tx.clone();
 
-    let h1 = std::thread::spawn(move || {
-        debug!("Creating client worker thread...");
-        client_worker_thread::<T>(
-            to_client_thread_rx,
-            from_client_thread_tx.clone(),
-            a,
-        )
-    });
-
-    let to_c_handle = tokio::spawn(to_client_task::<T>(
-        inter_channel_rx,
-        to_client_thread_tx,
-        stop_tx.subscribe(),
+    tokio::spawn(client_worker_thread(
+        to_client_thread_rx,
+        //from_client_thread_tx.clone(),
+        worker_stop_tx,
+        state.clone(),
     ));
 
     let (ws_stream, _) = conn_result;
@@ -416,8 +811,8 @@ where
     // Send the initial introduction message
     {
         let content = (
-            ClientIntroductionMessage::message_id(),
-            ClientIntroductionMessage { client_name: name },
+            IntroductionMessage::message_id(),
+            IntroductionMessage { client_name: name },
         );
 
         let mut buffer = Vec::<u8>::new();
@@ -428,62 +823,48 @@ where
     }
 
     // spawn task that forwards messages from the client to the socket
-    let fhandle = tokio::spawn(forward_task(
+    tokio::spawn(forward_task(
         from_client_thread_rx,
         socket_tx,
         stop_tx.clone(),
         stop_tx.subscribe(),
     ));
 
-    // Now handle all incoming messages
+    debug!("Tasks launched");
+
     loop {
         tokio::select! {
             _ = stop_rx.recv() => break,
             msg = socket_rx.next() => {
-                let data = msg.unwrap().unwrap().into_data();
 
-                inter_channel_tx
-                    .send(IncomingMessage::NetworkMessage(data))
-                    .await
-                    .unwrap();
+                match msg.unwrap() {
+                    Ok(x) => {
+                        to_client_thread_tx
+                        .send(IncomingMessage::NetworkMessage(x.into_data()))
+                        .await
+                        .unwrap();
+                    },
+                    Err(_) => {
+                        to_client_thread_tx.send(IncomingMessage::Closed).await.unwrap();
+                        break;
+                    },
+                }
             }
         }
     }
 
-    info!("Closing client to {url}...");
-
-    let join_res = tokio::join!(fhandle, to_c_handle);
-
-    join_res.0.unwrap();
-    join_res.1.unwrap();
-
-    h1.join().unwrap();
+    debug!("Loop closed. Client system done.");
 
     Ok(())
-}
-
-/// Task that consumes messages from a tokio stream and outputs it to a std stream
-async fn to_client_task<T>(
-    mut input: tokio::sync::mpsc::Receiver<IncomingMessage<T>>,
-    output: std::sync::mpsc::Sender<IncomingMessage<T>>,
-    mut stopper: tokio::sync::broadcast::Receiver<u8>,
-) where
-    T: UserClientState + 'static,
-{
-    debug!("Starting to-client task");
-    loop {
-        tokio::select! {
-            _ = stopper.recv() => break,
-            Some(msg) = input.recv() => output.send(msg).unwrap()
-        }
-    }
-    debug!("Ending to-client task");
 }
 
 /// Task that sends handles from the client.
 async fn forward_task(
     mut input: tokio::sync::mpsc::Receiver<OutgoingMessage>,
-    mut output: SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>,
+    mut socket_out: SplitSink<
+        WebSocketStream<MaybeTlsStream<TcpStream>>,
+        Message,
+    >,
     stopper_tx: tokio::sync::broadcast::Sender<u8>,
     mut stopper: tokio::sync::broadcast::Receiver<u8>,
 ) {
@@ -499,19 +880,19 @@ async fn forward_task(
                     // If the client wants to close things down...
                     OutgoingMessage::Close => {
                         // kill the output stream
-                        output.close().await.unwrap();
+                        socket_out.close().await.unwrap();
 
                         // tell everyone to stop
                         stopper_tx.send(1).unwrap();
                         break;
                     }
                     OutgoingMessage::MethodInvoke(x) => {
-                        let tuple = (ClientInvokeMessage::message_id(), x);
+                        let tuple = (MethodInvokeMessage::message_id(), x);
                         ciborium::ser::into_writer(&tuple, &mut buffer).unwrap()
                     }
                 }
 
-                output
+                socket_out
                     .send(tokio_tungstenite::tungstenite::Message::Binary(buffer))
                     .await
                     .unwrap();
@@ -522,27 +903,31 @@ async fn forward_task(
 }
 
 /// Run the client state in it's own thread
-fn client_worker_thread<T>(
-    input: std::sync::mpsc::Receiver<IncomingMessage<T>>,
-    output: tokio::sync::mpsc::Sender<OutgoingMessage>,
-    a: T::ArgumentType,
-) where
-    T: UserClientState + 'static,
-    T::CommandType: std::marker::Send,
-    T::ArgumentType: std::marker::Send,
-{
+async fn client_worker_thread(
+    mut input: tokio::sync::mpsc::Receiver<IncomingMessage>,
+    //output: tokio::sync::mpsc::Sender<OutgoingMessage>,
+    stopper: tokio::sync::broadcast::Sender<u8>,
+    state: Arc<Mutex<ClientState>>,
+) {
     debug!("Starting client worker thread");
-    let mut t = T::new(a, output);
 
-    while let Ok(x) = input.recv() {
+    while let Some(x) = input.recv().await {
         match x {
-            IncomingMessage::NetworkMessage(bytes) => {
-                handle_next(&mut t, bytes.as_slice()).unwrap();
+            IncomingMessage::NetworkMessage(root) => {
+                handle_next(state.clone(), root).unwrap();
             }
-            IncomingMessage::Command(c) => t.on_command(c),
+            IncomingMessage::Closed => {
+                break;
+            }
         }
     }
     debug!("Ending client worker thread");
+
+    stopper.send(1).unwrap();
+
+    {
+        state.lock().unwrap().clear();
+    }
 }
 
 //pub fn make_invoke_message

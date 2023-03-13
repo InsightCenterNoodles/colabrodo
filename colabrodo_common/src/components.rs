@@ -1,10 +1,10 @@
-use colabrodo_macros::DeltaPatch;
-use serde::de::Error;
-use serde::Deserializer;
-use serde::{Deserialize, Serialize};
-use serde_with;
+//! Component related messages
+//!
+//! These are templated based on how the component refers to others.
 
-//use colabrodo_macros::DeltaPatch;
+use colabrodo_macros::DeltaPatch;
+use serde::{Deserialize, Serialize};
+use serde_with::{self, serde_as, DefaultOnError};
 
 use crate::{common::ServerMessageIDs, types::*};
 
@@ -25,16 +25,6 @@ pub trait UpdatableWith {
 
 // =============================================================================
 
-fn check_exclusion<const N: usize>(v: &[bool; N]) -> bool {
-    let mut sum: u32 = 0;
-    for x in v {
-        sum += *x as u32;
-    }
-    sum == 1
-}
-
-// =============================================================================
-
 #[serde_with::skip_serializing_none]
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct MethodArg {
@@ -44,14 +34,17 @@ pub struct MethodArg {
 
 #[serde_with::skip_serializing_none]
 #[derive(Debug, Default, Serialize, Deserialize)]
-pub struct MethodState {
+pub struct MethodState<Extra> {
     pub name: String,
     pub doc: Option<String>,
     pub return_doc: Option<String>,
     pub arg_doc: Vec<MethodArg>,
+
+    #[serde(skip)]
+    pub state: Extra,
 }
 
-impl ComponentMessageIDs for MethodState {
+impl<Extra> ComponentMessageIDs for MethodState<Extra> {
     fn update_message_id() -> ServerMessageIDs {
         ServerMessageIDs::Unknown
     }
@@ -69,13 +62,16 @@ impl ComponentMessageIDs for MethodState {
 
 #[serde_with::skip_serializing_none]
 #[derive(Debug, Default, Serialize, Deserialize)]
-pub struct SignalState {
+pub struct SignalState<Extra> {
     pub name: String,
     pub doc: Option<String>,
     pub arg_doc: Vec<MethodArg>,
+
+    #[serde(skip)]
+    pub state: Extra,
 }
 
-impl ComponentMessageIDs for SignalState {
+impl<Extra> ComponentMessageIDs for SignalState<Extra> {
     fn update_message_id() -> ServerMessageIDs {
         ServerMessageIDs::Unknown
     }
@@ -93,58 +89,13 @@ impl ComponentMessageIDs for SignalState {
 
 #[serde_with::skip_serializing_none]
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
-pub struct BufferRepresentation {
-    inline_bytes: Option<ByteBuff>,
-    uri_bytes: Option<Url>,
-}
-
-impl BufferRepresentation {
-    pub fn new_from_bytes(bytes: Vec<u8>) -> Self {
-        Self {
-            inline_bytes: Some(ByteBuff::new(bytes)),
-            uri_bytes: None,
-        }
-    }
-
-    pub fn new_from_url(url: &str) -> Self {
-        Self {
-            inline_bytes: None,
-            uri_bytes: Some(Url::new_from_slice(url)),
-        }
-    }
-
-    pub fn bytes(&self) -> Option<&ByteBuff> {
-        self.inline_bytes.as_ref()
-    }
-
-    pub fn uri(&self) -> Option<&Url> {
-        self.uri_bytes.as_ref()
-    }
-}
-
-#[serde_with::skip_serializing_none]
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct BufferState {
     pub name: Option<String>,
 
     pub size: u64,
 
-    #[serde(flatten, deserialize_with = "deserialize_buffer_state")]
-    pub representation: BufferRepresentation,
-}
-
-fn deserialize_buffer_state<'de, D>(
-    deserializer: D,
-) -> Result<BufferRepresentation, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let ret = BufferRepresentation::deserialize(deserializer)?;
-    if !check_exclusion(&[ret.inline_bytes.is_some(), ret.uri_bytes.is_some()])
-    {
-        return Err(Error::duplicate_field("duplicate buffer representation"));
-    }
-    Ok(ret)
+    pub inline_bytes: Option<ByteBuff>,
+    pub uri_bytes: Option<url::Url>,
 }
 
 impl BufferState {
@@ -152,10 +103,8 @@ impl BufferState {
         Self {
             name: None,
             size: bytes.len() as u64,
-            representation: BufferRepresentation {
-                inline_bytes: Some(ByteBuff::new(bytes)),
-                uri_bytes: None,
-            },
+            inline_bytes: Some(ByteBuff::new(bytes)),
+            uri_bytes: None,
         }
     }
 
@@ -163,10 +112,8 @@ impl BufferState {
         Self {
             name: None,
             size: buffer_size,
-            representation: BufferRepresentation {
-                inline_bytes: None,
-                uri_bytes: Some(Url::new_from_slice(url)),
-            },
+            inline_bytes: None,
+            uri_bytes: Some(url.parse().unwrap()),
         }
     }
 }
@@ -198,6 +145,7 @@ pub enum BufferViewType {
     Image,
 }
 
+#[serde_as]
 #[serde_with::skip_serializing_none]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct BufferViewState<BufferReference> {
@@ -205,6 +153,7 @@ pub struct BufferViewState<BufferReference> {
 
     pub source_buffer: BufferReference,
 
+    #[serde_as(deserialize_as = "DefaultOnError")]
     #[serde(rename = "type")]
     pub view_type: BufferViewType,
 
@@ -325,7 +274,7 @@ impl<BufferViewRef, MaterialRef> ComponentMessageIDs
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct ImageSource<BufferViewRef> {
     buffer_source: Option<BufferViewRef>,
-    uri_source: Option<Url>,
+    uri_source: Option<url::Url>,
 }
 
 impl<BufferViewRef> ImageSource<BufferViewRef> {
@@ -336,7 +285,7 @@ impl<BufferViewRef> ImageSource<BufferViewRef> {
         }
     }
 
-    pub fn new_uri(uri: Url) -> Self {
+    pub fn new_uri(uri: url::Url) -> Self {
         Self {
             buffer_source: None,
             uri_source: Some(uri),
@@ -397,7 +346,7 @@ impl<ImageStateRef, SamplerStateRef> ComponentMessageIDs
 
 // =============================================================================
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 pub enum MagFilter {
     #[serde(rename = "NEAREST")]
     Nearest,
@@ -405,7 +354,7 @@ pub enum MagFilter {
     Linear,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 pub enum MinFilter {
     #[serde(rename = "NEAREST")]
     Nearest,
@@ -415,7 +364,7 @@ pub enum MinFilter {
     LinearMipmapLinear,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 pub enum SamplerMode {
     #[serde(rename = "CLAMP_TO_EDGE")]
     Clamp,
@@ -618,7 +567,7 @@ pub struct PlotState<TableRef, MethodRef, SignalRef> {
     pub name: Option<String>,
 
     #[serde(flatten)]
-    pub(crate) mutable: PlotStateUpdatable<TableRef, MethodRef, SignalRef>,
+    pub mutable: PlotStateUpdatable<TableRef, MethodRef, SignalRef>,
 }
 
 impl<TableRef, MethodRef, SignalRef> UpdatableWith
@@ -687,20 +636,24 @@ pub struct TextRepresentation {
 #[serde_with::skip_serializing_none]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct WebRepresentation {
-    pub source: Url,
+    pub source: url::Url,
     pub height: Option<f32>,
     pub width: Option<f32>,
 }
 
 #[serde_with::skip_serializing_none]
 #[derive(Debug, Default, Serialize, Deserialize)]
-pub struct InstanceSource {}
+pub struct InstanceSource<BufferViewRef> {
+    pub view: BufferViewRef,
+    pub stride: Option<u64>,
+    pub bb: Option<BoundingBox>,
+}
 
 #[serde_with::skip_serializing_none]
 #[derive(Debug, Serialize, Deserialize)]
-pub struct RenderRepresentation<GeometryRef> {
+pub struct RenderRepresentation<GeometryRef, BufferViewRef> {
     pub mesh: GeometryRef,
-    pub instances: Option<InstanceSource>,
+    pub instances: Option<InstanceSource<BufferViewRef>>,
 }
 
 #[serde_with::skip_serializing_none]
@@ -709,14 +662,16 @@ pub struct NullRepresentation;
 
 #[serde_with::skip_serializing_none]
 #[derive(Debug, Serialize, Deserialize)]
-pub struct EntityRepresentation<GeometryRef> {
+pub struct EntityRepresentation<GeometryRef, BufferViewRef> {
     null_rep: Option<NullRepresentation>,
     text_rep: Option<TextRepresentation>,
     web_rep: Option<WebRepresentation>,
-    render_rep: Option<RenderRepresentation<GeometryRef>>,
+    render_rep: Option<RenderRepresentation<GeometryRef, BufferViewRef>>,
 }
 
-impl<GeometryRef> EntityRepresentation<GeometryRef> {
+impl<GeometryRef, BufferViewRef>
+    EntityRepresentation<GeometryRef, BufferViewRef>
+{
     pub fn new_null() -> Self {
         Self {
             null_rep: Some(NullRepresentation),
@@ -744,7 +699,9 @@ impl<GeometryRef> EntityRepresentation<GeometryRef> {
         }
     }
 
-    pub fn new_render(t: RenderRepresentation<GeometryRef>) -> Self {
+    pub fn new_render(
+        t: RenderRepresentation<GeometryRef, BufferViewRef>,
+    ) -> Self {
         Self {
             null_rep: None,
             text_rep: None,
@@ -760,6 +717,7 @@ impl<GeometryRef> EntityRepresentation<GeometryRef> {
 #[derive(Debug, Default, Serialize, Deserialize, DeltaPatch)]
 #[patch_generic(
     EntityRef,
+    BufferViewRef,
     GeometryRef,
     LightRef,
     TableRef,
@@ -769,6 +727,7 @@ impl<GeometryRef> EntityRepresentation<GeometryRef> {
 )]
 pub struct EntityStateUpdatable<
     EntityRef,
+    BufferViewRef,
     GeometryRef,
     LightRef,
     TableRef,
@@ -781,7 +740,8 @@ pub struct EntityStateUpdatable<
     pub transform: Option<[f32; 16]>,
 
     #[serde(flatten)]
-    pub representation: Option<EntityRepresentation<GeometryRef>>,
+    pub representation:
+        Option<EntityRepresentation<GeometryRef, BufferViewRef>>,
 
     pub lights: Option<Vec<LightRef>>,
     pub tables: Option<Vec<TableRef>>,
@@ -799,6 +759,7 @@ pub struct EntityStateUpdatable<
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct EntityState<
     EntityRef,
+    BufferViewRef,
     GeometryRef,
     LightRef,
     TableRef,
@@ -811,6 +772,7 @@ pub struct EntityState<
     #[serde(flatten)]
     pub mutable: EntityStateUpdatable<
         EntityRef,
+        BufferViewRef,
         GeometryRef,
         LightRef,
         TableRef,
@@ -822,6 +784,7 @@ pub struct EntityState<
 
 impl<
         EntityRef,
+        BufferViewRef,
         GeometryRef,
         LightRef,
         TableRef,
@@ -831,6 +794,7 @@ impl<
     > UpdatableWith
     for EntityState<
         EntityRef,
+        BufferViewRef,
         GeometryRef,
         LightRef,
         TableRef,
@@ -841,6 +805,7 @@ impl<
 {
     type Substate = EntityStateUpdatable<
         EntityRef,
+        BufferViewRef,
         GeometryRef,
         LightRef,
         TableRef,
@@ -855,6 +820,7 @@ impl<
 
 impl<
         EntityRef,
+        BufferViewRef,
         GeometryRef,
         LightRef,
         TableRef,
@@ -864,6 +830,7 @@ impl<
     > ComponentMessageIDs
     for EntityState<
         EntityRef,
+        BufferViewRef,
         GeometryRef,
         LightRef,
         TableRef,
@@ -891,7 +858,7 @@ impl<
 
 #[cfg(test)]
 mod tests {
-    use crate::components::{BufferRepresentation, BufferState};
+    use crate::components::BufferState;
 
     #[test]
     fn buffer_state_serde() {
@@ -908,16 +875,8 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
-    fn bad_buffer_state_serde() {
-        let rep = BufferState {
-            name: Some("Test".to_string()),
-            size: 1024,
-            representation: BufferRepresentation {
-                inline_bytes: None,
-                uri_bytes: None,
-            },
-        };
+    fn buffer_state_serde_url() {
+        let rep = BufferState::new_from_url("http://wombat.com", 1024);
 
         let mut pack = Vec::<u8>::new();
 

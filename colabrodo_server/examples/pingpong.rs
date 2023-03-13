@@ -1,106 +1,56 @@
-use colabrodo_server::server::{
-    AsyncServer, DefaultCommand, NoInit, ServerOptions,
-};
-use colabrodo_server::server_messages::{ComponentReference, MethodArg};
-use colabrodo_server::{
-    server_messages::MethodState,
-    server_state::{InvokeObj, MethodResult, ServerState, UserServerState},
-};
-use log;
-use std::collections::HashMap;
+use closure::closure;
+use colabrodo_server::{server::*, server_messages::*};
 
-type Function = fn(
-    &mut PingPongServer,
-    &InvokeObj,
-    Vec<ciborium::value::Value>,
-) -> MethodResult;
-
-struct PingPongServer {
-    state: ServerState,
-
-    method_list: HashMap<ComponentReference<MethodState>, Function>,
+/// Struct to hold our state
+struct PingPongState {
+    count: u64,
 }
 
-/// This function will handle a method invocation, parse arguments, and compute a reply.
-fn ping_pong(
-    _state: &mut PingPongServer,
-    _context: &InvokeObj,
-    args: Vec<ciborium::value::Value>,
-) -> MethodResult {
-    Ok(ciborium::value::Value::Array(args))
-}
+/// Set up our server
+fn setup(state: ServerStatePtr) {
+    let ping_pong_state = PingPongState { count: 0 };
 
-/// All server states should use this trait...
-impl UserServerState for PingPongServer {
-    fn mut_state(&mut self) -> &mut ServerState {
-        return &mut self.state;
-    }
+    log::debug!("Initializing ping pong state");
 
-    fn state(&self) -> &ServerState {
-        return &self.state;
-    }
+    let mut state_lock = state.lock().unwrap();
 
-    fn invoke(
-        &mut self,
-        method: ComponentReference<MethodState>,
-        context: colabrodo_server::server_state::InvokeObj,
-        args: Vec<ciborium::value::Value>,
-    ) -> MethodResult {
-        let function = self.method_list.get(&method).unwrap();
-        (function)(self, &context, args)
-    }
-}
-
-/// And servers that use the provided tokio infrastructure should impl this trait, too...
-impl AsyncServer for PingPongServer {
-    type CommandType = DefaultCommand;
-    type InitType = NoInit;
-
-    fn new(
-        tx: colabrodo_server::server_state::CallbackPtr,
-        _init: NoInit,
-    ) -> Self {
-        Self {
-            state: ServerState::new(tx.clone()),
-            method_list: Default::default(),
+    // Create a function that just returns what it has been given
+    let function = closure!(
+        move ping_pong_state, | m : AsyncMethodContent |{
+            log::info!("Function called {}", ping_pong_state.count);
+            Ok(Some(ciborium::value::Value::Array(m.args)))
         }
-    }
+    );
 
-    fn initialize_state(&mut self) {
-        log::debug!("Initializing ping pong state");
-        let ptr = self.state.methods.new_component(MethodState {
-            name: "ping_pong".to_string(),
-            doc: Some(
-                "This method just replies with what you send it.".to_string(),
-            ),
-            return_doc: None,
-            arg_doc: vec![MethodArg {
-                name: "First arg".to_string(),
-                doc: Some("Example doc".to_string()),
-            }],
-            ..Default::default()
-        });
+    // Create a component to hold the method
+    let ptr = state_lock.methods.new_owned_component(MethodState {
+        name: "ping_pong".to_string(),
+        doc: Some(
+            "This method just replies with what you send it.".to_string(),
+        ),
+        return_doc: None,
+        arg_doc: vec![MethodArg {
+            name: "First arg".to_string(),
+            doc: Some("Example doc".to_string()),
+        }],
+        state: MethodHandlerSlot::assign(function),
+    });
 
-        self.method_list.insert(ptr.clone(), ping_pong);
-
-        self.state.update_document(
-            colabrodo_server::server_messages::ServerDocumentUpdate {
-                methods_list: Some(vec![ptr]),
-                ..Default::default()
-            },
-        )
-    }
-
-    // If we had some kind of out-of-band messaging to the server, it would be handled here
-    fn handle_command(&mut self, _: Self::CommandType) {
-        // pass
-    }
+    // Attach the new method to our document
+    state_lock.update_document(ServerDocumentUpdate {
+        methods_list: Some(vec![ptr]),
+        ..Default::default()
+    })
 }
 
 #[tokio::main]
 async fn main() {
     println!("Connect clients to localhost:50000");
     let opts = ServerOptions::default();
-    colabrodo_server::server::server_main::<PingPongServer>(opts, NoInit {})
-        .await;
+
+    let state = ServerState::new();
+
+    setup(state.clone());
+
+    server_main(opts, state).await;
 }

@@ -1,19 +1,23 @@
+//! Components for client-sourced messages to NOODLES servers
+
 use ciborium::value::Value;
 use serde::de::{self, Visitor};
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
 
-use crate::nooid::NooID;
+use crate::nooid::*;
 
+/// Message ID for client messages
 pub trait ClientMessageID {
     fn message_id() -> u32;
 }
 
+/// Client introduction message
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
-pub struct ClientIntroductionMessage {
+pub struct IntroductionMessage {
     pub client_name: String,
 }
 
-impl ClientMessageID for ClientIntroductionMessage {
+impl ClientMessageID for IntroductionMessage {
     fn message_id() -> u32 {
         0
     }
@@ -21,11 +25,12 @@ impl ClientMessageID for ClientIntroductionMessage {
 
 // ============================================================================
 
-#[derive(Debug, PartialEq)]
+/// Optional context for a method invocation
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum InvokeIDType {
-    Entity(NooID),
-    Table(NooID),
-    Plot(NooID),
+    Entity(EntityID),
+    Table(TableID),
+    Plot(PlotID),
 }
 
 impl serde::Serialize for InvokeIDType {
@@ -70,9 +75,9 @@ impl<'de> Visitor<'de> for InvokeIDTypeDeVisitor {
         let value = value.unwrap();
 
         match key.as_str() {
-            "entity" => Ok(InvokeIDType::Entity(value)),
-            "table" => Ok(InvokeIDType::Table(value)),
-            "plot" => Ok(InvokeIDType::Plot(value)),
+            "entity" => Ok(InvokeIDType::Entity(EntityID(value))),
+            "table" => Ok(InvokeIDType::Table(TableID(value))),
+            "plot" => Ok(InvokeIDType::Plot(PlotID(value))),
             _ => Err(de::Error::unknown_field(
                 key.as_str(),
                 &["entity", "table", "plot"],
@@ -92,16 +97,17 @@ impl<'de> Deserialize<'de> for InvokeIDType {
 
 // ============================================================================
 
+/// Method invocation message for the server
 #[serde_with::skip_serializing_none]
 #[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
-pub struct ClientInvokeMessage {
-    pub method: NooID,
+pub struct MethodInvokeMessage {
+    pub method: MethodID,
     pub context: Option<InvokeIDType>,
     pub invoke_id: Option<String>,
     pub args: Vec<Value>,
 }
 
-impl ClientMessageID for ClientInvokeMessage {
+impl ClientMessageID for MethodInvokeMessage {
     fn message_id() -> u32 {
         1
     }
@@ -109,12 +115,13 @@ impl ClientMessageID for ClientInvokeMessage {
 
 // ============================================================================
 
+/// Collection of client-side message
 pub enum AllClientMessages {
-    Intro(ClientIntroductionMessage),
-    Invoke(ClientInvokeMessage),
+    Intro(IntroductionMessage),
+    Invoke(MethodInvokeMessage),
 }
 
-// to help with decode
+// Root message from the client.
 pub struct ClientRootMessage {
     pub list: Vec<AllClientMessages>,
 }
@@ -162,7 +169,7 @@ impl<'de> Visitor<'de> for ClientRootMessageVisitor {
             match id {
                 0 => {
                     ret.list.push(AllClientMessages::Intro(parse_content::<
-                        ClientIntroductionMessage,
+                        IntroductionMessage,
                         A,
                     >(
                         &mut seq
@@ -171,7 +178,7 @@ impl<'de> Visitor<'de> for ClientRootMessageVisitor {
 
                 1 => {
                     ret.list.push(AllClientMessages::Invoke(parse_content::<
-                        ClientInvokeMessage,
+                        MethodInvokeMessage,
                         A,
                     >(
                         &mut seq
@@ -207,7 +214,7 @@ mod tests {
 
     #[test]
     fn test_intro_messages() {
-        let intro_message = ClientIntroductionMessage {
+        let intro_message = IntroductionMessage {
             client_name: "test_name".to_string(),
         };
 
@@ -217,7 +224,7 @@ mod tests {
 
         //println!("{buffer:02X?}");
 
-        let read: ClientIntroductionMessage =
+        let read: IntroductionMessage =
             ciborium::de::from_reader(buffer.as_slice()).unwrap();
 
         assert!(intro_message == read);
@@ -225,9 +232,11 @@ mod tests {
 
     #[test]
     fn test_invoke_messages() {
-        let m = ClientInvokeMessage {
-            method: NooID::new_with_slot(1),
-            context: Some(InvokeIDType::Table(NooID::new_with_slot(10))),
+        let m = MethodInvokeMessage {
+            method: MethodID(NooID::new_with_slot(1)),
+            context: Some(InvokeIDType::Table(TableID(NooID::new_with_slot(
+                10,
+            )))),
             ..Default::default()
         };
 
@@ -235,7 +244,7 @@ mod tests {
 
         ciborium::ser::into_writer(&m, &mut buffer).unwrap();
 
-        let read: ClientInvokeMessage =
+        let read: MethodInvokeMessage =
             ciborium::de::from_reader(buffer.as_slice()).unwrap();
 
         //println!("{read:?}");

@@ -1,9 +1,7 @@
+//! Components and tools for server-sourced method and signal messages
+
 use colabrodo_macros::DeltaPatch;
-use serde::{
-    de::{Error, MapAccess, Visitor},
-    ser::SerializeStruct,
-    Deserialize, Serialize,
-};
+use serde::{Deserialize, Serialize};
 use serde_with;
 
 use crate::components::{DeltaPatch, UpdatableWith};
@@ -13,95 +11,23 @@ pub trait ServerMessageID {
     fn message_id() -> u32;
 }
 
-#[derive(Debug)]
-pub enum SignalInvokeObj<EntityRef, TableRef, PlotRef> {
-    Entity(EntityRef),
-    Table(TableRef),
-    Plot(PlotRef),
+#[serde_with::skip_serializing_none]
+#[derive(Debug, Deserialize, Serialize)]
+pub struct SignalInvokeObj<EntityRef, TableRef, PlotRef> {
+    pub entity: Option<EntityRef>,
+    pub table: Option<TableRef>,
+    pub plot: Option<PlotRef>,
 }
 
-impl<EntityRef, TableRef, PlotRef> Serialize
+impl<EntityRef, TableRef, PlotRef> Default
     for SignalInvokeObj<EntityRef, TableRef, PlotRef>
-where
-    EntityRef: Serialize,
-    TableRef: Serialize,
-    PlotRef: Serialize,
 {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let mut s = serializer.serialize_struct("InvokeIDType", 1)?;
-        match self {
-            SignalInvokeObj::Entity(e) => s.serialize_field("entity", e)?,
-            SignalInvokeObj::Table(e) => s.serialize_field("table", e)?,
-            SignalInvokeObj::Plot(e) => s.serialize_field("plot", e)?,
+    fn default() -> Self {
+        Self {
+            entity: None,
+            table: None,
+            plot: None,
         }
-        s.end()
-    }
-}
-
-struct SignalInvokeObjVisitor<EntityRef, TableRef, PlotRef> {
-    phantom0: std::marker::PhantomData<EntityRef>,
-    phantom1: std::marker::PhantomData<TableRef>,
-    phantom2: std::marker::PhantomData<PlotRef>,
-}
-
-impl<'de, EntityRef, TableRef, PlotRef> Visitor<'de>
-    for SignalInvokeObjVisitor<EntityRef, TableRef, PlotRef>
-where
-    EntityRef: Deserialize<'de>,
-    TableRef: Deserialize<'de>,
-    PlotRef: Deserialize<'de>,
-{
-    type Value = SignalInvokeObj<EntityRef, TableRef, PlotRef>;
-
-    fn expecting(
-        &self,
-        formatter: &mut std::fmt::Formatter,
-    ) -> std::fmt::Result {
-        write!(formatter, "invoke context field")
-    }
-
-    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
-    where
-        A: MapAccess<'de>,
-    {
-        let key: Option<String> = map.next_key()?;
-
-        if key.is_none() {
-            return Err(Error::missing_field("invoke context field"));
-        }
-
-        match key.unwrap().as_str() {
-            "entity" => Ok(Self::Value::Entity(map.next_value()?)),
-            "table" => Ok(Self::Value::Table(map.next_value()?)),
-            "plot" => Ok(Self::Value::Plot(map.next_value()?)),
-            _ => Err(Error::missing_field("missing context field")),
-        }
-    }
-}
-
-impl<'de, EntityRef, TableRef, PlotRef> Deserialize<'de>
-    for SignalInvokeObj<EntityRef, TableRef, PlotRef>
-where
-    EntityRef: Deserialize<'de>,
-    TableRef: Deserialize<'de>,
-    PlotRef: Deserialize<'de>,
-{
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        deserializer.deserialize_seq(SignalInvokeObjVisitor::<
-            EntityRef,
-            TableRef,
-            PlotRef,
-        > {
-            phantom0: std::marker::PhantomData,
-            phantom1: std::marker::PhantomData,
-            phantom2: std::marker::PhantomData,
-        })
     }
 }
 
@@ -181,17 +107,37 @@ pub struct MethodException {
 }
 
 impl MethodException {
-    pub fn method_not_found(optional_info: Option<String>) -> Self {
+    pub fn method_not_found(optional_info: Option<&str>) -> Self {
         Self {
             code: ExceptionCodes::MethodNotFound as i32,
-            message: optional_info,
+            message: optional_info.map(|f| f.to_string()),
+            ..Default::default()
+        }
+    }
+
+    pub fn invalid_parameters(optional_info: Option<&str>) -> Self {
+        Self {
+            code: ExceptionCodes::InvalidParameters as i32,
+            message: optional_info.map(|f| f.to_string()),
+            ..Default::default()
+        }
+    }
+
+    pub fn internal_error(optional_info: Option<&str>) -> Self {
+        Self {
+            code: ExceptionCodes::InternalError as i32,
+            message: optional_info.map(|f| f.to_string()),
             ..Default::default()
         }
     }
 }
 
 pub enum ExceptionCodes {
-    MethodNotFound = -32601,
+    ParseError = -32700,        // Invalid CBOR was provided
+    InvalidRequest = -32600,    // The request is not valid
+    MethodNotFound = -32601,    // The method is not available
+    InvalidParameters = -32602, // The parameters to the method are incorrect
+    InternalError = -32603,     // An internal server error
 }
 #[serde_with::skip_serializing_none]
 #[derive(Debug, Default, Serialize, Deserialize)]

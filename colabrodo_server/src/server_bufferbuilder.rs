@@ -1,3 +1,5 @@
+//! Tools to help pack mesh buffers. See [VertexSource] to see how to use this module.
+
 use std::mem::size_of;
 
 use crate::{server_messages::*, server_state::ServerState};
@@ -8,6 +10,7 @@ use bytemuck::{self, try_cast_slice, Zeroable};
 use bytemuck::Pod;
 use thiserror::Error;
 
+/// A minimal vertex, with only position and normal
 #[repr(C)]
 #[derive(Debug, Clone, PartialEq, Copy, Zeroable, Pod)]
 pub struct VertexMinimal {
@@ -15,6 +18,7 @@ pub struct VertexMinimal {
     pub normal: [f32; 3],
 }
 
+/// A vertex with texture support
 #[repr(C)]
 #[derive(Debug, Clone, PartialEq, Copy, Zeroable, Pod)]
 pub struct VertexTexture {
@@ -23,6 +27,7 @@ pub struct VertexTexture {
     pub texture: [u16; 2],
 }
 
+/// A vertex type with support for all attributes
 #[repr(C)]
 #[derive(Debug, Clone, PartialEq, Copy, Zeroable, Pod)]
 pub struct VertexFull {
@@ -146,6 +151,15 @@ pub enum BufferBuildError {
 
 // =============================================================================
 
+/// How should the buffer be represented? Either by bytes inline, or by some URL
+pub enum BufferRepresentation {
+    Bytes(Vec<u8>),
+    Url(String),
+}
+
+// =============================================================================
+
+/// The type of index for this mesh
 #[derive(Debug, Clone)]
 pub enum IndexType<'a> {
     UnindexedPoints,
@@ -159,7 +173,7 @@ pub enum IndexType<'a> {
 impl<'a> IndexType<'a> {
     fn total_u32_count(&self) -> u32 {
         (match self {
-            IndexType::Points(x) => x.len() * 1,
+            IndexType::Points(x) => x.len(),
             IndexType::Lines(x) => x.len() * 2,
             IndexType::Triangles(x) => x.len() * 3,
             _ => 0,
@@ -176,6 +190,19 @@ impl<'a> IndexType<'a> {
     }
 }
 
+/// Compressed mesh representation
+pub struct PackResult {
+    pub bytes: Vec<u8>,
+    pub vertex_region_size: u64,
+    pub index_region_size: u64,
+}
+
+/// Specification of mesh info to be packed.
+///
+/// Users can set an optional name, a list of verticies to pack, and how to index those verticies.
+///
+/// To use, first instantiate one of these types with your vertex information.
+/// You can then pack the bytes to get the binary representation. After, you can then build NOODLES state. This split approach lets you choose where the bytes of the mesh should actually be stored.
 #[derive(Debug)]
 pub struct VertexSource<'a, V>
 where
@@ -190,33 +217,75 @@ impl<'a, V> VertexSource<'a, V>
 where
     V: Vertex,
 {
-    pub fn build_mesh(
-        &self,
-        server_state: &mut ServerState,
-    ) -> Result<IntermediateGeometryPatch, BufferBuildError> {
-        self.build_mesh_with(server_state, |data| {
-            crate::server_messages::BufferRepresentation::new_from_bytes(data)
+    /// Compress the vertex and index information into a byte array
+    pub fn pack_bytes(&self) -> Result<PackResult, BufferBuildError> {
+        let mut bytes: Vec<u8> = Vec::new();
+
+        let vertex_bytes = try_cast_slice(self.vertex)
+            .map_err(|_| BufferBuildError::InternalError)?;
+
+        let i_total_bytes = self.index.total_byte_count();
+
+        bytes.reserve(vertex_bytes.len() + i_total_bytes);
+
+        bytes.extend_from_slice(vertex_bytes);
+
+        fn try_cast<T: Pod>(t: &[T]) -> Result<&[u8], BufferBuildError> {
+            try_cast_slice(t).map_err(|_| BufferBuildError::InternalError)
+        }
+
+        let blank = Vec::<u8>::new();
+
+        let slice = match self.index {
+            IndexType::Points(x) => try_cast(x)?,
+            IndexType::Lines(x) => try_cast(x)?,
+            IndexType::Triangles(x) => try_cast(x)?,
+            _ => blank.as_slice(),
+        };
+
+        bytes.extend_from_slice(slice);
+
+        Ok(PackResult {
+            bytes,
+            vertex_region_size: vertex_bytes.len() as u64,
+            index_region_size: i_total_bytes as u64,
         })
     }
 
-    pub fn build_mesh_with<F>(
+    /// Build partial NOODLES state for this mesh.
+    ///
+    /// Lets the user choose how to handle the structure of the patch.
+    /// Make sure to pass in the proper disposition of the mesh bytes.
+    pub fn build_states(
         &self,
         server_state: &mut ServerState,
-        register_bytes: F,
-    ) -> Result<IntermediateGeometryPatch, BufferBuildError>
-    where
-        F: FnOnce(Vec<u8>) -> crate::server_messages::BufferRepresentation,
-    {
-        let v_count = self.vertex.len();
-
+        representation: BufferRepresentation,
+    ) -> Result<IntermediateGeometryPatch, BufferBuildError> {
         let v_byte_size = size_of::<V>();
 
-        let copy_result = copy_bytes(self.vertex, &self.index)?;
+        let vertex_bytes = (v_byte_size * self.vertex.len()) as u64;
+
+        let i_total_bytes = self.index.total_byte_count() as u64;
+
+        let total_bytes = vertex_bytes + i_total_bytes;
+
+        let mut bytes_source = None;
+        let mut url_source = None;
+
+        match representation {
+            BufferRepresentation::Bytes(x) => {
+                bytes_source = Some(ByteBuff::new(x))
+            }
+            BufferRepresentation::Url(x) => {
+                url_source = Some(x.parse().unwrap())
+            }
+        }
 
         let buffer = server_state.buffers.new_component(BufferState {
             name: self.name.as_ref().map(|x| format!("{x}_buffer")),
-            size: copy_result.bytes.len() as u64,
-            representation: register_bytes(copy_result.bytes),
+            size: total_bytes,
+            inline_bytes: bytes_source,
+            uri_bytes: url_source,
         });
 
         let vertex_view =
@@ -227,12 +296,12 @@ where
                     source_buffer: buffer.clone(),
                     view_type: BufferViewType::Geometry,
                     offset: 0,
-                    length: copy_result.vertex_region_size,
+                    length: vertex_bytes,
                 });
 
         let mut ret = IntermediateGeometryPatch {
             attributes: Vec::default(),
-            vertex_count: v_count as u64,
+            vertex_count: self.vertex.len() as u64,
             indices: None,
             patch_type: match self.index {
                 IndexType::UnindexedPoints => PrimitiveType::Points,
@@ -245,7 +314,6 @@ where
         };
 
         // record vertex offsets
-
         for attrib in V::get_structure() {
             ret.attributes.push(ServerGeometryAttribute {
                 view: vertex_view.clone(),
@@ -270,8 +338,8 @@ where
                         name: None,
                         source_buffer: buffer,
                         view_type: BufferViewType::Geometry,
-                        offset: copy_result.vertex_region_size,
-                        length: copy_result.index_region_size,
+                        offset: vertex_bytes,
+                        length: i_total_bytes,
                     },
                 );
 
@@ -288,6 +356,29 @@ where
 
         Ok(ret)
     }
+
+    /// Build the full geometry state.
+    pub fn build_geometry(
+        &self,
+        server_state: &mut ServerState,
+        representation: BufferRepresentation,
+        material: MaterialReference,
+    ) -> Result<GeometryReference, BufferBuildError> {
+        let intermediate = self.build_states(server_state, representation)?;
+
+        let patch = ServerGeometryPatch {
+            attributes: intermediate.attributes,
+            vertex_count: intermediate.vertex_count,
+            indices: intermediate.indices,
+            patch_type: intermediate.patch_type,
+            material,
+        };
+
+        Ok(server_state.geometries.new_component(ServerGeometryState {
+            name: self.name.clone(),
+            patches: vec![patch],
+        }))
+    }
 }
 
 #[derive(Debug)]
@@ -298,54 +389,11 @@ pub struct IntermediateGeometryPatch {
     pub patch_type: PrimitiveType,
 }
 
-struct CopyResult {
-    bytes: Vec<u8>,
-    vertex_region_size: u64,
-    index_region_size: u64,
-}
-
-fn copy_bytes<V: Vertex>(
-    v: &[V],
-    index: &IndexType,
-) -> Result<CopyResult, BufferBuildError> {
-    let mut bytes: Vec<u8> = Vec::new();
-
-    let vertex_bytes =
-        try_cast_slice(v).map_err(|_| BufferBuildError::InternalError)?;
-
-    let i_total_bytes = index.total_byte_count();
-
-    bytes.reserve(vertex_bytes.len() + i_total_bytes);
-
-    bytes.extend_from_slice(vertex_bytes);
-
-    fn try_cast<T: Pod>(t: &[T]) -> Result<&[u8], BufferBuildError> {
-        try_cast_slice(t).map_err(|_| BufferBuildError::InternalError)
-    }
-
-    let blank = Vec::<u8>::new();
-
-    let slice = match index {
-        IndexType::Points(x) => try_cast(x)?,
-        IndexType::Lines(x) => try_cast(x)?,
-        IndexType::Triangles(x) => try_cast(x)?,
-        _ => blank.as_slice(),
-    };
-
-    bytes.extend_from_slice(slice);
-
-    Ok(CopyResult {
-        bytes,
-        vertex_region_size: vertex_bytes.len() as u64,
-        index_region_size: i_total_bytes as u64,
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use std::mem;
 
-    use colabrodo_common::nooid::NooID;
+    use colabrodo_common::nooid::{BufferID, NooID};
 
     use crate::server_state::*;
 
@@ -388,7 +436,13 @@ mod tests {
         let index_list = vec![[0, 1, 2]];
         let index = IndexType::Triangles(index_list.as_slice());
 
-        let result = copy_bytes(verts.as_slice(), &index).unwrap();
+        let source = VertexSource {
+            name: None,
+            vertex: verts.as_slice(),
+            index,
+        };
+
+        let result = source.pack_bytes().unwrap();
 
         assert_eq!(
             result.bytes.len(),
@@ -407,9 +461,7 @@ mod tests {
 
     #[test]
     fn common_pack() {
-        let (tx, _rx) = std::sync::mpsc::channel();
-
-        let mut state = ServerState::new(tx);
+        let state = ServerState::new();
 
         let verts = vec![
             VertexTexture {
@@ -438,12 +490,18 @@ mod tests {
             index: index.clone(),
         };
 
-        let _result = source.build_mesh(&mut state).unwrap();
+        let mut lock = state.lock().unwrap();
 
-        state.buffers.inspect(NooID::new(0, 0), |f| {
-            let bytes = f.representation.bytes().unwrap().bytes();
+        let packed = source.pack_bytes().unwrap();
 
-            let pack_res = copy_bytes(verts.as_slice(), &index).unwrap();
+        let _result = source
+            .build_states(&mut lock, BufferRepresentation::Bytes(packed.bytes))
+            .unwrap();
+
+        lock.buffers.inspect(BufferID(NooID::new(0, 0)), |f| {
+            let bytes = f.inline_bytes.as_ref().unwrap().bytes();
+
+            let pack_res = source.pack_bytes().unwrap();
 
             assert_eq!(bytes, pack_res.bytes);
         });
