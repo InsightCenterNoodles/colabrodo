@@ -91,24 +91,16 @@ impl Default for ServerOptions {
 /// Note that this function will spawn a number of threads.
 ///
 /// # Example
-/// Users should define a type that conforms to UserServerState + AsyncServer and pass it in like:
+///
+/// A simple example to create a server:
+///
 /// ```rust,ignore
-/// struct MyServer {
-///     state: ServerState,
-///     // your state
-///     // .. etc
-/// }
-///
-/// impl UserServerState for MyServer {
-///     // ...
-/// }
-///
-/// impl AsyncServer for MyServer {
-///     // ...
-/// }
-///
 /// let opts = ServerOptions::default();
-/// colabrodo_common::server_tokio::server_main::<MyServer>(opts);
+/// let mut state = ServerState::new();
+///
+/// //setup(&mut state);
+///
+/// server_main(opts, state).await;
 ///
 /// ```
 pub async fn server_main(opts: ServerOptions, state: Arc<Mutex<ServerState>>) {
@@ -263,7 +255,9 @@ async fn server_state_loop(
                                         log::debug!("SEND TO CLIENT:");
                                         debug_cbor(&out);
                                     }
-                                    client.sender.send(out).unwrap();
+                                    // clients could already be gone, so don't
+                                    // unwrap.
+                                    let _ = client.sender.send(out);
                                 },
                             ).await;
 

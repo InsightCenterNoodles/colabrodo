@@ -7,9 +7,9 @@ use colabrodo_server::{
 /// Build the actual cube geometry.
 ///
 /// This uses the simple helper tools to build a geometry buffer; you don't have to use this feature if you don't want to.
-async fn make_cube(
+fn make_cube(
     server_state: &mut ServerState,
-    mut link: AssetServerLink,
+    asset_server: AssetStorePtr,
 ) -> ServerGeometryPatch {
     let verts = vec![
         VertexMinimal {
@@ -94,12 +94,11 @@ async fn make_cube(
     // Return a new mesh with this geometry/material
     // Unlike the other cube example, we use a callback to describe how to store the data. Our callback uses the link to the asset server to create a new asset, and publish the URL.
 
-    let url = link
-        .add_asset(
-            create_asset_id(),
-            Asset::new_from_slice(pack.bytes.as_slice()),
-        )
-        .await;
+    let url = add_asset(
+        asset_server,
+        create_asset_id(),
+        Asset::new_from_slice(pack.bytes.as_slice()),
+    );
 
     println!("Cube asset URL is at {url}");
 
@@ -118,10 +117,10 @@ async fn make_cube(
     }
 }
 
-async fn setup(state: &mut ServerStatePtr, link: AssetServerLink) {
+async fn setup(state: &mut ServerStatePtr, asset_server: AssetStorePtr) {
     let mut state_lock = state.lock().unwrap();
 
-    let cube = make_cube(&mut state_lock, link).await;
+    let cube = make_cube(&mut state_lock, asset_server);
 
     let geom = state_lock.geometries.new_component(ServerGeometryState {
         name: Some("Cube Geom".to_string()),
@@ -149,21 +148,14 @@ async fn main() {
     println!("Connect clients to localhost:50000");
 
     // Set up the web binary asset server
-    let (asset_server, mut link) =
-        make_asset_server(AssetServerOptions::default());
-
-    // Launch it
-    tokio::spawn(asset_server);
-
-    // Wait for it to start
-    link.wait_for_start().await;
+    let asset_server = make_asset_server(AssetServerOptions::default());
 
     // Proceed as normal
     let opts = ServerOptions::default();
 
     let mut state = ServerState::new();
 
-    setup(&mut state, link).await;
+    setup(&mut state, asset_server).await;
 
     server_main(opts, state).await;
 }
