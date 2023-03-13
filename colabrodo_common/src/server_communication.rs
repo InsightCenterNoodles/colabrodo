@@ -1,3 +1,5 @@
+//! Components and tools for server-sourced method and signal messages
+
 use colabrodo_macros::DeltaPatch;
 use serde::{Deserialize, Serialize};
 use serde_with;

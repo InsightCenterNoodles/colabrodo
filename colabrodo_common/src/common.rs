@@ -192,6 +192,7 @@ impl ServerMessageIDs {
     }
 }
 
+/// Commonly used strings as defined in the specification.
 pub mod strings {
     pub const MTHD_TBL_SUBSCRIBE: &str = "noo::tbl_subscribe";
     pub const MTHD_TBL_INSERT: &str = "noo::tbl_insert";

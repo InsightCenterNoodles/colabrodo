@@ -1,10 +1,12 @@
 use closure::closure;
 use colabrodo_server::{server::*, server_messages::*};
 
+/// Struct to hold our state
 struct PingPongState {
     count: u64,
 }
 
+/// Set up our server
 fn setup(state: ServerStatePtr) {
     let ping_pong_state = PingPongState { count: 0 };
 
@@ -12,6 +14,7 @@ fn setup(state: ServerStatePtr) {
 
     let mut state_lock = state.lock().unwrap();
 
+    // Create a function that just returns what it has been given
     let function = closure!(
         move ping_pong_state, | m : AsyncMethodContent |{
             log::info!("Function called {}", ping_pong_state.count);
@@ -19,6 +22,7 @@ fn setup(state: ServerStatePtr) {
         }
     );
 
+    // Create a component to hold the method
     let ptr = state_lock.methods.new_owned_component(MethodState {
         name: "ping_pong".to_string(),
         doc: Some(
@@ -32,6 +36,7 @@ fn setup(state: ServerStatePtr) {
         state: MethodHandlerSlot::assign(function),
     });
 
+    // Attach the new method to our document
     state_lock.update_document(ServerDocumentUpdate {
         methods_list: Some(vec![ptr]),
         ..Default::default()

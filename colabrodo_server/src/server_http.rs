@@ -1,4 +1,6 @@
-//! Tools to serve binary assets over http
+//! Tools to serve binary assets over HTTP.
+//!
+//! See the cube_http example to see how to use this module.
 
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};

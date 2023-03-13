@@ -7,7 +7,7 @@ use colabrodo_server::{
 /// Build the actual cube geometry.
 ///
 /// This uses the simple helper tools to build a geometry buffer; you don't have to use this feature if you don't want to.
-fn make_cube(server_state: &mut ServerState) -> ServerGeometryPatch {
+fn make_cube(server_state: &mut ServerState) -> GeometryReference {
     let verts = vec![
         VertexMinimal {
             position: [-1.0, -1.0, 1.0],
@@ -89,30 +89,19 @@ fn make_cube(server_state: &mut ServerState) -> ServerGeometryPatch {
     let pack = test_source.pack_bytes().unwrap();
 
     // Return a new mesh with this geometry/material
-    let intermediate = test_source
-        .build_states(server_state, BufferRepresentation::Bytes(pack.bytes))
-        .unwrap();
-
-    // build the cube with our material
-
-    ServerGeometryPatch {
-        attributes: intermediate.attributes,
-        vertex_count: intermediate.vertex_count,
-        indices: intermediate.indices,
-        patch_type: intermediate.patch_type,
-        material,
-    }
+    test_source
+        .build_geometry(
+            server_state,
+            BufferRepresentation::Bytes(pack.bytes),
+            material,
+        )
+        .unwrap()
 }
 
 fn setup(state: &mut ServerStatePtr) {
     let mut state_lock = state.lock().unwrap();
 
     let cube = make_cube(&mut state_lock);
-
-    let geom = state_lock.geometries.new_component(ServerGeometryState {
-        name: Some("Cube Geom".to_string()),
-        patches: vec![cube],
-    });
 
     state_lock.entities.new_owned_component(ServerEntityState {
         name: Some("Cube".to_string()),
@@ -121,7 +110,7 @@ fn setup(state: &mut ServerStatePtr) {
             transform: None,
             representation: Some(ServerEntityRepresentation::new_render(
                 ServerRenderRepresentation {
-                    mesh: geom,
+                    mesh: cube,
                     instances: None,
                 },
             )),

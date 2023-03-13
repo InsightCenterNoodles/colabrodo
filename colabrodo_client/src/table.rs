@@ -1,3 +1,5 @@
+//! Tools to help subscribe to server-side tables
+
 use std::{
     collections::{BTreeMap, HashMap},
     sync::{Arc, Mutex, Weak},

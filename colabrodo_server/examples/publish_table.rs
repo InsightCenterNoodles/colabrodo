@@ -30,14 +30,17 @@ fn make_init_table() -> BasicTable {
 
 // =============================================================================
 
+/// Struct to hold our example data
 struct ExampleState {
     _state: ServerStatePtr,
     _table_system: TableSystemPtr,
 }
 
+/// Set up the example
 fn setup(state: ServerStatePtr) -> ExampleState {
     log::debug!("Initializing table state");
 
+    // Create a new table component
     let table = {
         let mut lock = state.lock().unwrap();
 
@@ -47,8 +50,10 @@ fn setup(state: ServerStatePtr) -> ExampleState {
         })
     };
 
+    // Initialize the table handling system
     let table_system = TableSystem::new(state.clone());
 
+    // Link the data with the table component
     {
         let mut table_lock = table_system.lock().unwrap();
 

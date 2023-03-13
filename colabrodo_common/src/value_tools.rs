@@ -1,3 +1,5 @@
+//! Tools to help work with CBOR values
+
 use std::collections::HashMap;
 
 pub use ciborium::value::Value;
@@ -44,12 +46,14 @@ pub fn convert_to_value_map(v: NooLinearMap) -> NooHashMap {
     ret
 }
 
+/// Get a value from a CBOR map
 #[inline]
 pub fn get_map(m: &mut NooHashMap, key: &str) -> Result<Value, FromValueError> {
     m.remove(key)
         .ok_or_else(|| FromValueError::MissingField(key.to_string()))
 }
 
+/// Get a string corresponding to a CBOR type
 pub fn get_value_type(value: &Value) -> String {
     match value {
         Value::Integer(_) => "Integer".into(),
@@ -58,7 +62,7 @@ pub fn get_value_type(value: &Value) -> String {
         Value::Text(_) => "Text".into(),
         Value::Bool(_) => "Bool".into(),
         Value::Null => "Null".into(),
-        Value::Tag(_, _) => "Tag".into(),
+        Value::Tag(_, x) => format!("Tagged: {}", get_value_type(x)),
         Value::Array(_) => "Array".into(),
         Value::Map(_) => "Map".into(),
         _ => "Unknown".into(),
@@ -67,6 +71,7 @@ pub fn get_value_type(value: &Value) -> String {
 
 // =============================================================================
 
+/// Trait for converting between native and CBOR representation
 pub trait CBORTransform
 where
     Self: Sized,
@@ -75,11 +80,13 @@ where
     fn to_cbor(&self) -> Value;
 }
 
+/// Convert a CBOR value to a type
 #[inline]
 pub fn from_cbor<T: CBORTransform>(value: Value) -> Result<T, FromValueError> {
     T::try_from_cbor(value)
 }
 
+/// Convert a list of CBOR values to a list of types
 #[inline]
 pub fn from_cbor_list<T: CBORTransform>(
     value: Vec<Value>,
@@ -90,6 +97,7 @@ pub fn from_cbor_list<T: CBORTransform>(
         .collect())
 }
 
+/// Convert from an optional value to an optional type
 #[inline]
 pub fn from_cbor_option<T: CBORTransform>(
     value: Option<Value>,
@@ -97,6 +105,7 @@ pub fn from_cbor_option<T: CBORTransform>(
     value.map(|v| T::try_from_cbor(v)).transpose()
 }
 
+/// Convert an object to CBOR
 #[inline]
 pub fn to_cbor<T: CBORTransform>(t: &T) -> Value {
     t.to_cbor()
@@ -259,6 +268,8 @@ where
 }
 
 // =============================================================================
+
+/// Transform a list of values to CBOR
 #[macro_export]
 macro_rules! tf_to_cbor {
     [$( $x:expr ), *] => {
@@ -273,6 +284,8 @@ macro_rules! tf_to_cbor {
         }
     };
 }
+
+/// Make a reusable function that consumes a CBOR value, and attempts to turn it into a tuple of values.
 #[macro_export]
 macro_rules! make_decode_function {
     ($y:ident, $( $x:ty ),*) => {
@@ -290,6 +303,7 @@ macro_rules! make_decode_function {
     };
 }
 
+/// Convert a list of values (such as one would get from a method) into a tuple of types.
 #[macro_export]
 macro_rules! arg_to_tuple {
     ($y:expr, $( $x:ty ),*) => {

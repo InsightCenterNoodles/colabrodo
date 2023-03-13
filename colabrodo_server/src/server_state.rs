@@ -35,6 +35,16 @@ pub type CallbackPtr = Sender<Output>;
 
 // =============================================================================
 
+// Take a component name and strip out template/paths for debugging/info purposes
+fn cleanup_name(name: &'static str) -> &'static str {
+    let first_angle = name.find('<').unwrap_or(name.len());
+    let name = &name[0..first_angle];
+    let last_path = name.rfind("::").map(|f| f + 2).unwrap_or(0);
+    &name[last_path..]
+}
+
+// =============================================================================
+
 /// A struct to manage the lifetime of a component. Holds the id of the component, and the list that contains it.
 /// When this struct goes out of scope, the ID is deleted for recycling and the component is erased.
 /// Thus, this should be held in an Rc.
@@ -65,13 +75,7 @@ where
     IDType: IDClass,
 {
     fn drop(&mut self) {
-        log::debug!(
-            "Deleting Component {} {:?}",
-            std::any::type_name::<T>(),
-            self.id
-        );
-
-        // now inform the host list what has happened
+        // inform the host list what has happened
         // this is tricky if, through our delete, we happen to trigger another delete from this list. so we want to move things out first, to release our borrow on the host. We can then let the T go out of scope outside of that borrow.
         let mut _holder: Option<T>;
 
@@ -158,6 +162,7 @@ where
     T: Serialize + ComponentMessageIDs + Debug,
     IDType: IDClass,
 {
+    component_name: &'static str,
     // this list HAS to be sorted at the moment.
     // as in most cases parent object IDs are lower in the slot list.
     // however, this is not guaranteed, and some clients scream if it is not
@@ -176,6 +181,7 @@ impl<
 {
     fn new(tx: CallbackPtr) -> Self {
         Self {
+            component_name: cleanup_name(std::any::type_name::<T>()),
             list: IndexMap::new(),
             id_list: HashMap::new(),
             broadcast: tx,
@@ -207,6 +213,8 @@ impl<
     ///
     /// The reason for this is if we delete an item from a list that triggers (through rc ptrs) a delete from the same list. We need to move the reference out of here so calling code can safely release their borrow before dropping again.
     fn return_id(&mut self, id: IDType) -> Option<T> {
+        log::debug!("Deleting Component {} {:?}", self.component_name, id);
+
         // write the delete message
         let recorder = Recorder::record(
             T::delete_message_id() as u32,
@@ -229,11 +237,7 @@ impl<
     ) -> ComponentReference<IDType, T> {
         let new_id = self.provision_id();
 
-        log::info!(
-            "Adding Component {} {:?}",
-            std::any::type_name::<T>(),
-            new_id
-        );
+        log::info!("Adding Component {} {:?}", self.component_name, new_id);
 
         // Use a pack here to encode the message id and the message.
         // TODO: Figure out a way we can pack many messages into one.
@@ -349,6 +353,10 @@ where
             .lock()
             .unwrap()
             .new_owned_component(new_t, self.list.clone())
+    }
+
+    pub fn own_component(&mut self, c: ComponentReference<IDType, T>) {
+        self.list.lock().unwrap().owned_list.push(c.0);
     }
 
     /// Discover a component by its ID. If the ID is invalid, returns None

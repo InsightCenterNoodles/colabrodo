@@ -1,3 +1,5 @@
+//! Tools to help publish server tables. See the publish_table example to see how to use this module.
+
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     sync::{Arc, Mutex},

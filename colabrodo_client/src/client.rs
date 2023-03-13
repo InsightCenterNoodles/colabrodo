@@ -1,4 +1,13 @@
-//pub use crate::table::{ManagedTable, ResolvedTableIDs};
+//! Methods and structs to create and launch NOODLES clients
+//!
+//! To create your own client:
+//! - First create a [ClientChannels] structure. This sets up required channels for client async communication.
+//! - Next, create a [ClientState].
+//! - Then launch the client with [start_client].
+//!
+//! See the simple client example to see how to set up a client, and also how to
+//! structure the code to launch tasks as soon as the client connects.
+
 pub use crate::server_root_message::FromServer;
 use crate::{components::*, server_root_message::*};
 use ciborium::value::Value;
@@ -44,10 +53,12 @@ where
     IDType: Eq + Hash + Copy,
     State: NamedComponent,
 {
+    /// Find the name of a component by an ID
     pub fn find_name(&self, id: &IDType) -> Option<&String> {
         self.find(id)?.name()
     }
 
+    /// Get a read-only copy of the ID -> State mapping
     pub fn component_map(&self) -> &HashMap<IDType, State> {
         &self.components
     }
@@ -69,14 +80,17 @@ where
         self.components.remove(&id);
     }
 
+    /// Find a component state by ID
     pub fn find(&self, id: &IDType) -> Option<&State> {
         self.components.get(id)
     }
 
+    /// Find a component ID by a name
     pub fn get_id_by_name(&self, name: &str) -> Option<IDType> {
         self.name_map.get(name).cloned()
     }
 
+    /// Get a component state by a name
     pub fn get_state_by_name(&self, name: &str) -> Option<&State> {
         self.find(self.name_map.get(name)?)
     }
@@ -114,8 +128,9 @@ where
 
 // =============================================================================
 
-type SignalSource = tokio::sync::broadcast::Sender<Vec<Value>>;
+/// Signals will be delivered along this channel type.
 pub type SignalRecv = tokio::sync::broadcast::Receiver<Vec<Value>>;
+type SignalSource = tokio::sync::broadcast::Sender<Vec<Value>>;
 type SignalHash = HashMap<SignalID, SignalSource>;
 
 fn fire_signal(id: SignalID, repo: &SignalHash, args: Vec<Value>) {
@@ -126,6 +141,7 @@ fn fire_signal(id: SignalID, repo: &SignalHash, args: Vec<Value>) {
 
 // =============================================================================
 
+/// A component list type that allows subscription to signals
 #[derive(Debug, Default)]
 pub struct SigModComponentList<IDType, State>
 where
@@ -141,10 +157,12 @@ where
     IDType: Eq + Hash + Copy,
     State: UpdatableWith + NamedComponent + CommComponent,
 {
+    /// Find the name of a component by an ID
     pub fn find_name(&self, id: &IDType) -> Option<&String> {
         self.list.find_name(id)
     }
 
+    /// Get a read-only copy of the ID -> State mapping
     pub fn component_map(&self) -> &HashMap<IDType, State> {
         self.list.component_map()
     }
@@ -162,14 +180,17 @@ where
         self.list.on_delete(id)
     }
 
+    /// Find a component state by ID
     pub fn find(&self, id: &IDType) -> Option<&State> {
         self.list.find(id)
     }
 
+    /// Find a component ID by a name
     pub fn get_id_by_name(&self, name: &str) -> Option<IDType> {
         self.list.get_id_by_name(name)
     }
 
+    /// Get a component state by a name
     pub fn get_state_by_name(&self, name: &str) -> Option<&State> {
         self.list.get_state_by_name(name)
     }
@@ -193,6 +214,13 @@ where
         }
     }
 
+    /// Subscribe to a signal emitted by a component
+    ///
+    /// Takes an ID to an existing component, and an ID to a signal that is attached to that component.
+    ///
+    /// # Returns
+    ///
+    /// Returns [None] if the subscription fails (non-existing component, etc). Otherwise returns a channel to be subscribed to.
     pub fn subscribe_signal(
         &mut self,
         id: IDType,
@@ -211,6 +239,7 @@ where
         None
     }
 
+    /// Remove a subscription to a signal on a component.
     pub fn unsubscribe_signal(&mut self, id: IDType, signal: SignalID) {
         if let Some(h) = self.signals.get_mut(&id) {
             h.remove(&signal);
@@ -220,8 +249,14 @@ where
 
 // =============================================================================
 
+/// A callback that is invoked for every message from the server
 pub type Callback = dyn Fn(&mut ClientState, &FromServer) + Send + Sync;
 
+/// Current NOODLES client state.
+///
+/// Keeps up-to-date state on all components, signal subscriptions, method invocation, etc.
+///
+/// See module-level documentation to see how to use this struct.
 pub struct ClientState {
     sender: tokio::sync::mpsc::Sender<OutgoingMessage>,
 
@@ -285,10 +320,14 @@ impl Debug for ClientState {
 fn blank_callback(_: &mut ClientState, _: &FromServer) {}
 
 impl ClientState {
+    /// Create a new client state, using created channels.
+    ///
+    /// Note that the given [ClientChannels] struct should not be re-used.
     pub fn new(channels: &ClientChannels) -> Arc<Mutex<Self>> {
         Self::new_with_callback(channels, blank_callback)
     }
 
+    /// Create a new client state, using previously created channels, and a callback.
     pub fn new_with_callback<C>(
         channels: &ClientChannels,
         cb: C,
@@ -341,6 +380,25 @@ impl ClientState {
         self.method_subs.clear();
     }
 
+    /// Update document method/signal handlers
+    fn update_method_signals(&mut self) {
+        if let Some(siglist) = &self.document_communication.signals_list {
+            let siglist: Vec<_> = siglist
+                .iter()
+                .filter(|x| !self.signal_subs.contains_key(&x))
+                .collect();
+
+            for sid in siglist {
+                self.signal_subs.remove(sid);
+            }
+        }
+    }
+
+    /// Subscribe to a signal on the document.
+    ///
+    /// # Returns
+    ///
+    /// Returns [None] if the subscription fails (non-existing component, etc). Otherwise returns a channel to be subscribed to.
     pub fn subscribe_signal(&mut self, signal: SignalID) -> Option<SignalRecv> {
         if let Some(list) = &mut self.document_communication.signals_list {
             log::debug!("Searching for signal {signal:?} in {list:?}");
@@ -359,11 +417,13 @@ impl ClientState {
         None
     }
 
+    /// Unsubscribe to a document signal
     pub fn unsubscribe_signal(&mut self, signal: SignalID) {
         self.signal_subs.remove(&signal);
     }
 }
 
+/// Async wait for the client to have connected and received the full document state.
 pub async fn wait_for_start(state: Arc<Mutex<ClientState>>) {
     let rx = state.lock().unwrap().ready_rx.take();
 
@@ -372,12 +432,14 @@ pub async fn wait_for_start(state: Arc<Mutex<ClientState>>) {
     }
 }
 
+/// Async issue a shutdown for the client and wait for all client machinery to stop.
 pub async fn shutdown(state: Arc<Mutex<ClientState>>) {
     let sender = state.lock().unwrap().sender.clone();
 
     sender.send(OutgoingMessage::Close).await.unwrap();
 }
 
+/// Context for a method invocation
 pub enum InvokeContext {
     Document,
     Entity(EntityID),
@@ -385,6 +447,16 @@ pub enum InvokeContext {
     Plot(PlotID),
 }
 
+/// Invoke a method on a component.
+///
+/// # Parameters
+/// - state: The client state to invoke on
+/// - method_id: The method id to invoke
+/// - context: Component to invoke the method on
+/// - args: A list of CBOR arguments to send to the server
+///
+/// # Return
+/// If the method fails, returns an exception. If successful, the result of the invocation. Note that the method might return nothing (a void), thus it returns an optional [Value].
 pub async fn invoke_method(
     state: Arc<Mutex<ClientState>>,
     method_id: MethodID,
@@ -573,7 +645,10 @@ fn handle_next_message(
             ModTable::Delete(x) => state.table_list.on_delete(x.id),
         },
         //
-        FromServer::MsgDocumentUpdate(x) => state.document_communication = x,
+        FromServer::MsgDocumentUpdate(x) => {
+            state.document_communication = x;
+            state.update_method_signals();
+        }
         FromServer::MsgDocumentReset(_) => {
             state.clear();
         }
@@ -656,6 +731,9 @@ pub enum OutgoingMessage {
 
 // =============================================================================
 
+/// Contains channels for incoming and outgoing messages for the client.
+///
+/// See the module level documentation to see how to use this class.
 pub struct ClientChannels {
     to_client_tx: tokio::sync::mpsc::Sender<IncomingMessage>,
     to_client_rx: tokio::sync::mpsc::Receiver<IncomingMessage>,
@@ -686,7 +764,11 @@ impl ClientChannels {
 
 /// Start running the client machinery.
 ///
-/// Will create the given user client state type when needed
+/// # Parameters
+/// - url: The host to connect to
+/// - name: The name of the client to use during introduction to the server
+/// - state: The client to use
+/// - channels: Input/output channels
 pub async fn start_client(
     url: String,
     name: String,

@@ -1,3 +1,5 @@
+//! ID related tools and specializations
+
 use ciborium::{cbor, value};
 use serde::{de::Visitor, ser::SerializeTuple, Deserialize, Serialize};
 

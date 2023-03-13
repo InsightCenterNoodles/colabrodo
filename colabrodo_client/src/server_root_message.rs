@@ -1,3 +1,5 @@
+//! Code to help extract a stream of messages from the server
+
 use crate::components::*;
 use colabrodo_common::{
     common::ServerMessageIDs,

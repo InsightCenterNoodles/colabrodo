@@ -1,8 +1,10 @@
+//! Component related messages
+//!
+//! These are templated based on how the component refers to others.
+
 use colabrodo_macros::DeltaPatch;
 use serde::{Deserialize, Serialize};
 use serde_with::{self, serde_as, DefaultOnError};
-
-//use colabrodo_macros::DeltaPatch;
 
 use crate::{common::ServerMessageIDs, types::*};
 

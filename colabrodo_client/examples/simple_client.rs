@@ -20,6 +20,7 @@ pub struct Arguments {
 
 // =============================================================================
 
+/// Print out a CBOR value in a pretty way
 fn dump_value(v: &Value) {
     match v {
         Value::Integer(x) => print!("{}", i128::from(*x)),
@@ -54,6 +55,7 @@ fn dump_value(v: &Value) {
     }
 }
 
+/// A table that prints out changes
 struct ReportingTable {
     header: Vec<TableColumnInfo>,
     data: BTreeMap<i64, Vec<Value>>,
@@ -61,6 +63,7 @@ struct ReportingTable {
 }
 
 impl ReportingTable {
+    /// Print the whole table
     fn dump_table(&self) {
         print!("ID\t");
         for c in &self.header {
@@ -80,6 +83,7 @@ impl ReportingTable {
     }
 }
 
+/// Implement required trait for our table. This will just print out changes.
 impl TableDataStorage for ReportingTable {
     fn on_init_data(&mut self, init_data: TableInitData) {
         println!("Initialize Table: {init_data:?}");
@@ -137,6 +141,7 @@ impl TableDataStorage for ReportingTable {
 
 // =============================================================================
 
+/// You can install a callback in your client to handle raw messages.
 fn callback(_client: &mut ClientState, msg: &FromServer) {
     println!("Message: {msg:?}");
 }
@@ -144,12 +149,16 @@ fn callback(_client: &mut ClientState, msg: &FromServer) {
 #[tokio::main]
 async fn main() {
     env_logger::init();
+
     let args = Arguments::parse();
 
+    // Create required channels for the client
     let channels = ClientChannels::new();
 
+    // Create the client state
     let state = ClientState::new_with_callback(&channels, callback);
 
+    // Launch the client runner in a different thread
     let handle = tokio::spawn(start_client(
         args.address,
         "Simple Client".to_string(),
@@ -157,10 +166,10 @@ async fn main() {
         channels,
     ));
 
+    // Wait for the clent to connect
     wait_for_start(state.clone()).await;
 
-    // subscribe to whichever table we can find
-
+    // Subscribe to whichever table we can find
     let table_list: Vec<_> = {
         let lock = state.lock().unwrap();
         lock.table_list.component_map().keys().cloned().collect()
@@ -176,5 +185,6 @@ async fn main() {
         );
     }
 
+    // We are done, just wait for the client runner to end
     let _ = handle.await.unwrap();
 }

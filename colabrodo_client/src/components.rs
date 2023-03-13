@@ -1,3 +1,5 @@
+//! Specialization of common component types for use in the client
+
 use colabrodo_common::nooid::*;
 use colabrodo_common::server_communication::MessageSignalInvoke;
 use colabrodo_common::{components::*, server_communication::DocumentUpdate};

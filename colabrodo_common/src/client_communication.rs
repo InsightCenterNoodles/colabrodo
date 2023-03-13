@@ -1,13 +1,17 @@
+//! Components for client-sourced messages to NOODLES servers
+
 use ciborium::value::Value;
 use serde::de::{self, Visitor};
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
 
 use crate::nooid::*;
 
+/// Message ID for client messages
 pub trait ClientMessageID {
     fn message_id() -> u32;
 }
 
+/// Client introduction message
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct IntroductionMessage {
     pub client_name: String,
@@ -21,6 +25,7 @@ impl ClientMessageID for IntroductionMessage {
 
 // ============================================================================
 
+/// Optional context for a method invocation
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum InvokeIDType {
     Entity(EntityID),
@@ -92,6 +97,7 @@ impl<'de> Deserialize<'de> for InvokeIDType {
 
 // ============================================================================
 
+/// Method invocation message for the server
 #[serde_with::skip_serializing_none]
 #[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct MethodInvokeMessage {
@@ -109,12 +115,13 @@ impl ClientMessageID for MethodInvokeMessage {
 
 // ============================================================================
 
+/// Collection of client-side message
 pub enum AllClientMessages {
     Intro(IntroductionMessage),
     Invoke(MethodInvokeMessage),
 }
 
-// to help with decode
+// Root message from the client.
 pub struct ClientRootMessage {
     pub list: Vec<AllClientMessages>,
 }

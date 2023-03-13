@@ -5,6 +5,7 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::{self, parse::Parse, parse2, DeriveInput, Type};
 
+/// Builds machinery to update a component
 #[proc_macro_derive(UpdatableStateItem)]
 pub fn emit_optional_patch_function(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as DeriveInput);

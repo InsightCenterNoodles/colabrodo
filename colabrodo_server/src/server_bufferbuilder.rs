@@ -1,3 +1,5 @@
+//! Tools to help pack mesh buffers. See [VertexSource] to see how to use this module.
+
 use std::mem::size_of;
 
 use crate::{server_messages::*, server_state::ServerState};
@@ -8,6 +10,7 @@ use bytemuck::{self, try_cast_slice, Zeroable};
 use bytemuck::Pod;
 use thiserror::Error;
 
+/// A minimal vertex, with only position and normal
 #[repr(C)]
 #[derive(Debug, Clone, PartialEq, Copy, Zeroable, Pod)]
 pub struct VertexMinimal {
@@ -15,6 +18,7 @@ pub struct VertexMinimal {
     pub normal: [f32; 3],
 }
 
+/// A vertex with texture support
 #[repr(C)]
 #[derive(Debug, Clone, PartialEq, Copy, Zeroable, Pod)]
 pub struct VertexTexture {
@@ -23,6 +27,7 @@ pub struct VertexTexture {
     pub texture: [u16; 2],
 }
 
+/// A vertex type with support for all attributes
 #[repr(C)]
 #[derive(Debug, Clone, PartialEq, Copy, Zeroable, Pod)]
 pub struct VertexFull {
@@ -146,6 +151,7 @@ pub enum BufferBuildError {
 
 // =============================================================================
 
+/// How should the buffer be represented? Either by bytes inline, or by some URL
 pub enum BufferRepresentation {
     Bytes(Vec<u8>),
     Url(String),
@@ -153,6 +159,7 @@ pub enum BufferRepresentation {
 
 // =============================================================================
 
+/// The type of index for this mesh
 #[derive(Debug, Clone)]
 pub enum IndexType<'a> {
     UnindexedPoints,
@@ -183,12 +190,19 @@ impl<'a> IndexType<'a> {
     }
 }
 
+/// Compressed mesh representation
 pub struct PackResult {
     pub bytes: Vec<u8>,
     pub vertex_region_size: u64,
     pub index_region_size: u64,
 }
 
+/// Specification of mesh info to be packed.
+///
+/// Users can set an optional name, a list of verticies to pack, and how to index those verticies.
+///
+/// To use, first instantiate one of these types with your vertex information.
+/// You can then pack the bytes to get the binary representation. After, you can then build NOODLES state. This split approach lets you choose where the bytes of the mesh should actually be stored.
 #[derive(Debug)]
 pub struct VertexSource<'a, V>
 where
@@ -203,6 +217,7 @@ impl<'a, V> VertexSource<'a, V>
 where
     V: Vertex,
 {
+    /// Compress the vertex and index information into a byte array
     pub fn pack_bytes(&self) -> Result<PackResult, BufferBuildError> {
         let mut bytes: Vec<u8> = Vec::new();
 
@@ -237,6 +252,10 @@ where
         })
     }
 
+    /// Build partial NOODLES state for this mesh.
+    ///
+    /// Lets the user choose how to handle the structure of the patch.
+    /// Make sure to pass in the proper disposition of the mesh bytes.
     pub fn build_states(
         &self,
         server_state: &mut ServerState,
@@ -295,7 +314,6 @@ where
         };
 
         // record vertex offsets
-
         for attrib in V::get_structure() {
             ret.attributes.push(ServerGeometryAttribute {
                 view: vertex_view.clone(),
@@ -337,6 +355,29 @@ where
         }
 
         Ok(ret)
+    }
+
+    /// Build the full geometry state.
+    pub fn build_geometry(
+        &self,
+        server_state: &mut ServerState,
+        representation: BufferRepresentation,
+        material: MaterialReference,
+    ) -> Result<GeometryReference, BufferBuildError> {
+        let intermediate = self.build_states(server_state, representation)?;
+
+        let patch = ServerGeometryPatch {
+            attributes: intermediate.attributes,
+            vertex_count: intermediate.vertex_count,
+            indices: intermediate.indices,
+            patch_type: intermediate.patch_type,
+            material,
+        };
+
+        Ok(server_state.geometries.new_component(ServerGeometryState {
+            name: self.name.clone(),
+            patches: vec![patch],
+        }))
     }
 }
 

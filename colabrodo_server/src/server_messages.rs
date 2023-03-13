@@ -1,3 +1,5 @@
+//! Specializations of message types and state definitions for the server
+
 use ciborium::value;
 use colabrodo_common::client_communication::InvokeIDType;
 use colabrodo_common::nooid::*;

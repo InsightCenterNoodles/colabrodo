@@ -1,6 +1,9 @@
+//! Common NOODLES types
+
 use serde::de::Error;
 use serde::{de::Visitor, Deserialize, Serialize};
 
+/// Attribute format
 #[derive(Debug, Copy, Clone, Deserialize, Serialize, Default)]
 pub enum Format {
     #[default]
@@ -31,6 +34,7 @@ pub type Mat4 = [f32; 16];
 
 // =============================================================================
 
+/// AABB as declared in the spec
 #[derive(Debug, Deserialize, Serialize, Default)]
 pub struct BoundingBox {
     pub min: Vec3,
@@ -102,6 +106,7 @@ impl<'de> Deserialize<'de> for ByteBuff {
 
 // =============================================================================
 
+/// We can group all delete messages into this type for easy serialization
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CommonDeleteMessage<IDType> {
     pub id: IDType,

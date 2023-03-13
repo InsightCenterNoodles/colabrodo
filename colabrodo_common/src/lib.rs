@@ -1,3 +1,5 @@
+//! Common elements for the NOODLES client and server libraries
+
 pub mod client_communication;
 pub mod common;
 pub mod components;
