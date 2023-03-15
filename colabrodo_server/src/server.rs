@@ -19,13 +19,11 @@ use colabrodo_common::client_communication::{
     AllClientMessages, ClientRootMessage, InvokeIDType, MethodInvokeMessage,
 };
 use colabrodo_common::common::ServerMessageIDs;
-use colabrodo_common::server_communication::ExceptionCodes;
-use colabrodo_common::server_communication::MessageMethodReply;
-use colabrodo_common::server_communication::MethodException;
+use colabrodo_common::server_communication::*;
+pub use colabrodo_macros::make_method_function;
 use futures_util::SinkExt;
 use futures_util::StreamExt;
 use log;
-use log::log_enabled;
 use thiserror::Error;
 pub use tokio;
 use tokio::{
@@ -235,7 +233,7 @@ async fn server_state_loop(
                     ToServerMessage::Client(client_msg) => {
                         // handle a message from a client, and write any replies
                         // to the client's output queue
-                        if log_enabled!(log::Level::Debug) {
+                        if log::log_enabled!(log::Level::Debug) {
                             log::debug!("RECV:");
                             debug_cbor(&client_msg.1);
                         }
@@ -251,7 +249,7 @@ async fn server_state_loop(
                                 client_msg.1,
                                 client_msg.0,
                                 |out| {
-                                    if log_enabled!(log::Level::Debug) {
+                                    if log::log_enabled!(log::Level::Debug) {
                                         log::debug!("SEND TO CLIENT:");
                                         debug_cbor(&out);
                                     }
