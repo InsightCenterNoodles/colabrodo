@@ -145,6 +145,22 @@ impl CBORTransform for f32 {
     }
 }
 
+impl CBORTransform for f64 {
+    fn try_from_cbor(value: Value) -> Result<Self, FromValueError> {
+        if let Value::Float(s) = value {
+            return Ok(s as f64);
+        }
+        Err(FromValueError::WrongType {
+            expected: "Float".into(),
+            found: get_value_type(&value),
+        })
+    }
+
+    fn to_cbor(&self) -> Value {
+        Value::Float(*self)
+    }
+}
+
 impl CBORTransform for u32 {
     fn try_from_cbor(value: Value) -> Result<Self, FromValueError> {
         if let Value::Integer(s) = value {

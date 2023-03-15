@@ -323,3 +323,256 @@ impl Parse for CBORParams {
         Ok(CBORParams { tys: ret })
     }
 }
+
+// =============================================================================
+
+/*
+
+
+fn make_uppercase(s: &str) -> String {
+    let mut c = s.chars();
+    match c.next() {
+        None => String::new(),
+        Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+    }
+}
+
+fn make_struct_case(s: String) -> String {
+    s.split("_").map(make_uppercase).collect()
+}
+
+macro_rules! declare_method {
+    ($fn_name:ident,
+        $fn_ident:expr,
+        $fn_doc:literal, $($arg_name:ident : $arg_type:ty : $arg_doc:literal),* , $body:expr) =>
+    {
+        fn $fn_name (
+            app: &mut PlatterState,
+            state: &mut ServerState,
+            context: Option<InvokeIDType>,
+            $($arg_name: $arg_type,)*
+        ) -> MethodResult { $body (app, state, context, $($arg_name,)* ) }
+
+        mod method_creation {
+
+        pub fn $fn_name (app_state: crate::PlatterStatePtr) -> crate::methods::ServerMethodState {
+
+            crate::methods::ServerMethodState {
+                name: $fn_ident.to_string(),
+                doc: Some($fn_doc.to_string()),
+                arg_doc: vec![
+                    $( crate::methods::MethodArg{
+                        name: stringify!($arg_name).to_string(),
+                        doc: Some($arg_doc.to_string())
+                    }, )*
+                ],
+                state: crate::methods::MethodHandlerSlot::assign(
+                    move |m| -> crate::methods::MethodResult {
+                        let mut app = app_state.lock().unwrap();
+                        let mut state = m.state.lock().unwrap();
+
+                        let mut arg_iter = m.args.into_iter();
+
+                        super::$fn_name (
+                            &mut app,
+                            &mut state,
+                            m.context,
+                            $(
+                                crate::methods::from_cbor::<$arg_type>(
+                                    arg_iter
+                                        .next()
+                                        .ok_or_else(|| crate::methods::MethodException::invalid_parameters(None))?)
+                                        .map_err(|_| crate::methods::MethodException::invalid_parameters(None))?
+                            ,)*
+                        )
+                    }
+                ),
+                ..Default::default()
+            }
+        }
+
+        }
+    }
+}
+
+ */
+
+struct MArg {
+    a_name: syn::Ident,
+    a_type: syn::Type,
+    a_lit: syn::LitStr,
+}
+
+struct MethodDecl {
+    fn_name: syn::Ident,
+    fn_state: syn::Type,
+    remote_ident: syn::Expr,
+    doc: syn::LitStr,
+    args: Vec<MArg>,
+    body: syn::Block,
+}
+
+impl Parse for MethodDecl {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let fn_name = input.parse()?;
+        let _ = input.parse::<syn::Token![,]>();
+        let fn_state = input.parse()?;
+        let _ = input.parse::<syn::Token![,]>();
+        let remote_ident = input.parse()?;
+        let _ = input.parse::<syn::Token![,]>();
+        let doc = input.parse()?;
+        let _ = input.parse::<syn::Token![,]>();
+
+        let mut args = Vec::new();
+
+        while let Ok(p) = input.parse() {
+            let _: syn::Token!(|) = p;
+            let a_name = input.parse()?;
+            let _ = input.parse::<syn::Token![:]>();
+            let a_type = input.parse()?;
+            let _ = input.parse::<syn::Token![:]>();
+            let a_lit = input.parse()?;
+            let _ = input.parse::<syn::Token![|]>();
+            let _ = input.parse::<syn::Token![,]>();
+
+            args.push(MArg {
+                a_name,
+                a_type,
+                a_lit,
+            });
+        }
+
+        let body = input.parse()?;
+
+        Ok(MethodDecl {
+            fn_name,
+            fn_state,
+            remote_ident,
+            doc,
+            args,
+            body,
+        })
+    }
+}
+
+#[proc_macro]
+pub fn make_method_function(input: TokenStream) -> TokenStream {
+    // one of the worse functions ever made...
+    let m: MethodDecl = syn::parse(input).unwrap();
+
+    let fn_name = m.fn_name.to_string();
+    let fn_state = {
+        let a = m.fn_state;
+        quote!(#a)
+    }
+    .to_string();
+    let fn_ident = {
+        let a = m.remote_ident;
+        quote!(#a)
+    }
+    .to_string();
+
+    let fn_doc = {
+        let a = m.doc;
+        quote!(#a)
+    }
+    .to_string();
+
+    // dump fn
+
+    let mut main_f = format!(
+        "
+    fn {} (
+        app: &mut {},
+        state: &mut ServerState,
+        context: Option<InvokeIDType>,",
+        fn_name, fn_state
+    );
+
+    // add types
+
+    {
+        let mut vec = Vec::new();
+        for a in &m.args {
+            let ty = &a.a_type;
+            let s = quote!(#ty).to_string();
+            vec.push(format!("{}: {}", a.a_name.to_string(), s));
+        }
+        let p = vec.join(",");
+        main_f += p.as_str();
+    }
+
+    main_f += ") -> MethodResult ";
+
+    {
+        let b = m.body;
+        main_f += quote!(#b).to_string().as_str();
+    }
+
+    main_f += "\n\n";
+
+    // create binding function
+
+    main_f +=
+        format!("pub fn create_{} (app_state: Arc<Mutex<{}>>) -> ServerMethodState {{\n", fn_name,
+        fn_state)
+            .as_str();
+
+    main_f += "ServerMethodState {\n";
+
+    main_f += format!(
+        "
+    name: {fn_ident}.to_string(),
+    doc: Some({fn_doc}.to_string()),
+    arg_doc: vec!["
+    )
+    .as_str();
+
+    {
+        let mut vec = Vec::new();
+        for a in &m.args {
+            let ty = &a.a_lit;
+            let s = quote!(#ty).to_string();
+            vec.push(format!(
+                "MethodArg {{ name: \"{}\".to_string(), doc: Some({}.to_string()) }}",
+                a.a_name.to_string(),
+                s
+            ));
+        }
+        let p = vec.join(",");
+        main_f += p.as_str();
+    }
+
+    main_f += "],\n";
+
+    main_f += "state: MethodHandlerSlot::assign(";
+
+    main_f += "move |m| -> MethodResult {\n
+        let mut app = app_state.lock().unwrap();\n
+        let mut state = m.state.lock().unwrap();\n
+        let mut arg_iter = m.args.into_iter();\n";
+
+    main_f += fn_name.as_str();
+
+    main_f += " (&mut app, &mut state, m.context,";
+
+    {
+        for a in &m.args {
+            main_f += "from_cbor::<";
+            let ty = &a.a_type;
+            let s = quote!(#ty).to_string();
+            main_f += s.as_str();
+
+            main_f += ">(arg_iter.next().ok_or_else(|| MethodException::invalid_parameters(None))?)
+            .map_err(|_| MethodException::invalid_parameters(None))?,"
+        }
+    }
+
+    main_f += ")}), ..Default::default()";
+
+    main_f += "}}\n";
+
+    //println!("{}", main_f);
+
+    main_f.parse().unwrap()
+}

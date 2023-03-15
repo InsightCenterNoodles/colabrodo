@@ -589,6 +589,7 @@ mod tests {
 
     use ciborium::{cbor, value::Value};
     use colabrodo_common::types::ByteBuff;
+    use colabrodo_macros::make_method_function;
 
     use super::*;
 
@@ -801,5 +802,30 @@ mod tests {
         });
 
         while let Ok(_msg) = recv.try_recv() {}
+    }
+
+    #[test]
+    #[should_panic]
+    #[allow(dead_code)]
+    fn check_method_maker() {
+        // this code is really just here to test that things compile the way we think they should. It wont run, as there is not tokio reactor running.
+        pub struct TestState;
+
+        use colabrodo_common::client_communication::InvokeIDType;
+        use colabrodo_common::value_tools::from_cbor;
+
+        make_method_function!(set_position
+            TestState
+            "set_pos",
+            "Set the position of a thing",
+            | arg1 : f32 : "Documentation for arg1" |,
+            | arg2 : f64 : "Documentation for arg2" |,
+            {
+                Ok(Some(Value::Bool((arg1 as f64) > arg2)))
+            }
+        );
+
+        let _state: ServerMethodState =
+            create_set_position(Arc::new(Mutex::new(TestState)));
     }
 }
