@@ -259,6 +259,8 @@ pub fn make_asset_server(options: AssetServerOptions) -> AssetStorePtr {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use hyper::{
         body::{Bytes, HttpBody},
         Client, Result,
@@ -295,6 +297,8 @@ mod tests {
             new_id,
             Asset::InMemory(Bytes::from(vec![10, 20, 30, 40])),
         );
+
+        tokio::time::sleep(Duration::from_millis(1000)).await;
 
         let content = fetch_url(url.parse().unwrap()).await.unwrap();
 

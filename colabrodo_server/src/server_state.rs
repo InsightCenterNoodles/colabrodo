@@ -814,6 +814,8 @@ mod tests {
         use colabrodo_common::client_communication::InvokeIDType;
         use colabrodo_common::value_tools::from_cbor;
 
+        fn do_thing(_s: &str) {}
+
         make_method_function!(set_position
             TestState
             "set_pos",
@@ -821,6 +823,8 @@ mod tests {
             | arg1 : f32 : "Documentation for arg1" |,
             | arg2 : f64 : "Documentation for arg2" |,
             {
+                do_thing("Request to move object {arg1:?}");
+                println!("Thing!");
                 Ok(Some(Value::Bool((arg1 as f64) > arg2)))
             }
         );
