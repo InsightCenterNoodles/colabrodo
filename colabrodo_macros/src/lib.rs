@@ -92,14 +92,14 @@ struct PatchParams {
 
 impl Parse for PatchParams {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        let content;
-        syn::parenthesized!(content in input);
+        //let content;
+        //syn::parenthesized!(content in input);
 
         let mut ret = Vec::<syn::Ident>::new();
-        while let Ok(p) = content.parse() {
+        while let Ok(p) = input.parse() {
             ret.push(p);
 
-            let comma = content.parse::<syn::Token![,]>();
+            let comma = input.parse::<syn::Token![,]>();
             if comma.is_err() {
                 break;
             }
@@ -113,14 +113,16 @@ pub fn emit_delta(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as DeriveInput);
 
     let generics = input.attrs.iter().find(|a| {
-        a.path.segments.len() == 1
-            && a.path.segments[0].ident == "patch_generic"
+        a.path().segments.len() == 1
+            && a.path().segments[0].ident == "patch_generic"
     });
 
     let generics = match generics {
         None => String::new(),
         Some(this_attr) => {
-            let parts: PatchParams = parse2(this_attr.tokens.clone()).unwrap();
+            let parts: PatchParams =
+                parse2(this_attr.meta.require_list().unwrap().tokens.clone())
+                    .unwrap();
 
             let v: Vec<String> = parts
                 .tys
@@ -230,11 +232,14 @@ pub fn value_serde(input: TokenStream) -> TokenStream {
         let mut decode_name = name_string.clone();
 
         let generics = fld.attrs.iter().find(|a| {
-            a.path.segments.len() == 1 && a.path.segments[0].ident == "vserde"
+            a.path().segments.len() == 1
+                && a.path().segments[0].ident == "vserde"
         });
 
         if let Some(this_attr) = generics {
-            let parts: CBORParams = parse2(this_attr.tokens.clone()).unwrap();
+            let parts: CBORParams =
+                parse2(this_attr.meta.require_list().unwrap().tokens.clone())
+                    .unwrap();
 
             //println!("DEBUG {:?}", parts.tys);
 
@@ -304,20 +309,20 @@ struct CBORParams {
 
 impl Parse for CBORParams {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        let content;
-        syn::parenthesized!(content in input);
+        //let content;
+        //syn::parenthesized!(content in input);
 
         //println!("DEBUG CONTENT {}", content.to_string());
 
         let mut ret = HashMap::<String, syn::Lit>::new();
-        while let Ok(p) = content.parse() {
+        while let Ok(p) = input.parse() {
             let key: syn::Ident = p;
             let key = key.to_string();
-            let equals = content.parse::<syn::Token![=]>();
+            let equals = input.parse::<syn::Token![=]>();
             if equals.is_err() {
                 continue;
             }
-            let value: syn::Lit = content.parse().unwrap();
+            let value: syn::Lit = input.parse().unwrap();
             ret.insert(key, value);
         }
         Ok(CBORParams { tys: ret })
@@ -409,7 +414,7 @@ struct MethodDecl {
     remote_ident: syn::Expr,
     doc: syn::LitStr,
     args: Vec<MArg>,
-    body: syn::Block,
+    body: syn::ExprBlock,
 }
 
 impl Parse for MethodDecl {
@@ -558,13 +563,22 @@ pub fn make_method_function(input: TokenStream) -> TokenStream {
 
     {
         for a in &m.args {
-            main_f += "from_cbor::<";
-            let ty = &a.a_type;
-            let s = quote!(#ty).to_string();
-            main_f += s.as_str();
+            if is_std_option(&a.a_type) {
+                main_f += "from_cbor_option::<";
+                let ty = &a.a_type;
+                let s = quote!(#ty).to_string();
+                main_f += s.as_str();
 
-            main_f += ">(arg_iter.next().ok_or_else(|| MethodException::invalid_parameters(None))?)
+                main_f += ">(arg_iter.next()).ok(),"
+            } else {
+                main_f += "from_cbor::<";
+                let ty = &a.a_type;
+                let s = quote!(#ty).to_string();
+                main_f += s.as_str();
+
+                main_f += ">(arg_iter.next().ok_or_else(|| MethodException::invalid_parameters(None))?)
             .map_err(|_| MethodException::invalid_parameters(None))?,"
+            }
         }
     }
 
