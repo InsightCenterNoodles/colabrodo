@@ -564,12 +564,7 @@ pub fn make_method_function(input: TokenStream) -> TokenStream {
     {
         for a in &m.args {
             if is_std_option(&a.a_type) {
-                main_f += "from_cbor_option::<";
-                let ty = &a.a_type;
-                let s = quote!(#ty).to_string();
-                main_f += s.as_str();
-
-                main_f += ">(arg_iter.next()).ok(),"
+                main_f += "from_cbor_option(arg_iter.next()).ok().flatten(),"
             } else {
                 main_f += "from_cbor::<";
                 let ty = &a.a_type;

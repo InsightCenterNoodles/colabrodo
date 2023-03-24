@@ -19,8 +19,9 @@ make_method_function!(ping_pong,
     "ping_pong",
     "A simple method that sends back exactly what it gets.",
     | first_arg : Value : "Required first argument" |,
+    | second_arg : Option<Value> : "Optional second argument" |,
     {
-        log::info!("Function called {}", app.count);
+        println!("Function called {} times: {:?} {:?}", app.count, first_arg, second_arg);
         Ok(Some(Value::Array(vec![first_arg])))
     });
 
