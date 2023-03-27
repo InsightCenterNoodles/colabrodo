@@ -515,6 +515,10 @@ impl ServerState {
         self.comm = update;
     }
 
+    pub fn document_signals_and_methods(&self) -> &ServerDocumentUpdate {
+        &self.comm
+    }
+
     /// Issue a signal for all clients
     ///
     /// Takes a signal to issue, the context on which the signal operates, and the arguments to be sent
