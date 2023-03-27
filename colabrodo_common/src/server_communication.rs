@@ -34,7 +34,7 @@ impl<EntityRef, TableRef, PlotRef> Default
 // =============================================================================
 
 #[serde_with::skip_serializing_none]
-#[derive(Debug, Serialize, Deserialize, DeltaPatch)]
+#[derive(Debug, Clone, Serialize, Deserialize, DeltaPatch)]
 #[patch_generic(MethodRef, SignalRef)]
 pub struct DocumentUpdate<MethodRef, SignalRef> {
     pub methods_list: Option<Vec<MethodRef>>,
