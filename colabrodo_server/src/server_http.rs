@@ -298,7 +298,7 @@ mod tests {
         let asset_server = make_asset_server(AssetServerOptions {
             ip: "127.0.0.1".parse().unwrap(),
             port: 50001,
-            ..Default::default()
+            external_host: Some("127.0.0.1".to_string()),
         });
 
         let new_id = create_asset_id();
@@ -309,9 +309,25 @@ mod tests {
             Asset::InMemory(Bytes::from(vec![10, 20, 30, 40])),
         );
 
-        tokio::time::sleep(Duration::from_millis(1000)).await;
+        println!("Server should have asset at {url}");
 
-        let content = fetch_url(url.parse().unwrap()).await.unwrap();
+        let mut counter = 0;
+
+        let content = loop {
+            if let Ok(content) = fetch_url(url.parse().unwrap()).await {
+                break content;
+            }
+
+            tokio::time::sleep(Duration::from_millis(2000)).await;
+
+            counter += 1;
+
+            if counter == 5 {
+                panic!("Unable to fetch from server!")
+            }
+
+            println!("Unable to fetch, trying again...");
+        };
 
         assert_eq!(content, vec![10, 20, 30, 40]);
 
