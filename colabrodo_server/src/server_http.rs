@@ -2,7 +2,7 @@
 //!
 //! See the cube_http example to see how to use this module.
 
-use std::net::SocketAddr;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::{collections::HashMap, sync::Mutex};
@@ -40,39 +40,45 @@ pub fn create_asset_id() -> uuid::Uuid {
     uuid::Uuid::new_v4()
 }
 
+fn determine_ip_address() -> Option<String> {
+    local_ip_address::local_ip().map(|f| f.to_string()).ok()
+}
+
 /// Storage for assets to be served
 pub struct AssetStore {
     stop_tx: broadcast::Sender<u8>,
-    host_name: String,
+    url_prefix: String,
     asset_list: HashMap<uuid::Uuid, Arc<Asset>>,
 }
 
 impl AssetStore {
-    fn new(p: u16) -> Self {
-        let hname = hostname::get().unwrap();
+    fn new(options: &AssetServerOptions) -> Self {
+        let hname = options
+            .external_host
+            .clone()
+            .or(determine_ip_address())
+            .unwrap();
 
-        let hname = hname.to_string_lossy();
-
-        let hname = format!("http://{hname}:{p}/");
+        let hname = format!("http://{hname}:{}/", options.port);
 
         let (stop_tx, _) = broadcast::channel(2);
 
         Self {
             stop_tx,
-            host_name: hname,
+            url_prefix: hname,
             asset_list: HashMap::new(),
         }
     }
 
     fn hostname(&self) -> &String {
-        &self.host_name
+        &self.url_prefix
     }
 
     /// Insert an asset into the store
     fn add_asset(&mut self, id: uuid::Uuid, asset: Asset) -> String {
         log::info!("Adding web asset {id}");
         self.asset_list.insert(id, Arc::new(asset));
-        format!("{}{}", self.host_name, id)
+        format!("{}{}", self.url_prefix, id)
     }
 
     /// Remove an asset from the store
@@ -161,13 +167,17 @@ async fn handle_request(
 
 /// Options for the asset server
 pub struct AssetServerOptions {
-    host: String,
+    ip: IpAddr,
+    port: u16,
+    external_host: Option<String>,
 }
 
 impl Default for AssetServerOptions {
     fn default() -> Self {
         Self {
-            host: "0.0.0.0:50001".to_string(),
+            ip: IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+            port: 50001,
+            external_host: None,
         }
     }
 }
@@ -248,9 +258,9 @@ pub fn shutdown(store: AssetStorePtr) {
 
 /// Make an asset server, and launch the web handler
 pub fn make_asset_server(options: AssetServerOptions) -> AssetStorePtr {
-    let addr: SocketAddr = options.host.parse().unwrap();
+    let addr = SocketAddr::new(options.ip, options.port);
 
-    let state = Arc::new(Mutex::new(AssetStore::new(addr.port())));
+    let state = Arc::new(Mutex::new(AssetStore::new(&options)));
 
     tokio::spawn(run_asset_server(state.clone(), addr));
 
@@ -286,7 +296,8 @@ mod tests {
 
     async fn simple_structure_main() {
         let asset_server = make_asset_server(AssetServerOptions {
-            host: "127.0.0.1:50001".to_string(),
+            ip: "127.0.0.1".parse().unwrap(),
+            port: 50001,
             ..Default::default()
         });
 

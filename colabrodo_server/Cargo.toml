@@ -16,7 +16,7 @@ serde_with = {workspace = true}
 tokio = {workspace = true}
 hyper = { version = "0.14", features = ["full"] }
 tokio-tungstenite = {workspace = true}
-hostname = "0.3.1"
+local-ip-address = "0.5.1"
 log = {workspace = true}
 futures-util = "0.3.24"
 futures-channel = "0.3.24"

@@ -4,6 +4,8 @@ use colabrodo_server::{
     server::*, server_bufferbuilder::*, server_http::*, server_messages::*,
 };
 
+use env_logger;
+
 /// Build the actual cube geometry.
 ///
 /// This uses the simple helper tools to build a geometry buffer; you don't have to use this feature if you don't want to.
@@ -104,11 +106,7 @@ fn make_cube(
 
     // Return a new mesh with this geometry/material
     test_source
-        .build_geometry(
-            server_state,
-            BufferRepresentation::Bytes(pack.bytes),
-            material,
-        )
+        .build_geometry(server_state, BufferRepresentation::Url(url), material)
         .unwrap()
 }
 
@@ -138,6 +136,8 @@ async fn setup(state: &mut ServerStatePtr, asset_server: AssetStorePtr) {
 
 #[tokio::main]
 async fn main() {
+    env_logger::init();
+
     println!("Connect clients to localhost:50000");
 
     // Set up the web binary asset server
