@@ -95,7 +95,10 @@ async fn client_path() {
 
     let signal_channel = {
         let mut lock = state.lock().unwrap();
-        let id = lock.signal_list.get_id_by_name("test_signal").unwrap();
+        let id = lock
+            .signal_list
+            .get_id_by_name("test_signal")
+            .expect("Missing required signal");
         lock.subscribe_signal(id).unwrap()
     };
 

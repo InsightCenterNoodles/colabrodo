@@ -555,7 +555,8 @@ pub fn make_method_function(input: TokenStream) -> TokenStream {
     main_f += "move |m| -> MethodResult {\n
         let mut app = app_state.lock().unwrap();\n
         let mut state = m.state.lock().unwrap();\n
-        let mut arg_iter = m.args.into_iter();\n";
+        let mut arg_iter = m.args.into_iter();\n
+        ";
 
     main_f += fn_name.as_str();
 
@@ -571,8 +572,24 @@ pub fn make_method_function(input: TokenStream) -> TokenStream {
                 let s = quote!(#ty).to_string();
                 main_f += s.as_str();
 
-                main_f += ">(arg_iter.next().ok_or_else(|| MethodException::invalid_parameters(None))?)
-            .map_err(|_| MethodException::invalid_parameters(None))?,"
+                main_f += format!(
+                    ">(
+                    arg_iter
+                    .next()
+                    .ok_or_else(
+                        || MethodException::invalid_parameters(
+                            Some(\"underflow: couldn't fulfill argument {0}\".into())
+                        )
+                    )?
+                )
+                .map_err(
+                    |_| MethodException::invalid_parameters(
+                        Some(\"Unable to convert argument {0}\".into())
+                    )
+                )?,",
+                    a.a_name
+                )
+                .as_str();
             }
         }
     }

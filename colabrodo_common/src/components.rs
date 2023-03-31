@@ -661,7 +661,7 @@ pub struct RenderRepresentation<GeometryRef, BufferViewRef> {
 pub struct NullRepresentation;
 
 #[serde_with::skip_serializing_none]
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct EntityRepresentation<GeometryRef, BufferViewRef> {
     null_rep: Option<NullRepresentation>,
     text_rep: Option<TextRepresentation>,
