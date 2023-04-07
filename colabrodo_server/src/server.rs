@@ -419,7 +419,7 @@ async fn client_handler(
                             log::debug!("Pong from client {}", client_id);
                         }
                         WSMessage::Ping(x) => {
-                            out_tx.send(tokio_tungstenite::tungstenite::Message::Pong(x))
+                            out_tx.send(tokio_tungstenite::tungstenite::Message::Ping(x))
                             .unwrap();
                         }
                         WSMessage::Close(_) => {
