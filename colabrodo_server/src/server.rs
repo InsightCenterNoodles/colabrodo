@@ -316,7 +316,7 @@ async fn client_handler(
     // probably more elegant ways of doing this, but this seems to be
     // an appropriate way to merge messages from a broadcast and possible
     // single-client replies
-    let (out_tx, mut out_rx) = mpsc::unbounded_channel();
+    let (out_tx, mut out_rx) = mpsc::unbounded_channel::<tokio_tungstenite::tungstenite::Message>();
 
     let (client_stop_tx, mut client_stop_rx) = broadcast::channel(1);
 
@@ -330,7 +330,7 @@ async fn client_handler(
                 data = out_rx.recv() => {
                     if let Some(data) = data {
                         // for each message, just send it along
-                        tx.send(tokio_tungstenite::tungstenite::Message::Binary(data))
+                        tx.send(data)
                         .await
                         .unwrap();
                     }
@@ -354,7 +354,7 @@ async fn client_handler(
                 // take each message from the broadcast channel and add it to the
                 // queue
                             if let Ok(Output::Broadcast(bcast)) = bcast {
-                                this_tx.send(bcast).unwrap();
+                                this_tx.send(tokio_tungstenite::tungstenite::Message::Binary(bcast)).unwrap();
                             }
                         }
                     }
@@ -364,10 +364,23 @@ async fn client_handler(
         })
     };
 
+    let (out_raw_tx, mut out_raw_rx) =  mpsc::unbounded_channel();
+
+    let out_clone = out_tx.clone();
+
+    tokio::spawn(async move {
+        
+        loop {
+            while let Some(x) = out_raw_rx.recv().await {
+                out_clone.send(tokio_tungstenite::tungstenite::Message::Binary(x)).unwrap();
+            }
+        }
+    });
+
     to_server_send
         .send(ToServerMessage::ClientConnected(ClientRecord {
             id: client_id,
-            sender: out_tx.clone(),
+            sender: out_raw_tx.clone(),
         }))
         .await
         .unwrap();
@@ -399,7 +412,23 @@ async fn client_handler(
                             ))).await
                             .unwrap();
                         }
-                        _ => break
+                        WSMessage::Text(_) => {
+                            log::warn!("Client {} sent text, which is not supported at this time. Closing.", client_id);
+                        }
+                        WSMessage::Pong(_) => {
+                            log::debug!("Pong from client {}", client_id);
+                        }
+                        WSMessage::Ping(x) => {
+                            out_tx.send(tokio_tungstenite::tungstenite::Message::Ping(x))
+                            .unwrap();
+                        }
+                        WSMessage::Close(_) => {
+                            log::debug!("Client {} sent close...", client_id);
+                        }                        
+                        _ => {
+                            log::debug!("Unknown message from client {}, closing connection", client_id);
+                            break;
+                        }
                     }
                 }
             }
