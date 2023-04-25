@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "colabrodo_cli",
+    "colabrodo_tools",
     "colabrodo_client",
     "colabrodo_common",
     "colabrodo_server",
