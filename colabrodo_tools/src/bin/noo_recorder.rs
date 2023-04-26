@@ -1,4 +1,19 @@
+//!
+//! Writes NOODLES message to disk
+//!
+//! # Format
+//!
+//! // header
+//! 1x u8: version (1)
+//!
+//!
+//!
+//! 1x u8: packet type
+//!
+//!
+
 use std::{
+    io::Write,
     path::PathBuf,
     sync::{Arc, Mutex},
 };
@@ -8,11 +23,25 @@ use clap::Parser;
 #[derive(Debug, Default)]
 struct CLIState {}
 
-enum Message {}
+#[derive(Debug)]
+enum Message {
+    DropMarker(u64, String),
+    WriteMessage(u64, Vec<u8>),
+    Stop,
+}
+
+fn message_stamp(m: &Message) -> u8 {
+    match m {
+        Message::DropMarker(_, _) => 1,
+        Message::WriteMessage(_, _) => 2,
+        Message::Stop => u8::MAX,
+    }
+}
 
 #[derive(Parser, Debug)]
 struct CLIArgs {
     /// Server hostname
+    #[arg(default_value = "ws://localhost:50000")]
     url: url::Url,
 
     /// Session recording destination directory
@@ -63,8 +92,8 @@ fn main() {
 
     let data_dir = output_dir.join(destination_folder);
 
-    std::fs::create_dir_all(&data_dir)
-        .expect("Unable to create output directory");
+    //std::fs::create_dir_all(&data_dir)
+    //    .expect("Unable to create output directory");
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(4)
@@ -72,34 +101,53 @@ fn main() {
         .build()
         .unwrap();
 
-    runtime.block_on(cli_main(cli_args.url, data_dir));
+    runtime.block_on(cli_main(cli_args.url, data_dir)).unwrap();
 }
 
 async fn cli_main(server: url::Url, path: PathBuf) -> anyhow::Result<()> {
-    //let (stdin_tx, stdin_rx) = tokio::sync::mpsc::unbounded_channel();
+    let (stdin_tx, mut stdin_rx) = tokio::sync::mpsc::unbounded_channel();
 
     let conn_result = tokio_tungstenite::connect_async(server).await?;
 
     let state = Arc::new(Mutex::new(CLIState::default()));
 
-    //std::thread::spawn(read_stdin(stdin_tx));
+    std::thread::spawn(|| stdin_task(stdin_tx));
 
-    tokio::select! {
-        ask_stop = tokio::signal::ctrl_c() => {
-            println!("{:?}", ask_stop)
+    let out_file = std::fs::File::create(path)
+        .expect("unable to open destination file for writing");
+
+    let mut out_buff = std::io::BufWriter::new(out_file);
+
+    while let Some(m) = stdin_rx.recv().await {
+        let message_id = [message_stamp(&m)];
+        out_buff.write(&message_id);
+
+        match m {
+            Message::DropMarker(time, x) => {
+                out_buff
+                    .write(x.as_slice())
+                    .expect("unable to write data to file");
+            }
+            Message::WriteMessage(time, x) => {
+                out_buff
+                    .write(x.as_slice())
+                    .expect("unable to write data to file");
+            }
+            Message::Stop => {
+                break;
+            }
         }
     }
 
     Ok(())
 }
 
-// // docs recommend to use a separate thread with blocking IO on stdin.
-// // So lets do that here.
-
-// async fn read_stdin(tx: futures_channel::mpsc::UnboundedSender<Message>) {
-//     let mut stdin = tokio::io::stdin();
-
-//     let mut
-
-//     //tx.unbounded_send(Message::binary(buf)).unwrap();
-// }
+fn stdin_task(sender: tokio::sync::mpsc::UnboundedSender<Message>) {
+    let stdin = std::io::stdin();
+    let mut line_buf = String::new();
+    while let Ok(_) = stdin.read_line(&mut line_buf) {
+        let line = line_buf.trim_end().to_string();
+        sender.send(Message::DropMarker(line)).unwrap();
+        line_buf.clear();
+    }
+}
