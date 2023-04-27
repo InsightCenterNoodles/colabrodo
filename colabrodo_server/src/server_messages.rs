@@ -60,7 +60,7 @@ async fn per_method_spinner<F>(
     while let Some(m) = input.recv().await {
         let result = f(m);
 
-        if let Err(_) = output.send(AsyncMethodReply { result }).await {
+        if output.send(AsyncMethodReply { result }).await.is_err() {
             return;
         }
     }
@@ -87,7 +87,7 @@ impl MethodHandlerChannels {
         content: AsyncMethodContent,
     ) -> Option<AsyncMethodReply> {
         if let Some(channel) = &self.tx {
-            if let Ok(_) = channel.send(content).await {
+            if channel.send(content).await.is_ok() {
                 if let Some(recv_channel) = &mut self.rx {
                     return recv_channel.recv().await;
                 }

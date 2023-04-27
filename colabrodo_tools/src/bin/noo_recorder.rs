@@ -276,8 +276,18 @@ impl Outfile {
             packet_size,
         };
 
+        self.write_bytes(bytemuck::bytes_of(&packet));
+
+        match message {
+            Message::DropMarker(x) => self.write_bytes(x.as_bytes()),
+            Message::WriteCBOR(x) => self.write_bytes(x.as_slice()),
+            _ => (),
+        };
+    }
+
+    fn write_bytes(&mut self, bytes: &[u8]) {
         self.out_stream
-            .write_all(bytemuck::bytes_of(&packet))
+            .write_all(bytes)
             .expect("unable to write packet into file");
     }
 }

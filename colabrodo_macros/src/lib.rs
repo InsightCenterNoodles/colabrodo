@@ -501,7 +501,7 @@ pub fn make_method_function(input: TokenStream) -> TokenStream {
         for a in &m.args {
             let ty = &a.a_type;
             let s = quote!(#ty).to_string();
-            vec.push(format!("{}: {}", a.a_name.to_string(), s));
+            vec.push(format!("{}: {}", a.a_name, s));
         }
         let p = vec.join(",");
         main_f += p.as_str();
@@ -540,7 +540,7 @@ pub fn make_method_function(input: TokenStream) -> TokenStream {
             let s = quote!(#ty).to_string();
             vec.push(format!(
                 "MethodArg {{ name: \"{}\".to_string(), doc: Some({}.to_string()) }}",
-                a.a_name.to_string(),
+                a.a_name,
                 s
             ));
         }

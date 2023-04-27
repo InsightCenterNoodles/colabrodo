@@ -385,7 +385,7 @@ impl ClientState {
         if let Some(siglist) = &self.document_communication.signals_list {
             let siglist: Vec<_> = siglist
                 .iter()
-                .filter(|x| !self.signal_subs.contains_key(&x))
+                .filter(|x| !self.signal_subs.contains_key(x))
                 .collect();
 
             for sid in siglist {

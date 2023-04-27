@@ -533,6 +533,7 @@ async fn invoke_helper(
     if let Some(s) = signal.channels {
         let mut func = s.lock().unwrap();
 
+        // holding a lock across an await. not good. not sure how to fix this yet
         if let Some(rep) = func.activate(msg).await {
             return rep.result;
         }
