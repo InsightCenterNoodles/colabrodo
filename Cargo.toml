@@ -18,6 +18,7 @@ tokio = { version = "1", features = ["full"] }
 tokio-tungstenite = "*"
 log = "0.4"
 url = {version = "2.2", features=["serde"] }
+bytemuck = { version="1.13.0", features = ["derive"]}
 
 [workspace.dependencies.uuid]
 version = "1.2"
