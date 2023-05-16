@@ -14,4 +14,5 @@ thiserror = {workspace = true}
 num-traits = "0.2"
 num-derive = "0.3"
 url = {workspace = true}
+bytemuck = { workspace = true }
 

@@ -1,69 +1,21 @@
 //!
 //! Writes NOODLES message to disk
 //!
-//! # Format
-//!
-//! All in LE.
-//!
-//! // header
-//! 3x u8: 'noo'
-//! 1x u8: version (1)
-//! 1x u64: unix timestamp
-//!
-//! // packet
-//! 1x u8:  packet type
-//! 1x u24: seconds from start
-//! 1x u32: size
-//! size x u8 : content
-//!
-//! Type 1:
-//! CBOR server message content
-//!
-//! Type 2:
-//! Timestamp w/ utf8 string identifier
-//!
-//! Type 255:
-//! EOF (not required)
-//!
-
-use std::{io::Write, path::PathBuf, time::SystemTime};
 
 use clap::Parser;
 use colabrodo_client::mapped_client::ciborium::ser;
 use colabrodo_common::client_communication::{
     ClientMessageID, IntroductionMessage,
 };
+use colabrodo_common::recording::*;
 use futures_util::{SinkExt, StreamExt};
+use std::{path::PathBuf, time::SystemTime};
 
 #[derive(Debug)]
-enum Message {
+pub enum RecorderMessage {
     DropMarker(String),
     WriteCBOR(Vec<u8>),
-    Stop,
-}
-
-fn message_stamp(m: &Message) -> u8 {
-    match m {
-        Message::DropMarker(_) => 1,
-        Message::WriteCBOR(_) => 2,
-        Message::Stop => u8::MAX,
-    }
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, bytemuck::Zeroable, bytemuck::Pod)]
-struct Header {
-    magic: [u8; 3],
-    version: u8,
-    timestamp: [u8; 8],
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, bytemuck::Zeroable, bytemuck::Pod)]
-struct PacketHeader {
-    packet_type: u8,
-    time_delta: [u8; 3],
-    packet_size: u32,
+    BufferLocation(String),
 }
 
 #[derive(Parser, Debug)]
@@ -150,7 +102,7 @@ async fn cli_main(server: url::Url, path: PathBuf) -> anyhow::Result<()> {
 
 async fn noodles_task(
     server: url::Url,
-    sender: tokio::sync::mpsc::UnboundedSender<Message>,
+    sender: tokio::sync::mpsc::UnboundedSender<RecorderMessage>,
 ) -> anyhow::Result<()> {
     let (mut ws_stream, _) = tokio_tungstenite::connect_async(server).await?;
 
@@ -186,7 +138,7 @@ async fn noodles_task(
         // we can, for now, just assume that this message is valid cbor.
 
         sender
-            .send(Message::WriteCBOR(data))
+            .send(RecorderMessage::WriteCBOR(data))
             .expect("internal error");
     })
     .await;
@@ -194,12 +146,12 @@ async fn noodles_task(
     Ok(())
 }
 
-fn stdin_task(sender: tokio::sync::mpsc::UnboundedSender<Message>) {
+fn stdin_task(sender: tokio::sync::mpsc::UnboundedSender<RecorderMessage>) {
     let stdin = std::io::stdin();
     let mut line_buf = String::new();
     while stdin.read_line(&mut line_buf).is_ok() {
         let line = line_buf.trim_end().to_string();
-        sender.send(Message::DropMarker(line)).unwrap();
+        sender.send(RecorderMessage::DropMarker(line)).unwrap();
         line_buf.clear();
     }
 }
@@ -209,13 +161,7 @@ struct Outfile {
     timestamp: u64,
 }
 
-fn trim_u32(value: u32) -> [u8; 3] {
-    let bytes = value.to_le_bytes();
-
-    [bytes[1], bytes[2], bytes[3]]
-}
-
-fn get_time_delta(base_time: u64) -> [u8; 3] {
+fn get_time_delta(base_time: u64) -> u32 {
     let now = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .expect("system clock before Unix Epoch")
@@ -223,21 +169,7 @@ fn get_time_delta(base_time: u64) -> [u8; 3] {
 
     let delta = now - base_time;
 
-    let delta: u32 = delta.try_into().expect("massive delta");
-
-    const INT_24_LIMIT: u32 = 2_u32.pow(24);
-
-    if delta >= INT_24_LIMIT {
-        panic!("delta is larger than 194 days. I did not expect this.");
-    }
-
-    trim_u32(delta)
-}
-
-impl Drop for Outfile {
-    fn drop(&mut self) {
-        self.write(Message::Stop);
-    }
+    delta.try_into().expect("massive delta")
 }
 
 impl Outfile {
@@ -258,36 +190,16 @@ impl Outfile {
         }
     }
 
-    fn write(&mut self, message: Message) {
+    fn write(&mut self, message: RecorderMessage) {
         let delta = get_time_delta(self.timestamp);
 
-        let packet_size: usize = match &message {
-            Message::DropMarker(x) => x.len(),
-            Message::WriteCBOR(x) => x.len(),
-            Message::Stop => 0_usize,
+        let packet = match message {
+            RecorderMessage::DropMarker(x) => Packet::DropMarker(delta, x),
+            RecorderMessage::WriteCBOR(x) => Packet::WriteCBOR(delta, x),
+            RecorderMessage::BufferLocation(x) => Packet::BufferLocation(x),
         };
 
-        let packet_size: u32 =
-            packet_size.try_into().expect("oversized packet");
-
-        let packet = PacketHeader {
-            packet_type: message_stamp(&message),
-            time_delta: delta,
-            packet_size,
-        };
-
-        self.write_bytes(bytemuck::bytes_of(&packet));
-
-        match message {
-            Message::DropMarker(x) => self.write_bytes(x.as_bytes()),
-            Message::WriteCBOR(x) => self.write_bytes(x.as_slice()),
-            _ => (),
-        };
-    }
-
-    fn write_bytes(&mut self, bytes: &[u8]) {
-        self.out_stream
-            .write_all(bytes)
+        pack_record(packet, &mut self.out_stream)
             .expect("unable to write packet into file");
     }
 }
