@@ -100,17 +100,19 @@ pub fn parse_record(mut value: ciborium::value::Value) -> Option<Packet> {
 }
 
 /// Starts a record array using an indefinite array byte. Be sure to call [end_pack] when done.
-pub fn start_pack(mut sink: impl std::io::Write) -> std::io::Result<()> {
+pub fn start_pack(sink: &mut impl std::io::Write) {
     sink.write_all(&[0x9f])
+        .expect("unable to write start marker to stream");
 }
 
 /// Ends a record array using an indefinite array stop byte. Be sure to have called [start_pack] beforehand at some point.
-pub fn end_pack(mut sink: impl std::io::Write) -> std::io::Result<()> {
+pub fn end_pack(mut sink: impl std::io::Write) {
     sink.write_all(&[0xff])
+        .expect("unable to write end marker to stream");
 }
 
 /// Add a record to the pack
-pub fn pack_record(record: Packet, sink: impl std::io::Write) -> Option<()> {
+pub fn pack_record(record: Packet, sink: impl std::io::Write) {
     let id = record.message_stamp();
 
     let value: Vec<ciborium::value::Value> = match record {
@@ -125,9 +127,6 @@ pub fn pack_record(record: Packet, sink: impl std::io::Write) -> Option<()> {
         }
     };
 
-    //buffer.clear();
-
-    ciborium::ser::into_writer(&value, sink).ok()
-
-    //sink.write_all(buffer.as_slice())
+    ciborium::ser::into_writer(&value, sink)
+        .expect("unable to write packet to file");
 }

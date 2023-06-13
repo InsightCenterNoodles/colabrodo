@@ -4,7 +4,12 @@ use std::collections::HashMap;
 use ciborium::value::Value;
 use clap::Parser;
 use colabrodo_client::client::*;
+use colabrodo_client::client_state::*;
+use colabrodo_client::components::ClientTableState;
+use colabrodo_client::components::ClientTableUpdate;
+use colabrodo_client::delegate::*;
 use colabrodo_client::table::*;
+use colabrodo_common::nooid::TableID;
 
 // =============================================================================
 
@@ -141,9 +146,69 @@ impl TableDataStorage for ReportingTable {
 
 // =============================================================================
 
-/// You can install a callback in your client to handle raw messages.
-fn callback(_client: &mut ClientState, msg: &FromServer) {
-    println!("Message: {msg:?}");
+struct MyClient {}
+
+impl DelegateProvider for MyClient {
+    type MethodDelegate = DefaultMethodDelegate;
+    type SignalDelegate = DefaultSignalDelegate;
+    type BufferDelegate = DefaultBufferDelegate;
+    type BufferViewDelegate = DefaultBufferViewDelegate;
+    type SamplerDelegate = DefaultSamplerDelegate;
+    type ImageDelegate = DefaultImageDelegate;
+    type TextureDelegate = DefaultTextureDelegate;
+    type MaterialDelegate = DefaultMaterialDelegate;
+    type GeometryDelegate = DefaultGeometryDelegate;
+    type LightDelegate = DefaultLightDelegate;
+    type TableDelegate = MyTableDelegate;
+    type PlotDelegate = DefaultPlotDelegate;
+    type EntityDelegate = DefaultEntityDelegate;
+    type DocumentDelegate = DefaultDocumentDelegate;
+}
+
+struct MyTableDelegate {
+    pre_made_delegate: AdvTableDelegate,
+}
+
+impl Delegate for MyTableDelegate {
+    type IDType = TableID;
+    type InitStateType = ClientTableState;
+
+    fn on_new<Provider: DelegateProvider>(
+        id: Self::IDType,
+        state: Self::InitStateType,
+        client: &mut ClientState<Provider>,
+    ) -> Self {
+        Self {
+            pre_made_delegate: AdvTableDelegate::on_new(id, state, client),
+        }
+    }
+}
+
+impl UpdatableDelegate for MyTableDelegate {
+    type UpdateStateType = ClientTableUpdate;
+
+    fn on_update(&mut self, state: Self::UpdateStateType) {
+        self.pre_made_delegate.on_update(state);
+    }
+
+    fn on_signal<Provider: DelegateProvider>(
+        &mut self,
+        id: colabrodo_common::nooid::SignalID,
+        client: &mut ClientState<Provider>,
+        args: Vec<ciborium::value::Value>,
+    ) {
+        self.pre_made_delegate.on_signal(id, client, args);
+    }
+
+    fn on_method_reply<Provider: DelegateProvider>(
+        &mut self,
+        client: &mut ClientState<Provider>,
+        invoke_id: uuid::Uuid,
+        reply: MessageMethodReply,
+    ) {
+        self.pre_made_delegate
+            .on_method_reply(client, invoke_id, reply);
+    }
 }
 
 #[tokio::main]
@@ -153,38 +218,11 @@ async fn main() {
     let args = Arguments::parse();
 
     // Create required channels for the client
-    let channels = ClientChannels::new();
+    let channels =
+        start_client_stream(args.address.into(), "Simple Client".into())
+            .await
+            .unwrap();
 
-    // Create the client state
-    let state = ClientState::new_with_callback(&channels, callback);
-
-    // Launch the client runner in a different thread
-    let handle = tokio::spawn(start_client(
-        args.address,
-        "Simple Client".to_string(),
-        state.clone(),
-        channels,
-    ));
-
-    // Wait for the clent to connect
-    wait_for_start(state.clone()).await;
-
-    // Subscribe to whichever table we can find
-    let table_list: Vec<_> = {
-        let lock = state.lock().unwrap();
-        lock.table_list.component_map().keys().cloned().collect()
-    };
-
-    let mut sub_table_list = Vec::new();
-
-    for k in table_list {
-        sub_table_list.push(
-            connect_table(state.clone(), k, BasicTable::default())
-                .await
-                .unwrap(),
-        );
-    }
-
-    // We are done, just wait for the client runner to end
-    let _ = handle.await.unwrap();
+    // Launch a client thread to handle those channels
+    launch_client_worker_thread::<MyClient>(channels);
 }

@@ -177,12 +177,14 @@ impl Outfile {
         let out_file = std::fs::File::create(path)
             .expect("unable to open destination file for writing");
 
-        let out_stream = std::io::BufWriter::new(out_file);
+        let mut out_stream = std::io::BufWriter::new(out_file);
 
         let timestamp = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .expect("system clock before Unix Epoch")
             .as_secs();
+
+        start_pack(&mut out_stream);
 
         Self {
             out_stream,
@@ -199,7 +201,12 @@ impl Outfile {
             RecorderMessage::BufferLocation(x) => Packet::BufferLocation(x),
         };
 
-        pack_record(packet, &mut self.out_stream)
-            .expect("unable to write packet into file");
+        pack_record(packet, &mut self.out_stream);
+    }
+}
+
+impl Drop for Outfile {
+    fn drop(&mut self) {
+        end_pack(&mut self.out_stream);
     }
 }
