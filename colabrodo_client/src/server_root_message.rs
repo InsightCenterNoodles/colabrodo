@@ -258,7 +258,7 @@ impl<'de> Visitor<'de> for ServerRootMessageVisitor {
             let id: Option<u32> = seq.next_element()?;
 
             if id.is_none() {
-                log::debug!("Bad id, breaking");
+                log::debug!("ID is None, breaking");
                 break;
             }
 

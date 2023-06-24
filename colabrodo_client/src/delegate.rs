@@ -70,6 +70,13 @@ pub trait DocumentDelegate {
         update: ClientDocumentUpdate,
     ) {
     }
+
+    #[allow(unused_variables)]
+    fn on_ready<Provider: DelegateProvider>(
+        &mut self,
+        client: &mut ClientState<Provider>,
+    ) {
+    }
 }
 
 // =============================================================================

@@ -141,7 +141,7 @@ impl<Provider: DelegateProvider> ClientState<Provider> {
             table_list: Default::default(),
             plot_list: Default::default(),
             entity_list: Default::default(),
-            document: Default::default(),
+            document: Some(Box::new(Provider::DocumentDelegate::default())),
             method_subs: Default::default(),
         }
     }
@@ -300,7 +300,12 @@ impl<Provider: DelegateProvider> ClientState<Provider> {
         if let Some(callback) = self.method_subs.remove(&id) {
             //callback(self, msg);
             match callback {
-                InvokeContext::Document => todo!(),
+                InvokeContext::Document => {
+                    if let Some(mut del) = self.document.take() {
+                        del.on_method_reply(self, id, msg);
+                        self.document = Some(del);
+                    }
+                }
                 InvokeContext::Entity(del_id) => {
                     // we have to do this dance, because we cant take a mut ref,
                     // to self (through getting the delegate) and THEN pass

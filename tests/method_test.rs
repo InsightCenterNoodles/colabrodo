@@ -1,8 +1,10 @@
 use colabrodo_client::client::*;
+use colabrodo_client::client_state::*;
 use colabrodo_client::components::*;
+use colabrodo_client::delegate::*;
+use colabrodo_common::nooid::*;
 use colabrodo_common::value_tools::Value;
 use colabrodo_server::server::ciborium::value;
-use colabrodo_server::server::tokio;
 use colabrodo_server::server::tokio::runtime;
 use colabrodo_server::server::*;
 
@@ -63,92 +65,132 @@ fn setup_server(state: ServerStatePtr) {
     })
 }
 
-// =============================================================================
+struct MyClient {}
 
-async fn wait_for_signal(mut source: SignalRecv) {
-    let v = source.recv().await.unwrap();
-
-    log::info!("Signal invoked: {v:?}");
-
-    let test = vec![value::Value::Text("Hi there".to_string())];
-
-    assert_eq!(v, test);
+impl DelegateProvider for MyClient {
+    type MethodDelegate = DefaultMethodDelegate;
+    type SignalDelegate = DefaultSignalDelegate;
+    type BufferDelegate = DefaultBufferDelegate;
+    type BufferViewDelegate = DefaultBufferViewDelegate;
+    type SamplerDelegate = DefaultSamplerDelegate;
+    type ImageDelegate = DefaultImageDelegate;
+    type TextureDelegate = DefaultTextureDelegate;
+    type MaterialDelegate = DefaultMaterialDelegate;
+    type GeometryDelegate = DefaultGeometryDelegate;
+    type LightDelegate = DefaultLightDelegate;
+    type TableDelegate = DefaultTableDelegate;
+    type PlotDelegate = DefaultPlotDelegate;
+    type EntityDelegate = DefaultEntityDelegate;
+    type DocumentDelegate = MyDocumentDelegate;
 }
 
-async fn client_path() {
-    let channels = ClientChannels::new();
+struct MyDocumentDelegate {
+    test_ping_data: Vec<colabrodo_common::value_tools::Value>,
+    test_sig_id: SignalID,
+    test_ping_id: MethodID,
+    test_invoke_id: uuid::Uuid,
+}
 
-    let state = ClientState::new(&channels);
+impl Default for MyDocumentDelegate {
+    fn default() -> Self {
+        Self {
+            test_ping_data: vec![Value::Text("Here is a test".to_string())],
+            test_sig_id: Default::default(),
+            test_ping_id: Default::default(),
+            test_invoke_id: Default::default(),
+        }
+    }
+}
 
-    let handle = tokio::spawn(start_client(
-        "ws://localhost:50000".to_string(),
-        "Simple Client".to_string(),
-        state.clone(),
-        channels,
-    ));
-
-    log::info!("Client started, waiting for ready...");
-
-    wait_for_start(state.clone()).await;
-
-    log::info!("Ready, subscribing to channel...");
-
-    let signal_channel = {
-        let mut lock = state.lock().unwrap();
-        let id = lock
+impl DocumentDelegate for MyDocumentDelegate {
+    fn on_ready<Provider: DelegateProvider>(
+        &mut self,
+        client: &mut ClientState<Provider>,
+    ) {
+        log::info!("Finding signals and methods...");
+        self.test_sig_id = client
             .signal_list
             .get_id_by_name("test_signal")
             .expect("Missing required signal");
-        lock.subscribe_signal(id).unwrap()
-    };
+        self.test_ping_id = client
+            .method_list
+            .get_id_by_name("ping_pong")
+            .expect("Missing required method");
 
-    log::info!("Finding pingpong method...");
+        log::info!("Calling method and waiting for signal");
 
-    let ping_pong_id = {
-        let lock = state.lock().unwrap();
-        lock.method_list.get_id_by_name("ping_pong").unwrap()
-    };
-
-    let ping_test = vec![Value::Text("Here is a test".to_string())];
-
-    log::info!("Calling method and waiting for signal");
-
-    let result1 = tokio::join!(
-        wait_for_signal(signal_channel),
-        invoke_method(
-            state.clone(),
-            ping_pong_id,
+        self.test_invoke_id = client.invoke_method(
+            self.test_ping_id,
             InvokeContext::Document,
-            ping_test.clone()
-        )
-    );
-
-    log::info!("Got result: {:?}", result1);
-
-    let ping_result = result1.1.unwrap().unwrap();
-    let ping_result = ping_result.as_array().unwrap();
-
-    assert_eq!(ping_test[0], ping_result[0]);
-
-    log::info!("Issuing shutdown...");
-
-    let shutdown_id = {
-        let lock = state.lock().unwrap();
-        lock.method_list.get_id_by_name("shutdown").unwrap()
-    };
-
-    // we dont unwrap this as the method could die from server shutdown
-    let _ = invoke_method(state, shutdown_id, InvokeContext::Document, vec![])
-        .await;
-
-    log::info!("Shutdown sent, waiting for close");
-
-    let r = handle.await;
-
-    if r.is_err() {
-        log::error!("Client failed: {r:?}");
-        std::process::abort();
+            self.test_ping_data.clone(),
+        );
     }
+
+    fn on_signal<Provider: DelegateProvider>(
+        &mut self,
+        id: SignalID,
+        _client: &mut ClientState<Provider>,
+        args: Vec<ciborium::value::Value>,
+    ) {
+        assert_eq!(id, self.test_sig_id);
+
+        log::info!("Signal invoked: {args:?}");
+
+        let test = vec![value::Value::Text("Hi there".to_string())];
+
+        assert_eq!(args, test);
+    }
+
+    #[allow(unused_variables)]
+    fn on_method_reply<Provider: DelegateProvider>(
+        &mut self,
+        client: &mut ClientState<Provider>,
+        invoke_id: uuid::Uuid,
+        reply: MessageMethodReply,
+    ) {
+        log::info!("Got result: {:?}", reply);
+
+        if invoke_id == self.test_invoke_id {
+            assert_eq!(
+                reply.result.unwrap().as_array().unwrap()[0],
+                self.test_ping_data[0]
+            );
+
+            log::info!("Issuing shutdown...");
+
+            let shutdown_id =
+                client.method_list.get_id_by_name("shutdown").unwrap();
+
+            client.invoke_method(
+                self.test_ping_id,
+                InvokeContext::Document,
+                vec![],
+            );
+
+            log::info!("Shutdown sent, waiting for close");
+        } else {
+            client.shutdown();
+        }
+    }
+}
+
+// =============================================================================
+
+async fn client_path() {
+    let channels = start_client_stream(
+        "ws://localhost:50000".into(),
+        "Simple Client".into(),
+    )
+    .await
+    .unwrap();
+
+    let mut stopper = channels.get_stopper();
+
+    log::info!("Client started...");
+
+    launch_client_worker_thread::<MyClient>(channels);
+
+    stopper.recv().await.unwrap();
 }
 
 // =============================================================================

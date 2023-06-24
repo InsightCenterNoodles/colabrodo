@@ -201,6 +201,10 @@ fn handle_next_message<Provider: DelegateProvider>(
 ) -> Result<(), UserClientNext> {
     debug!("Handling next message...");
 
+    if log::log_enabled!(log::Level::Debug) {
+        debug!("Message content: {:?}", m);
+    }
+
     match m {
         FromServer::Method(m) => match m {
             ModMethod::Create(x) => {
@@ -368,10 +372,10 @@ fn handle_next_message<Provider: DelegateProvider>(
             state.handle_method_reply(invoke_id, x);
         }
         FromServer::MsgDocumentInitialized(_) => {
-            //send read
-            // if let Some(tx) = state.ready_tx.take() {
-            //     tx.send(()).unwrap()
-            // }
+            if let Some(mut local_doc) = state.document.take() {
+                local_doc.on_ready(state);
+                state.document = Some(local_doc);
+            }
         }
     }
 
@@ -422,6 +426,12 @@ pub struct ClientChannels {
     pub(crate) stopper: tokio::sync::broadcast::Sender<u8>,
 }
 
+impl ClientChannels {
+    pub fn get_stopper(&self) -> tokio::sync::broadcast::Receiver<u8> {
+        self.stopper.subscribe()
+    }
+}
+
 /// Start running the client machinery.
 ///
 /// # Parameters
@@ -433,7 +443,7 @@ pub async fn start_client_stream(
     name: String,
 ) -> Result<ClientChannels, UserClientError> {
     // create streams to stop machinery
-    let (stop_tx, mut stop_rx) = tokio::sync::broadcast::channel::<u8>(1);
+    let (stop_tx, _) = tokio::sync::broadcast::channel::<u8>(1);
 
     let (to_client_tx, to_client_rx) = tokio::sync::mpsc::unbounded_channel();
     let (from_client_tx, from_client_rx) =
@@ -453,7 +463,7 @@ pub async fn start_client_stream(
     let (ws_stream, _) = conn_result;
 
     // Split out our server connection
-    let (mut socket_tx, mut socket_rx) = ws_stream.split();
+    let (mut socket_tx, socket_rx) = ws_stream.split();
 
     // Send the initial introduction message
     {
@@ -479,6 +489,31 @@ pub async fn start_client_stream(
 
     debug!("Tasks launched");
 
+    tokio::spawn(incoming_message_task(
+        stop_tx.clone(),
+        socket_rx,
+        to_client_tx,
+    ));
+
+    //debug!("Loop closed. Client system done.");
+
+    //#error we never get here
+
+    Ok(ClientChannels {
+        to_client_rx,
+        from_client_tx,
+        stopper: stop_tx.clone(),
+    })
+}
+
+async fn incoming_message_task(
+    stopper_tx: tokio::sync::broadcast::Sender<u8>,
+    mut socket_rx: futures_util::stream::SplitStream<
+        WebSocketStream<MaybeTlsStream<TcpStream>>,
+    >,
+    to_client_tx: tokio::sync::mpsc::UnboundedSender<IncomingMessage>,
+) {
+    let mut stop_rx = stopper_tx.subscribe();
     loop {
         tokio::select! {
             _ = stop_rx.recv() => break,
@@ -498,17 +533,9 @@ pub async fn start_client_stream(
             }
         }
     }
-
-    debug!("Loop closed. Client system done.");
-
-    Ok(ClientChannels {
-        to_client_rx,
-        from_client_tx,
-        stopper: stop_tx.clone(),
-    })
 }
 
-/// Task that sends handles from the client.
+/// Task that sends outgoing messages from the client to the socket.
 async fn forward_task(
     mut input: tokio::sync::mpsc::UnboundedReceiver<OutgoingMessage>,
     mut socket_out: SplitSink<
@@ -556,7 +583,7 @@ async fn forward_task(
 /// This blocks and should be run in a thread
 pub fn launch_client_worker_thread<Provider: DelegateProvider>(
     mut channels: ClientChannels,
-) {
+) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         debug!("Starting client worker thread");
 
@@ -574,8 +601,8 @@ pub fn launch_client_worker_thread<Provider: DelegateProvider>(
         }
         debug!("Ending client worker thread");
 
-        channels.stopper.send(1).unwrap();
+        let _ = channels.stopper.send(1);
 
         state.clear();
-    });
+    })
 }
