@@ -567,7 +567,7 @@ impl ServerState {
 pub type ServerStatePtr = Arc<Mutex<ServerState>>;
 
 /// Helper enum of the target of a method invocation
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum InvokeObj {
     Document,
     Entity(EntityReference),

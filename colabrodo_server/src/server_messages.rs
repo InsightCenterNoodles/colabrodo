@@ -87,8 +87,11 @@ impl MethodHandlerChannels {
         content: AsyncMethodContent,
     ) -> Option<AsyncMethodReply> {
         if let Some(channel) = &self.tx {
+            log::debug!("Channel ok");
             if channel.send(content).await.is_ok() {
+                log::debug!("Channel send ok");
                 if let Some(recv_channel) = &mut self.rx {
+                    log::debug!("Channel recv ok");
                     return recv_channel.recv().await;
                 }
             }

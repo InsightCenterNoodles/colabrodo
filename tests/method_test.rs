@@ -36,6 +36,7 @@ fn setup_server(state: ServerStatePtr) {
             doc: Some("Example doc".to_string()),
         }],
         state: MethodHandlerSlot::assign(move |m| {
+            log::info!("Got a ping, sending pong...");
             m.state.lock().unwrap().issue_signal(
                 &sig_copy,
                 None,
@@ -88,7 +89,9 @@ struct MyDocumentDelegate {
     test_ping_data: Vec<colabrodo_common::value_tools::Value>,
     test_sig_id: SignalID,
     test_ping_id: MethodID,
+    test_shutdown_m_id: MethodID,
     test_invoke_id: uuid::Uuid,
+    test_shutdown_id: uuid::Uuid,
 }
 
 impl Default for MyDocumentDelegate {
@@ -97,7 +100,9 @@ impl Default for MyDocumentDelegate {
             test_ping_data: vec![Value::Text("Here is a test".to_string())],
             test_sig_id: Default::default(),
             test_ping_id: Default::default(),
+            test_shutdown_m_id: Default::default(),
             test_invoke_id: Default::default(),
+            test_shutdown_id: Default::default(),
         }
     }
 }
@@ -115,6 +120,10 @@ impl DocumentDelegate for MyDocumentDelegate {
         self.test_ping_id = client
             .method_list
             .get_id_by_name("ping_pong")
+            .expect("Missing required method");
+        self.test_shutdown_m_id = client
+            .method_list
+            .get_id_by_name("shutdown")
             .expect("Missing required method");
 
         log::info!("Calling method and waiting for signal");
@@ -161,15 +170,19 @@ impl DocumentDelegate for MyDocumentDelegate {
             let shutdown_id =
                 client.method_list.get_id_by_name("shutdown").unwrap();
 
-            client.invoke_method(
-                self.test_ping_id,
+            self.test_shutdown_id = client.invoke_method(
+                self.test_shutdown_m_id,
                 InvokeContext::Document,
                 vec![],
             );
 
             log::info!("Shutdown sent, waiting for close");
-        } else {
+        } else if invoke_id == self.test_shutdown_id {
+            log::info!("Shutdown reply received");
             client.shutdown();
+        } else {
+            log::info!("Got unknown reply! {:?}", invoke_id);
+            panic!("Nope");
         }
     }
 }
@@ -191,6 +204,8 @@ async fn client_path() {
     launch_client_worker_thread::<MyClient>(channels);
 
     stopper.recv().await.unwrap();
+
+    log::info!("Client stopped...");
 }
 
 // =============================================================================
