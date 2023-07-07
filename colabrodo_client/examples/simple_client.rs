@@ -154,10 +154,10 @@ impl DelegateMaker for MyMaker {
     fn make_table(
         &mut self,
         id: TableID,
-        state: ClientTableState,
-        client: &mut ClientState,
+        _state: ClientTableState,
+        _client: &mut ClientDelegateLists,
     ) -> Box<TableDelegate> {
-        Box::new(MyTableDelegate::new(id, state, client))
+        Box::new(MyTableDelegate::new(id))
     }
 }
 
@@ -166,13 +166,9 @@ struct MyTableDelegate {
 }
 
 impl MyTableDelegate {
-    fn new(
-        id: TableID,
-        state: ClientTableState,
-        client: &mut ClientState,
-    ) -> Self {
+    fn new(id: TableID) -> Self {
         Self {
-            pre_made_delegate: AdvTableDelegate::new(id, state, client),
+            pre_made_delegate: AdvTableDelegate::new(id),
         }
     }
 }
@@ -196,7 +192,7 @@ impl UpdatableDelegate for MyTableDelegate {
     fn on_signal(
         &mut self,
         id: colabrodo_common::nooid::SignalID,
-        client: &mut ClientState,
+        client: &mut ClientDelegateLists,
         args: Vec<ciborium::value::Value>,
     ) {
         self.pre_made_delegate.on_signal(id, client, args);
@@ -204,7 +200,7 @@ impl UpdatableDelegate for MyTableDelegate {
 
     fn on_method_reply(
         &mut self,
-        client: &mut ClientState,
+        client: &mut ClientDelegateLists,
         invoke_id: uuid::Uuid,
         reply: MessageMethodReply,
     ) {

@@ -9,11 +9,7 @@
 //! structure the code to launch tasks as soon as the client connects.
 
 pub use crate::server_root_message::FromServer;
-use crate::{
-    client_state::*,
-    delegate::{Delegate, DocumentDelegate},
-    server_root_message::*,
-};
+use crate::{client_state::*, server_root_message::*};
 pub use ciborium::value::Value;
 pub use colabrodo_common::client_communication::MethodInvokeMessage;
 pub use colabrodo_common::server_communication::MessageMethodReply;
@@ -49,10 +45,9 @@ pub enum UserClientNext {
 }
 
 /// Execute the next message from a server on your client state
-pub fn handle_next<Maker: DelegateMaker + Send>(
+pub fn handle_next(
     state: &mut ClientState,
     message: &[u8],
-    maker: &mut Maker,
 ) -> Result<(), UserClientNext> {
     if log::log_enabled!(log::Level::Debug) {
         let v: ciborium::value::Value =
@@ -65,16 +60,15 @@ pub fn handle_next<Maker: DelegateMaker + Send>(
     debug!("Got {} messages", root.list.len());
 
     for msg in root.list {
-        handle_next_message(state, msg, maker)?;
+        handle_next_message(state, msg)?;
     }
 
     Ok(())
 }
 
-fn handle_next_message<Maker: DelegateMaker + Send>(
+fn handle_next_message(
     state: &mut ClientState,
     m: FromServer,
-    maker: &mut Maker,
 ) -> Result<(), UserClientNext> {
     debug!("Handling next message...");
 
@@ -86,141 +80,243 @@ fn handle_next_message<Maker: DelegateMaker + Send>(
         FromServer::Method(m) => match m {
             ModMethod::Create(x) => {
                 let name = x.content.name.clone();
-                let del = maker.make_method(x.id, x.content, state);
-                state.method_list.on_create(x.id, Some(name), del);
+                let del = state.maker.make_method(
+                    x.id,
+                    x.content,
+                    &mut state.delegate_lists,
+                );
+                state.delegate_lists.method_list.on_create(
+                    x.id,
+                    Some(name),
+                    del,
+                );
             }
-            ModMethod::Delete(x) => state.method_list.on_delete(x.id),
+            ModMethod::Delete(x) => {
+                state.delegate_lists.method_list.on_delete(x.id)
+            }
         },
         //
         FromServer::Signal(s) => match s {
             ModSignal::Create(x) => {
                 let name = x.content.name.clone();
-                let del = maker.make_signal(x.id, x.content, state);
-                state.signal_list.on_create(x.id, Some(name), del)
+                let del = state.maker.make_signal(
+                    x.id,
+                    x.content,
+                    &mut state.delegate_lists,
+                );
+                state.delegate_lists.signal_list.on_create(
+                    x.id,
+                    Some(name),
+                    del,
+                )
             }
-            ModSignal::Delete(x) => state.signal_list.on_delete(x.id),
+            ModSignal::Delete(x) => {
+                state.delegate_lists.signal_list.on_delete(x.id)
+            }
         },
         //
         FromServer::Entity(x) => match x {
             ModEntity::Create(x) => {
                 let name = x.content.name.clone();
-                let del = maker.make_entity(x.id, x.content, state);
-                state.entity_list.on_create(x.id, name, del)
+                let del = state.maker.make_entity(
+                    x.id,
+                    x.content,
+                    &mut state.delegate_lists,
+                );
+                state.delegate_lists.entity_list.on_create(x.id, name, del)
             }
             ModEntity::Update(x) => {
-                state.entity_list.on_update(x.id, x.content)
+                state.delegate_lists.entity_list.on_update(x.id, x.content)
             }
-            ModEntity::Delete(x) => state.entity_list.on_delete(x.id),
+            ModEntity::Delete(x) => {
+                state.delegate_lists.entity_list.on_delete(x.id)
+            }
         },
         //
         FromServer::Plot(x) => match x {
             ModPlot::Create(x) => {
                 let name = x.content.name.clone();
-                let del = maker.make_plot(x.id, x.content, state);
-                state.plot_list.on_create(x.id, name, del)
+                let del = state.maker.make_plot(
+                    x.id,
+                    x.content,
+                    &mut state.delegate_lists,
+                );
+                state.delegate_lists.plot_list.on_create(x.id, name, del)
             }
-            ModPlot::Update(x) => state.plot_list.on_update(x.id, x.content),
-            ModPlot::Delete(x) => state.plot_list.on_delete(x.id),
+            ModPlot::Update(x) => {
+                state.delegate_lists.plot_list.on_update(x.id, x.content)
+            }
+            ModPlot::Delete(x) => {
+                state.delegate_lists.plot_list.on_delete(x.id)
+            }
         },
         //
         FromServer::Buffer(s) => match s {
             ModBuffer::Create(x) => {
                 let name = x.content.name.clone();
-                let del = maker.make_buffer(x.id, x.content, state);
-                state.buffer_list.on_create(x.id, name, del)
+                let del = state.maker.make_buffer(
+                    x.id,
+                    x.content,
+                    &mut state.delegate_lists,
+                );
+                state.delegate_lists.buffer_list.on_create(x.id, name, del)
             }
-            ModBuffer::Delete(x) => state.buffer_list.on_delete(x.id),
+            ModBuffer::Delete(x) => {
+                state.delegate_lists.buffer_list.on_delete(x.id)
+            }
         },
         //
         FromServer::BufferView(s) => match s {
             ModBufferView::Create(x) => {
                 let name = x.content.name.clone();
-                let del = maker.make_buffer_view(x.id, x.content, state);
-                state.buffer_view_list.on_create(x.id, name, del)
+                let del = state.maker.make_buffer_view(
+                    x.id,
+                    x.content,
+                    &mut state.delegate_lists,
+                );
+                state
+                    .delegate_lists
+                    .buffer_view_list
+                    .on_create(x.id, name, del)
             }
-            ModBufferView::Delete(x) => state.buffer_view_list.on_delete(x.id),
+            ModBufferView::Delete(x) => {
+                state.delegate_lists.buffer_view_list.on_delete(x.id)
+            }
         },
         //
         FromServer::Material(s) => match s {
             ModMaterial::Create(x) => {
                 let name = x.content.name.clone();
-                let del = maker.make_material(x.id, x.content, state);
-                state.material_list.on_create(x.id, name, del)
+                let del = state.maker.make_material(
+                    x.id,
+                    x.content,
+                    &mut state.delegate_lists,
+                );
+                state
+                    .delegate_lists
+                    .material_list
+                    .on_create(x.id, name, del)
             }
-            ModMaterial::Update(x) => {
-                state.material_list.on_update(x.id, x.content)
+            ModMaterial::Update(x) => state
+                .delegate_lists
+                .material_list
+                .on_update(x.id, x.content),
+            ModMaterial::Delete(x) => {
+                state.delegate_lists.material_list.on_delete(x.id)
             }
-            ModMaterial::Delete(x) => state.material_list.on_delete(x.id),
         },
         //
         FromServer::Image(s) => match s {
             ModImage::Create(x) => {
                 let name = x.content.name.clone();
-                let del = maker.make_image(x.id, x.content, state);
-                state.image_list.on_create(x.id, name, del)
+                let del = state.maker.make_image(
+                    x.id,
+                    x.content,
+                    &mut state.delegate_lists,
+                );
+                state.delegate_lists.image_list.on_create(x.id, name, del)
             }
-            ModImage::Delete(x) => state.image_list.on_delete(x.id),
+            ModImage::Delete(x) => {
+                state.delegate_lists.image_list.on_delete(x.id)
+            }
         },
         //
         FromServer::Texture(s) => match s {
             ModTexture::Create(x) => {
                 let name = x.content.name.clone();
-                let del = maker.make_texture(x.id, x.content, state);
-                state.texture_list.on_create(x.id, name, del)
+                let del = state.maker.make_texture(
+                    x.id,
+                    x.content,
+                    &mut state.delegate_lists,
+                );
+                state.delegate_lists.texture_list.on_create(x.id, name, del)
             }
-            ModTexture::Delete(x) => state.texture_list.on_delete(x.id),
+            ModTexture::Delete(x) => {
+                state.delegate_lists.texture_list.on_delete(x.id)
+            }
         },
         //
         FromServer::Sampler(s) => match s {
             ModSampler::Create(x) => {
                 let name = x.content.name.clone();
-                let del = maker.make_sampler(x.id, x.content, state);
-                state.sampler_list.on_create(x.id, name, del)
+                let del = state.maker.make_sampler(
+                    x.id,
+                    x.content,
+                    &mut state.delegate_lists,
+                );
+                state.delegate_lists.sampler_list.on_create(x.id, name, del)
             }
-            ModSampler::Delete(x) => state.sampler_list.on_delete(x.id),
+            ModSampler::Delete(x) => {
+                state.delegate_lists.sampler_list.on_delete(x.id)
+            }
         },
         //
         FromServer::Light(s) => match s {
             ModLight::Create(x) => {
                 let name = x.content.name.clone();
-                let del = maker.make_light(x.id, x.content, state);
-                state.light_list.on_create(x.id, name, del)
+                let del = state.maker.make_light(
+                    x.id,
+                    x.content,
+                    &mut state.delegate_lists,
+                );
+                state.delegate_lists.light_list.on_create(x.id, name, del)
             }
-            ModLight::Update(x) => state.light_list.on_update(x.id, x.content),
-            ModLight::Delete(x) => state.light_list.on_delete(x.id),
+            ModLight::Update(x) => {
+                state.delegate_lists.light_list.on_update(x.id, x.content)
+            }
+            ModLight::Delete(x) => {
+                state.delegate_lists.light_list.on_delete(x.id)
+            }
         },
         //
         FromServer::Geometry(s) => match s {
             ModGeometry::Create(x) => {
                 let name = x.content.name.clone();
-                let del = maker.make_geometry(x.id, x.content, state);
-                state.geometry_list.on_create(x.id, name, del)
+                let del = state.maker.make_geometry(
+                    x.id,
+                    x.content,
+                    &mut state.delegate_lists,
+                );
+                state
+                    .delegate_lists
+                    .geometry_list
+                    .on_create(x.id, name, del)
             }
-            ModGeometry::Delete(x) => state.geometry_list.on_delete(x.id),
+            ModGeometry::Delete(x) => {
+                state.delegate_lists.geometry_list.on_delete(x.id)
+            }
         },
         //
         FromServer::Table(s) => match s {
             ModTable::Create(x) => {
                 let name = x.content.name.clone();
-                let del = maker.make_table(x.id, x.content, state);
-                state.table_list.on_create(x.id, name, del)
+                let del = state.maker.make_table(
+                    x.id,
+                    x.content,
+                    &mut state.delegate_lists,
+                );
+                state.delegate_lists.table_list.on_create(x.id, name, del)
             }
-            ModTable::Update(x) => state.table_list.on_update(x.id, x.content),
-            ModTable::Delete(x) => state.table_list.on_delete(x.id),
+            ModTable::Update(x) => {
+                state.delegate_lists.table_list.on_update(x.id, x.content)
+            }
+            ModTable::Delete(x) => {
+                state.delegate_lists.table_list.on_delete(x.id)
+            }
         },
         //
         FromServer::MsgDocumentUpdate(x) => {
             // this is a pretty rough hack
             // But there is no clean safe way to pass mutable self twice.
-            let doc = std::mem::take(&mut state.document);
+            let doc = std::mem::take(&mut state.delegate_lists.document);
 
             if let Some(mut doc) = doc {
                 doc.on_document_update(state, x);
-                state.document = Some(doc);
+                state.delegate_lists.document = Some(doc);
             }
         }
         FromServer::MsgDocumentReset(_) => {
-            state.clear(maker);
+            state.clear();
         }
         //
         FromServer::MsgSignalInvoke(x) => {
@@ -235,9 +331,9 @@ fn handle_next_message<Maker: DelegateMaker + Send>(
             state.handle_method_reply(invoke_id, x);
         }
         FromServer::MsgDocumentInitialized(_) => {
-            if let Some(mut local_doc) = state.document.take() {
+            if let Some(mut local_doc) = state.delegate_lists.document.take() {
                 local_doc.on_ready(state);
-                state.document = Some(local_doc);
+                state.delegate_lists.document = Some(local_doc);
             }
         }
     }
@@ -465,16 +561,14 @@ where
     Maker: DelegateMaker + Send + 'static,
 {
     std::thread::spawn(move || {
-        let mut maker = maker;
         debug!("Starting client worker thread");
 
-        let mut state = ClientState::new(&channels, &mut maker);
+        let mut state = ClientState::new(&channels, maker);
 
         while let Some(x) = channels.to_client_rx.blocking_recv() {
             match x {
                 IncomingMessage::NetworkMessage(root) => {
-                    handle_next(&mut state, root.as_slice(), &mut maker)
-                        .unwrap();
+                    handle_next(&mut state, root.as_slice()).unwrap();
                 }
                 IncomingMessage::Closed => {
                     break;
@@ -485,6 +579,6 @@ where
 
         let _ = channels.stopper.send(1);
 
-        state.clear(&mut maker);
+        state.clear();
     })
 }

@@ -69,9 +69,7 @@ pub type EntityDelegate = dyn UpdatableDelegate<
     UpdateStateType = ClientEntityUpdate,
 >;
 
-pub struct ClientState {
-    pub output: tokio::sync::mpsc::UnboundedSender<OutgoingMessage>,
-
+pub struct ClientDelegateLists {
     pub method_list: ComponentList<MethodID, MethodDelegate>,
     pub signal_list: ComponentList<SignalID, SignalDelegate>,
 
@@ -91,162 +89,16 @@ pub struct ClientState {
     pub plot_list: ComponentList<PlotID, PlotDelegate>,
     pub entity_list: ComponentList<EntityID, EntityDelegate>,
 
-    pub document: Option<Box<dyn DocumentDelegate>>,
-
-    pub method_subs: HashMap<uuid::Uuid, InvokeContext>,
+    pub document: Option<Box<dyn DocumentDelegate + Send>>,
 }
 
-pub trait DelegateMaker {
-    #[allow(unused_variables)]
-    fn make_method(
-        &mut self,
-        id: MethodID,
-        state: ClientMethodState,
-        client: &mut ClientState,
-    ) -> Box<MethodDelegate> {
-        Box::new(DefaultMethodDelegate::new(state))
-    }
-
-    #[allow(unused_variables)]
-    fn make_signal(
-        &mut self,
-        id: SignalID,
-        state: ClientSignalState,
-        client: &mut ClientState,
-    ) -> Box<SignalDelegate> {
-        Box::new(DefaultSignalDelegate::new(state))
-    }
-
-    #[allow(unused_variables)]
-    fn make_buffer(
-        &mut self,
-        id: BufferID,
-        state: BufferState,
-        client: &mut ClientState,
-    ) -> Box<BufferDelegate> {
-        Box::new(DefaultBufferDelegate::new(state))
-    }
-
-    #[allow(unused_variables)]
-    fn make_buffer_view(
-        &mut self,
-        id: BufferViewID,
-        state: ClientBufferViewState,
-        client: &mut ClientState,
-    ) -> Box<BufferViewDelegate> {
-        Box::new(DefaultBufferViewDelegate::new(state))
-    }
-
-    #[allow(unused_variables)]
-    fn make_sampler(
-        &mut self,
-        id: SamplerID,
-        state: SamplerState,
-        client: &mut ClientState,
-    ) -> Box<SamplerDelegate> {
-        Box::new(DefaultSamplerDelegate::new(state))
-    }
-
-    #[allow(unused_variables)]
-    fn make_image(
-        &mut self,
-        id: ImageID,
-        state: ClientImageState,
-        client: &mut ClientState,
-    ) -> Box<ImageDelegate> {
-        Box::new(DefaultImageDelegate::new(state))
-    }
-
-    #[allow(unused_variables)]
-    fn make_texture(
-        &mut self,
-        id: TextureID,
-        state: ClientTextureState,
-        client: &mut ClientState,
-    ) -> Box<TextureDelegate> {
-        Box::new(DefaultTextureDelegate::new(state))
-    }
-
-    #[allow(unused_variables)]
-    fn make_material(
-        &mut self,
-        id: MaterialID,
-        state: ClientMaterialState,
-        client: &mut ClientState,
-    ) -> Box<MaterialDelegate> {
-        Box::new(DefaultMaterialDelegate::new(state))
-    }
-
-    #[allow(unused_variables)]
-    fn make_geometry(
-        &mut self,
-        id: GeometryID,
-        state: ClientGeometryState,
-        client: &mut ClientState,
-    ) -> Box<GeometryDelegate> {
-        Box::new(DefaultGeometryDelegate::new(state))
-    }
-
-    #[allow(unused_variables)]
-    fn make_light(
-        &mut self,
-        id: LightID,
-        state: LightState,
-        client: &mut ClientState,
-    ) -> Box<LightDelegate> {
-        Box::new(DefaultLightDelegate::new(state))
-    }
-
-    #[allow(unused_variables)]
-    fn make_table(
-        &mut self,
-        id: TableID,
-        state: ClientTableState,
-        client: &mut ClientState,
-    ) -> Box<TableDelegate> {
-        Box::new(DefaultTableDelegate::new(state))
-    }
-
-    #[allow(unused_variables)]
-    fn make_plot(
-        &mut self,
-        id: PlotID,
-        state: ClientPlotState,
-        client: &mut ClientState,
-    ) -> Box<PlotDelegate> {
-        Box::new(DefaultPlotDelegate::new(state))
-    }
-
-    #[allow(unused_variables)]
-    fn make_entity(
-        &mut self,
-        id: EntityID,
-        state: ClientEntityState,
-        client: &mut ClientState,
-    ) -> Box<EntityDelegate> {
-        Box::new(DefaultEntityDelegate::new(state))
-    }
-
-    fn make_document(&mut self) -> Box<dyn DocumentDelegate> {
-        Box::new(DefaultDocumentDelegate::default())
-    }
-}
-
-impl Debug for ClientState {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ClientState").finish()
-    }
-}
-
-impl ClientState {
+impl ClientDelegateLists {
     /// Create a new client state, using previously created channels.
-    pub fn new<Maker>(channels: &ClientChannels, maker: &mut Maker) -> Self
+    pub fn new<Maker>(maker: &mut Maker) -> Self
     where
         Maker: DelegateMaker + Send,
     {
         Self {
-            output: channels.from_client_tx.clone(),
-
             method_list: Default::default(),
             signal_list: Default::default(),
             buffer_list: Default::default(),
@@ -261,14 +113,10 @@ impl ClientState {
             plot_list: Default::default(),
             entity_list: Default::default(),
             document: Some(maker.make_document()),
-            method_subs: Default::default(),
         }
     }
 
-    pub(crate) fn clear<Maker>(&mut self, maker: &mut Maker)
-    where
-        Maker: DelegateMaker + Send,
-    {
+    pub(crate) fn clear(&mut self, maker: &mut dyn DelegateMaker) {
         self.method_list.clear();
         self.signal_list.clear();
         self.buffer_list.clear();
@@ -283,6 +131,182 @@ impl ClientState {
         self.plot_list.clear();
         self.entity_list.clear();
         self.document = Some(maker.make_document());
+    }
+}
+
+pub struct ClientState {
+    pub output: tokio::sync::mpsc::UnboundedSender<OutgoingMessage>,
+
+    pub maker: Box<dyn DelegateMaker>,
+
+    pub delegate_lists: ClientDelegateLists,
+
+    pub method_subs: HashMap<uuid::Uuid, InvokeContext>,
+}
+
+pub trait DelegateMaker: Send {
+    #[allow(unused_variables)]
+    fn make_method(
+        &mut self,
+        id: MethodID,
+        state: ClientMethodState,
+        client: &mut ClientDelegateLists,
+    ) -> Box<MethodDelegate> {
+        Box::new(DefaultMethodDelegate::new(state))
+    }
+
+    #[allow(unused_variables)]
+    fn make_signal(
+        &mut self,
+        id: SignalID,
+        state: ClientSignalState,
+        client: &mut ClientDelegateLists,
+    ) -> Box<SignalDelegate> {
+        Box::new(DefaultSignalDelegate::new(state))
+    }
+
+    #[allow(unused_variables)]
+    fn make_buffer(
+        &mut self,
+        id: BufferID,
+        state: BufferState,
+        client: &mut ClientDelegateLists,
+    ) -> Box<BufferDelegate> {
+        Box::new(DefaultBufferDelegate::new(state))
+    }
+
+    #[allow(unused_variables)]
+    fn make_buffer_view(
+        &mut self,
+        id: BufferViewID,
+        state: ClientBufferViewState,
+        client: &mut ClientDelegateLists,
+    ) -> Box<BufferViewDelegate> {
+        Box::new(DefaultBufferViewDelegate::new(state))
+    }
+
+    #[allow(unused_variables)]
+    fn make_sampler(
+        &mut self,
+        id: SamplerID,
+        state: SamplerState,
+        client: &mut ClientDelegateLists,
+    ) -> Box<SamplerDelegate> {
+        Box::new(DefaultSamplerDelegate::new(state))
+    }
+
+    #[allow(unused_variables)]
+    fn make_image(
+        &mut self,
+        id: ImageID,
+        state: ClientImageState,
+        client: &mut ClientDelegateLists,
+    ) -> Box<ImageDelegate> {
+        Box::new(DefaultImageDelegate::new(state))
+    }
+
+    #[allow(unused_variables)]
+    fn make_texture(
+        &mut self,
+        id: TextureID,
+        state: ClientTextureState,
+        client: &mut ClientDelegateLists,
+    ) -> Box<TextureDelegate> {
+        Box::new(DefaultTextureDelegate::new(state))
+    }
+
+    #[allow(unused_variables)]
+    fn make_material(
+        &mut self,
+        id: MaterialID,
+        state: ClientMaterialState,
+        client: &mut ClientDelegateLists,
+    ) -> Box<MaterialDelegate> {
+        Box::new(DefaultMaterialDelegate::new(state))
+    }
+
+    #[allow(unused_variables)]
+    fn make_geometry(
+        &mut self,
+        id: GeometryID,
+        state: ClientGeometryState,
+        client: &mut ClientDelegateLists,
+    ) -> Box<GeometryDelegate> {
+        Box::new(DefaultGeometryDelegate::new(state))
+    }
+
+    #[allow(unused_variables)]
+    fn make_light(
+        &mut self,
+        id: LightID,
+        state: LightState,
+        client: &mut ClientDelegateLists,
+    ) -> Box<LightDelegate> {
+        Box::new(DefaultLightDelegate::new(state))
+    }
+
+    #[allow(unused_variables)]
+    fn make_table(
+        &mut self,
+        id: TableID,
+        state: ClientTableState,
+        client: &mut ClientDelegateLists,
+    ) -> Box<TableDelegate> {
+        Box::new(DefaultTableDelegate::new(state))
+    }
+
+    #[allow(unused_variables)]
+    fn make_plot(
+        &mut self,
+        id: PlotID,
+        state: ClientPlotState,
+        client: &mut ClientDelegateLists,
+    ) -> Box<PlotDelegate> {
+        Box::new(DefaultPlotDelegate::new(state))
+    }
+
+    #[allow(unused_variables)]
+    fn make_entity(
+        &mut self,
+        id: EntityID,
+        state: ClientEntityState,
+        client: &mut ClientDelegateLists,
+    ) -> Box<EntityDelegate> {
+        Box::new(DefaultEntityDelegate::new(state))
+    }
+
+    fn make_document(&mut self) -> Box<dyn DocumentDelegate + Send> {
+        Box::<DefaultDocumentDelegate>::default()
+    }
+}
+
+impl Debug for ClientState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ClientState").finish()
+    }
+}
+
+impl ClientState {
+    /// Create a new client state, using previously created channels.
+    pub fn new<Maker>(channels: &ClientChannels, mut maker: Maker) -> Self
+    where
+        Maker: DelegateMaker + 'static,
+    {
+        let delegate_lists = ClientDelegateLists::new(&mut maker);
+
+        Self {
+            output: channels.from_client_tx.clone(),
+
+            maker: Box::new(maker),
+
+            delegate_lists,
+
+            method_subs: Default::default(),
+        }
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.delegate_lists.clear(&mut *self.maker);
         self.method_subs.clear();
     }
 
@@ -338,36 +362,48 @@ impl ClientState {
         let sig_id = SignalID(invoke.id);
         if let Some(id) = invoke.context {
             if let Some(entity) = id.entity {
-                let del = self.entity_list.take(&entity);
+                let del = self.delegate_lists.entity_list.take(&entity);
 
                 if let Some(mut del) = del {
-                    del.on_signal(sig_id, self, invoke.signal_data);
+                    del.on_signal(
+                        sig_id,
+                        &mut self.delegate_lists,
+                        invoke.signal_data,
+                    );
 
-                    self.entity_list.replace(&entity, del);
+                    self.delegate_lists.entity_list.replace(&entity, del);
                 }
             } else if let Some(plot) = id.plot {
-                let del = self.plot_list.take(&plot);
+                let del = self.delegate_lists.plot_list.take(&plot);
 
                 if let Some(mut del) = del {
-                    del.on_signal(sig_id, self, invoke.signal_data);
+                    del.on_signal(
+                        sig_id,
+                        &mut self.delegate_lists,
+                        invoke.signal_data,
+                    );
 
-                    self.plot_list.replace(&plot, del);
+                    self.delegate_lists.plot_list.replace(&plot, del);
                 }
             } else if let Some(table) = id.table {
-                let del = self.table_list.take(&table);
+                let del = self.delegate_lists.table_list.take(&table);
 
                 if let Some(mut del) = del {
-                    del.on_signal(sig_id, self, invoke.signal_data);
+                    del.on_signal(
+                        sig_id,
+                        &mut self.delegate_lists,
+                        invoke.signal_data,
+                    );
 
-                    self.table_list.replace(&table, del);
+                    self.delegate_lists.table_list.replace(&table, del);
                 }
             }
         } else {
-            let del = std::mem::take(&mut self.document);
+            let del = std::mem::take(&mut self.delegate_lists.document);
 
             if let Some(mut del) = del {
                 del.on_signal(sig_id, self, invoke.signal_data);
-                self.document = Some(del);
+                self.delegate_lists.document = Some(del);
             }
         }
     }
@@ -381,36 +417,36 @@ impl ClientState {
             //callback(self, msg);
             match callback {
                 InvokeContext::Document => {
-                    if let Some(mut del) = self.document.take() {
+                    if let Some(mut del) = self.delegate_lists.document.take() {
                         del.on_method_reply(self, id, msg);
-                        self.document = Some(del);
+                        self.delegate_lists.document = Some(del);
                     }
                 }
                 InvokeContext::Entity(del_id) => {
                     // we have to do this dance, because we cant take a mut ref,
                     // to self (through getting the delegate) and THEN pass
                     // it to the delegate for editing.
-                    let del = self.entity_list.take(&del_id);
+                    let del = self.delegate_lists.entity_list.take(&del_id);
 
                     if let Some(mut del) = del {
-                        del.on_method_reply(self, id, msg);
-                        self.entity_list.replace(&del_id, del);
+                        del.on_method_reply(&mut self.delegate_lists, id, msg);
+                        self.delegate_lists.entity_list.replace(&del_id, del);
                     }
                 }
                 InvokeContext::Table(del_id) => {
-                    let del = self.table_list.take(&del_id);
+                    let del = self.delegate_lists.table_list.take(&del_id);
 
                     if let Some(mut del) = del {
-                        del.on_method_reply(self, id, msg);
-                        self.table_list.replace(&del_id, del);
+                        del.on_method_reply(&mut self.delegate_lists, id, msg);
+                        self.delegate_lists.table_list.replace(&del_id, del);
                     }
                 }
                 InvokeContext::Plot(del_id) => {
-                    let del = self.plot_list.take(&del_id);
+                    let del = self.delegate_lists.plot_list.take(&del_id);
 
                     if let Some(mut del) = del {
-                        del.on_method_reply(self, id, msg);
-                        self.plot_list.replace(&del_id, del);
+                        del.on_method_reply(&mut self.delegate_lists, id, msg);
+                        self.delegate_lists.plot_list.replace(&del_id, del);
                     }
                 }
             };

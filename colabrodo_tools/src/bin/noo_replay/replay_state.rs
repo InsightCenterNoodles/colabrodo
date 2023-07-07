@@ -5,7 +5,7 @@ use colabrodo_server::server_state::ServerState;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use crate::replay_client::{ReplayClient, ReplayClientPtr};
+use crate::replay_client::{make_client_ptr, ReplayClientPtr};
 
 pub struct ReplayerServerState {
     // we are going to just read everything in as is for now.
@@ -33,7 +33,7 @@ impl ReplayerServerState {
 
         let packet_vec: Vec<_> = raw_packet_vec
             .into_iter()
-            .filter_map(|f| parse_record(f))
+            .filter_map(parse_record)
             .collect();
 
         let mut table: HashMap<String, PacketStamp> = HashMap::new();
@@ -48,13 +48,15 @@ impl ReplayerServerState {
             };
         }
 
-        Arc::new(Mutex::new(Self {
-            packets: packet_vec,
-            marker_table: table,
-            last_packet_index: 0,
-            last_time: 0,
-            client_state: ReplayClient::new(),
-        }))
+        Arc::new_cyclic(|me| {
+            Mutex::new(Self {
+                packets: packet_vec,
+                marker_table: table,
+                last_packet_index: 0,
+                last_time: 0,
+                client_state: make_client_ptr(me.clone()),
+            })
+        })
     }
 
     fn advance(&mut self) -> Option<PacketStamp> {

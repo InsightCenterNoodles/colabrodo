@@ -68,5 +68,5 @@ async fn server_task(app: ReplayerStatePtr) -> anyhow::Result<()> {
 
     server_main(noo_server_opts, state).await;
 
-    return Ok(());
+    Ok(())
 }

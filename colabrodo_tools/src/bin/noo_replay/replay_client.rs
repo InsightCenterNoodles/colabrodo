@@ -9,29 +9,22 @@ use std::sync::{Arc, Mutex};
 
 use crate::replay_state::ReplayerServerState;
 
-pub struct Maker {}
-
-impl DelegateMaker for Maker {
-    // type MethodDelegate = RMethodDelegate;
-    // type SignalDelegate = DefaultSignalDelegate;
-    // type BufferDelegate = DefaultBufferDelegate;
-    // type BufferViewDelegate = DefaultBufferViewDelegate;
-    // type SamplerDelegate = DefaultSamplerDelegate;
-    // type ImageDelegate = DefaultImageDelegate;
-    // type TextureDelegate = DefaultTextureDelegate;
-    // type MaterialDelegate = DefaultMaterialDelegate;
-    // type GeometryDelegate = DefaultGeometryDelegate;
-    // type LightDelegate = DefaultLightDelegate;
-    // type TableDelegate = DefaultTableDelegate;
-    // type PlotDelegate = DefaultPlotDelegate;
-    // type EntityDelegate = DefaultEntityDelegate;
-    // type DocumentDelegate = ReplayDocDelegate;
+pub struct Maker {
+    server_link: Weak<Mutex<ReplayerServerState>>,
 }
 
-impl ReplayClient {
-    pub fn new() -> ReplayClientPtr {
-        let channels = start_blank_stream();
-        Arc::new(Mutex::new(ClientState::new(&channels)))
+impl DelegateMaker for Maker {
+    fn make_method(
+        &mut self,
+        id: MethodID,
+        state: ClientMethodState,
+        client: &mut ClientDelegateLists,
+    ) -> Box<MethodDelegate> {
+        Box::new(RMethodDelegate::new(id, state, client))
+    }
+
+    fn make_document(&mut self) -> Box<dyn DocumentDelegate + Send> {
+        Box::new(ReplayDocDelegate::new(self.server_link.clone()))
     }
 }
 
@@ -40,7 +33,17 @@ pub fn advance_client(ptr: &ReplayClientPtr, bytes: &[u8]) {
     handle_next(&mut lock, bytes).unwrap();
 }
 
-pub type ReplayClientPtr = Arc<Mutex<ClientState<ReplayClient>>>;
+pub type ReplayClientPtr = Arc<Mutex<ClientState>>;
+
+pub fn make_client_ptr(
+    server: Weak<Mutex<ReplayerServerState>>,
+) -> ReplayClientPtr {
+    let channels = start_blank_stream();
+    let maker = Maker {
+        server_link: server,
+    };
+    Arc::new(Mutex::new(ClientState::new(&channels, maker)))
+}
 
 trait MyClientCrap {}
 
@@ -50,9 +53,9 @@ pub struct ReplayDocDelegate {
     server_link: Weak<Mutex<ReplayerServerState>>,
 }
 
-impl Default for ReplayDocDelegate {
-    fn default() -> Self {
-        Self {}
+impl ReplayDocDelegate {
+    fn new(server_link: Weak<Mutex<ReplayerServerState>>) -> Self {
+        Self { server_link }
     }
 }
 
@@ -68,12 +71,18 @@ impl Delegate for RMethodDelegate {
     type IDType = MethodID;
     type InitStateType = ClientMethodState;
 
-    fn on_new<Provider: DelegateProvider + MyClientCrap>(
-        id: Self::IDType,
-        state: Self::InitStateType,
-        client: &mut ClientState<Provider>,
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
+impl RMethodDelegate {
+    fn new(
+        id: MethodID,
+        state: ClientMethodState,
+        client: &mut ClientDelegateLists,
     ) -> Self {
-        let c = client.document.unwrap();
+        //let c = client.document.unwrap();
         Self { state }
     }
 }

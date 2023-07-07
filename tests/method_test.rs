@@ -69,7 +69,7 @@ fn setup_server(state: ServerStatePtr) {
 struct MyMaker {}
 
 impl DelegateMaker for MyMaker {
-    fn make_document(&mut self) -> Box<dyn DocumentDelegate> {
+    fn make_document(&mut self) -> Box<dyn DocumentDelegate + Send> {
         Box::new(MyDocumentDelegate::default())
     }
 }
@@ -100,14 +100,17 @@ impl DocumentDelegate for MyDocumentDelegate {
     fn on_ready(&mut self, client: &mut ClientState) {
         log::info!("Finding signals and methods...");
         self.test_sig_id = client
+            .delegate_lists
             .signal_list
             .get_id_by_name("test_signal")
             .expect("Missing required signal");
         self.test_ping_id = client
+            .delegate_lists
             .method_list
             .get_id_by_name("ping_pong")
             .expect("Missing required method");
         self.test_shutdown_m_id = client
+            .delegate_lists
             .method_list
             .get_id_by_name("shutdown")
             .expect("Missing required method");
@@ -153,8 +156,11 @@ impl DocumentDelegate for MyDocumentDelegate {
 
             log::info!("Issuing shutdown...");
 
-            let shutdown_id =
-                client.method_list.get_id_by_name("shutdown").unwrap();
+            let shutdown_id = client
+                .delegate_lists
+                .method_list
+                .get_id_by_name("shutdown")
+                .unwrap();
 
             self.test_shutdown_id = client.invoke_method(
                 self.test_shutdown_m_id,

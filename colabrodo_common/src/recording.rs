@@ -97,7 +97,7 @@ pub fn parse_record(mut value: ciborium::value::Value) -> Option<Packet> {
 
             Some(Packet::BufferLocation(swapper))
         }
-        _ => return None,
+        _ => None,
     }
 }
 

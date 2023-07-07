@@ -7,7 +7,7 @@ use colabrodo_common::{
 
 use crate::{client_state::*, components::*};
 
-pub trait Delegate {
+pub trait Delegate: Send {
     type IDType;
     type InitStateType;
 
@@ -26,7 +26,7 @@ pub trait UpdatableDelegate: Delegate {
     fn on_signal(
         &mut self,
         id: SignalID,
-        client: &mut ClientState,
+        client: &mut ClientDelegateLists,
         args: Vec<ciborium::value::Value>,
     ) {
     }
@@ -34,7 +34,7 @@ pub trait UpdatableDelegate: Delegate {
     #[allow(unused_variables)]
     fn on_method_reply(
         &mut self,
-        client: &mut ClientState,
+        client: &mut ClientDelegateLists,
         invoke_id: uuid::Uuid,
         reply: MessageMethodReply,
     ) {
@@ -78,7 +78,7 @@ pub trait DocumentDelegate {
 pub struct ComponentList<IDType, Del>
 where
     IDType: Eq + Hash + Copy,
-    Del: ?Sized,
+    Del: ?Sized + Send,
 {
     name_map: HashMap<String, IDType>,
     name_rev_map: HashMap<IDType, String>,
@@ -88,7 +88,7 @@ where
 impl<IDType, Del> Default for ComponentList<IDType, Del>
 where
     IDType: Eq + Hash + Copy,
-    Del: ?Sized,
+    Del: ?Sized + Send,
 {
     fn default() -> Self {
         Self {
@@ -102,7 +102,7 @@ where
 impl<IDType, Del> ComponentList<IDType, Del>
 where
     IDType: Eq + Hash + Copy,
-    Del: Delegate + ?Sized,
+    Del: Delegate + ?Sized + Send,
 {
     pub fn on_create(
         &mut self,
@@ -128,8 +128,8 @@ where
     }
 
     /// Find a component state by ID
-    pub fn find(&self, id: &IDType) -> Option<&Box<Del>> {
-        self.components.get(id)
+    pub fn find(&self, id: &IDType) -> Option<&Del> {
+        self.components.get(id).as_ref().map(|x| x as _)
     }
 
     /// Find a component state by ID (mutable)
@@ -153,7 +153,7 @@ where
     }
 
     /// Get a component state by a name
-    pub fn get_state_by_name(&self, name: &str) -> Option<&Box<Del>> {
+    pub fn get_state_by_name(&self, name: &str) -> Option<&Del> {
         self.find(self.name_map.get(name)?)
     }
 

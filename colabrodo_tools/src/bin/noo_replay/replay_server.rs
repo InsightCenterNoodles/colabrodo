@@ -74,6 +74,5 @@ fn setup_server(state: ServerStatePtr) {
     state_lock.update_document(ServerDocumentUpdate {
         methods_list: Some(vec![method, shutdown_m]),
         signals_list: Some(vec![sig]),
-        ..Default::default()
     })
 }
