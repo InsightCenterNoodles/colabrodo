@@ -66,23 +66,12 @@ fn setup_server(state: ServerStatePtr) {
     })
 }
 
-struct MyClient {}
+struct MyMaker {}
 
-impl DelegateProvider for MyClient {
-    type MethodDelegate = DefaultMethodDelegate;
-    type SignalDelegate = DefaultSignalDelegate;
-    type BufferDelegate = DefaultBufferDelegate;
-    type BufferViewDelegate = DefaultBufferViewDelegate;
-    type SamplerDelegate = DefaultSamplerDelegate;
-    type ImageDelegate = DefaultImageDelegate;
-    type TextureDelegate = DefaultTextureDelegate;
-    type MaterialDelegate = DefaultMaterialDelegate;
-    type GeometryDelegate = DefaultGeometryDelegate;
-    type LightDelegate = DefaultLightDelegate;
-    type TableDelegate = DefaultTableDelegate;
-    type PlotDelegate = DefaultPlotDelegate;
-    type EntityDelegate = DefaultEntityDelegate;
-    type DocumentDelegate = MyDocumentDelegate;
+impl DelegateMaker for MyMaker {
+    fn make_document(&mut self) -> Box<dyn DocumentDelegate> {
+        Box::new(MyDocumentDelegate::default())
+    }
 }
 
 struct MyDocumentDelegate {
@@ -108,10 +97,7 @@ impl Default for MyDocumentDelegate {
 }
 
 impl DocumentDelegate for MyDocumentDelegate {
-    fn on_ready<Provider: DelegateProvider>(
-        &mut self,
-        client: &mut ClientState<Provider>,
-    ) {
+    fn on_ready(&mut self, client: &mut ClientState) {
         log::info!("Finding signals and methods...");
         self.test_sig_id = client
             .signal_list
@@ -135,10 +121,10 @@ impl DocumentDelegate for MyDocumentDelegate {
         );
     }
 
-    fn on_signal<Provider: DelegateProvider>(
+    fn on_signal(
         &mut self,
         id: SignalID,
-        _client: &mut ClientState<Provider>,
+        _client: &mut ClientState,
         args: Vec<ciborium::value::Value>,
     ) {
         assert_eq!(id, self.test_sig_id);
@@ -151,9 +137,9 @@ impl DocumentDelegate for MyDocumentDelegate {
     }
 
     #[allow(unused_variables)]
-    fn on_method_reply<Provider: DelegateProvider>(
+    fn on_method_reply(
         &mut self,
-        client: &mut ClientState<Provider>,
+        client: &mut ClientState,
         invoke_id: uuid::Uuid,
         reply: MessageMethodReply,
     ) {
@@ -201,7 +187,9 @@ async fn client_path() {
 
     log::info!("Client started...");
 
-    launch_client_worker_thread::<MyClient>(channels);
+    let maker = MyMaker {};
+
+    launch_client_worker_thread(channels, maker);
 
     stopper.recv().await.unwrap();
 

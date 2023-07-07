@@ -14,7 +14,7 @@ use crate::{
     delegate::{Delegate, DocumentDelegate},
     server_root_message::*,
 };
-use ciborium::value::Value;
+pub use ciborium::value::Value;
 pub use colabrodo_common::client_communication::MethodInvokeMessage;
 pub use colabrodo_common::server_communication::MessageMethodReply;
 use colabrodo_common::{
@@ -29,130 +29,6 @@ use thiserror::Error;
 use tokio::net::TcpStream;
 use tokio_tungstenite::{connect_async, tungstenite::Message, WebSocketStream};
 use tokio_tungstenite::{tungstenite, MaybeTlsStream};
-
-// =============================================================================
-
-/// Signals will be delivered along this channel type.
-pub type SignalRecv = tokio::sync::broadcast::Receiver<Vec<Value>>;
-//type SignalSource = tokio::sync::broadcast::Sender<Vec<Value>>;
-//pub(crate) type SignalHash = HashMap<SignalID, SignalSource>;
-
-// fn fire_signal(id: SignalID, repo: &SignalHash, args: Vec<Value>) {
-//     if let Some(sender) = repo.get(&id) {
-//         sender.send(args).unwrap();
-//     }
-// }
-
-// =============================================================================
-
-/*
-/// A component list type that allows subscription to signals
-#[derive(Debug, Default)]
-pub struct SigModComponentList<IDType, State, Del>
-where
-    IDType: Eq + Hash + Copy,
-    State: UpdatableWith + NamedComponent + CommComponent,
-{
-    list: ComponentList<IDType, State, Del>,
-    signals: HashMap<IDType, SignalHash>,
-}
-
-impl<IDType, State, Del> SigModComponentList<IDType, State, Del>
-where
-    IDType: Eq + Hash + Copy,
-    State: UpdatableWith + NamedComponent + CommComponent,
-{
-    /// Find the name of a component by an ID
-    pub fn find_name(&self, id: &IDType) -> Option<&String> {
-        self.list.find_name(id)
-    }
-
-    /// Get a read-only copy of the ID -> State mapping
-    pub fn component_map(&self) -> &HashMap<IDType, State> {
-        self.list.component_map()
-    }
-
-    fn on_create(&mut self, id: IDType, state: State) {
-        self.list.on_create(id, state)
-    }
-
-    fn on_update(&mut self, id: IDType, update: State::Substate) {
-        self.list.on_update(id, update)
-    }
-
-    fn on_delete(&mut self, id: IDType) {
-        self.signals.remove(&id);
-        self.list.on_delete(id)
-    }
-
-    /// Find a component state by ID
-    pub fn find(&self, id: &IDType) -> Option<&State> {
-        self.list.find(id)
-    }
-
-    /// Find a component ID by a name
-    pub fn get_id_by_name(&self, name: &str) -> Option<IDType> {
-        self.list.get_id_by_name(name)
-    }
-
-    /// Get a component state by a name
-    pub fn get_state_by_name(&self, name: &str) -> Option<&State> {
-        self.list.get_state_by_name(name)
-    }
-
-    fn clear(&mut self) {
-        self.list.clear()
-    }
-
-    fn can_sub(&self, id: IDType, signal: SignalID) -> bool {
-        if let Some(state) = self.list.components.get(&id) {
-            if let Some(list) = state.signal_list() {
-                return list.iter().any(|&f| f == signal);
-            }
-        }
-        false
-    }
-
-    fn fire_signal(&self, sig_id: SignalID, id: IDType, args: Vec<Value>) {
-        if let Some(hash) = self.signals.get(&id) {
-            fire_signal(sig_id, hash, args)
-        }
-    }
-
-    /// Subscribe to a signal emitted by a component
-    ///
-    /// Takes an ID to an existing component, and an ID to a signal that is attached to that component.
-    ///
-    /// # Returns
-    ///
-    /// Returns [None] if the subscription fails (non-existing component, etc). Otherwise returns a channel to be subscribed to.
-    pub fn subscribe_signal(
-        &mut self,
-        id: IDType,
-        signal: SignalID,
-    ) -> Option<SignalRecv> {
-        if self.can_sub(id, signal) {
-            return Some(
-                self.signals
-                    .entry(id)
-                    .or_default()
-                    .entry(signal)
-                    .or_insert_with(|| tokio::sync::broadcast::channel(16).0)
-                    .subscribe(),
-            );
-        }
-        None
-    }
-
-    /// Remove a subscription to a signal on a component.
-    pub fn unsubscribe_signal(&mut self, id: IDType, signal: SignalID) {
-        if let Some(h) = self.signals.get_mut(&id) {
-            h.remove(&signal);
-        }
-    }
-}
- */
-// =============================================================================
 
 /// Context for a method invocation
 pub enum InvokeContext {
@@ -173,31 +49,32 @@ pub enum UserClientNext {
 }
 
 /// Execute the next message from a server on your client state
-pub fn handle_next<Provider: DelegateProvider>(
-    state: &mut ClientState<Provider>,
-    message: Vec<u8>,
+pub fn handle_next<Maker: DelegateMaker + Send>(
+    state: &mut ClientState,
+    message: &[u8],
+    maker: &mut Maker,
 ) -> Result<(), UserClientNext> {
     if log::log_enabled!(log::Level::Debug) {
         let v: ciborium::value::Value =
-            ciborium::de::from_reader(message.as_slice()).unwrap();
+            ciborium::de::from_reader(message).unwrap();
         debug!("Content: {v:?}");
     }
 
-    let root: ServerRootMessage =
-        ciborium::de::from_reader(message.as_slice()).unwrap();
+    let root: ServerRootMessage = ciborium::de::from_reader(message).unwrap();
 
     debug!("Got {} messages", root.list.len());
 
     for msg in root.list {
-        handle_next_message(state, msg)?;
+        handle_next_message(state, msg, maker)?;
     }
 
     Ok(())
 }
 
-fn handle_next_message<Provider: DelegateProvider>(
-    state: &mut ClientState<Provider>,
+fn handle_next_message<Maker: DelegateMaker + Send>(
+    state: &mut ClientState,
     m: FromServer,
+    maker: &mut Maker,
 ) -> Result<(), UserClientNext> {
     debug!("Handling next message...");
 
@@ -209,8 +86,7 @@ fn handle_next_message<Provider: DelegateProvider>(
         FromServer::Method(m) => match m {
             ModMethod::Create(x) => {
                 let name = x.content.name.clone();
-                let del =
-                    Provider::MethodDelegate::on_new(x.id, x.content, state);
+                let del = maker.make_method(x.id, x.content, state);
                 state.method_list.on_create(x.id, Some(name), del);
             }
             ModMethod::Delete(x) => state.method_list.on_delete(x.id),
@@ -219,8 +95,7 @@ fn handle_next_message<Provider: DelegateProvider>(
         FromServer::Signal(s) => match s {
             ModSignal::Create(x) => {
                 let name = x.content.name.clone();
-                let del =
-                    Provider::SignalDelegate::on_new(x.id, x.content, state);
+                let del = maker.make_signal(x.id, x.content, state);
                 state.signal_list.on_create(x.id, Some(name), del)
             }
             ModSignal::Delete(x) => state.signal_list.on_delete(x.id),
@@ -229,8 +104,7 @@ fn handle_next_message<Provider: DelegateProvider>(
         FromServer::Entity(x) => match x {
             ModEntity::Create(x) => {
                 let name = x.content.name.clone();
-                let del =
-                    Provider::EntityDelegate::on_new(x.id, x.content, state);
+                let del = maker.make_entity(x.id, x.content, state);
                 state.entity_list.on_create(x.id, name, del)
             }
             ModEntity::Update(x) => {
@@ -242,8 +116,7 @@ fn handle_next_message<Provider: DelegateProvider>(
         FromServer::Plot(x) => match x {
             ModPlot::Create(x) => {
                 let name = x.content.name.clone();
-                let del =
-                    Provider::PlotDelegate::on_new(x.id, x.content, state);
+                let del = maker.make_plot(x.id, x.content, state);
                 state.plot_list.on_create(x.id, name, del)
             }
             ModPlot::Update(x) => state.plot_list.on_update(x.id, x.content),
@@ -253,8 +126,7 @@ fn handle_next_message<Provider: DelegateProvider>(
         FromServer::Buffer(s) => match s {
             ModBuffer::Create(x) => {
                 let name = x.content.name.clone();
-                let del =
-                    Provider::BufferDelegate::on_new(x.id, x.content, state);
+                let del = maker.make_buffer(x.id, x.content, state);
                 state.buffer_list.on_create(x.id, name, del)
             }
             ModBuffer::Delete(x) => state.buffer_list.on_delete(x.id),
@@ -263,9 +135,7 @@ fn handle_next_message<Provider: DelegateProvider>(
         FromServer::BufferView(s) => match s {
             ModBufferView::Create(x) => {
                 let name = x.content.name.clone();
-                let del = Provider::BufferViewDelegate::on_new(
-                    x.id, x.content, state,
-                );
+                let del = maker.make_buffer_view(x.id, x.content, state);
                 state.buffer_view_list.on_create(x.id, name, del)
             }
             ModBufferView::Delete(x) => state.buffer_view_list.on_delete(x.id),
@@ -274,8 +144,7 @@ fn handle_next_message<Provider: DelegateProvider>(
         FromServer::Material(s) => match s {
             ModMaterial::Create(x) => {
                 let name = x.content.name.clone();
-                let del =
-                    Provider::MaterialDelegate::on_new(x.id, x.content, state);
+                let del = maker.make_material(x.id, x.content, state);
                 state.material_list.on_create(x.id, name, del)
             }
             ModMaterial::Update(x) => {
@@ -287,8 +156,7 @@ fn handle_next_message<Provider: DelegateProvider>(
         FromServer::Image(s) => match s {
             ModImage::Create(x) => {
                 let name = x.content.name.clone();
-                let del =
-                    Provider::ImageDelegate::on_new(x.id, x.content, state);
+                let del = maker.make_image(x.id, x.content, state);
                 state.image_list.on_create(x.id, name, del)
             }
             ModImage::Delete(x) => state.image_list.on_delete(x.id),
@@ -297,8 +165,7 @@ fn handle_next_message<Provider: DelegateProvider>(
         FromServer::Texture(s) => match s {
             ModTexture::Create(x) => {
                 let name = x.content.name.clone();
-                let del =
-                    Provider::TextureDelegate::on_new(x.id, x.content, state);
+                let del = maker.make_texture(x.id, x.content, state);
                 state.texture_list.on_create(x.id, name, del)
             }
             ModTexture::Delete(x) => state.texture_list.on_delete(x.id),
@@ -307,8 +174,7 @@ fn handle_next_message<Provider: DelegateProvider>(
         FromServer::Sampler(s) => match s {
             ModSampler::Create(x) => {
                 let name = x.content.name.clone();
-                let del =
-                    Provider::SamplerDelegate::on_new(x.id, x.content, state);
+                let del = maker.make_sampler(x.id, x.content, state);
                 state.sampler_list.on_create(x.id, name, del)
             }
             ModSampler::Delete(x) => state.sampler_list.on_delete(x.id),
@@ -317,8 +183,7 @@ fn handle_next_message<Provider: DelegateProvider>(
         FromServer::Light(s) => match s {
             ModLight::Create(x) => {
                 let name = x.content.name.clone();
-                let del =
-                    Provider::LightDelegate::on_new(x.id, x.content, state);
+                let del = maker.make_light(x.id, x.content, state);
                 state.light_list.on_create(x.id, name, del)
             }
             ModLight::Update(x) => state.light_list.on_update(x.id, x.content),
@@ -328,8 +193,7 @@ fn handle_next_message<Provider: DelegateProvider>(
         FromServer::Geometry(s) => match s {
             ModGeometry::Create(x) => {
                 let name = x.content.name.clone();
-                let del =
-                    Provider::GeometryDelegate::on_new(x.id, x.content, state);
+                let del = maker.make_geometry(x.id, x.content, state);
                 state.geometry_list.on_create(x.id, name, del)
             }
             ModGeometry::Delete(x) => state.geometry_list.on_delete(x.id),
@@ -338,8 +202,7 @@ fn handle_next_message<Provider: DelegateProvider>(
         FromServer::Table(s) => match s {
             ModTable::Create(x) => {
                 let name = x.content.name.clone();
-                let del =
-                    Provider::TableDelegate::on_new(x.id, x.content, state);
+                let del = maker.make_table(x.id, x.content, state);
                 state.table_list.on_create(x.id, name, del)
             }
             ModTable::Update(x) => state.table_list.on_update(x.id, x.content),
@@ -357,7 +220,7 @@ fn handle_next_message<Provider: DelegateProvider>(
             }
         }
         FromServer::MsgDocumentReset(_) => {
-            state.clear();
+            state.clear(maker);
         }
         //
         FromServer::MsgSignalInvoke(x) => {
@@ -429,6 +292,19 @@ pub struct ClientChannels {
 impl ClientChannels {
     pub fn get_stopper(&self) -> tokio::sync::broadcast::Receiver<u8> {
         self.stopper.subscribe()
+    }
+}
+
+pub fn start_blank_stream() -> ClientChannels {
+    let (stop_tx, _) = tokio::sync::broadcast::channel::<u8>(1);
+
+    let (_, to_client_rx) = tokio::sync::mpsc::unbounded_channel();
+    let (from_client_tx, _) = tokio::sync::mpsc::unbounded_channel();
+
+    ClientChannels {
+        to_client_rx,
+        from_client_tx,
+        stopper: stop_tx,
     }
 }
 
@@ -581,18 +457,24 @@ async fn forward_task(
 
 /// Consume messages and apply it to a given client state
 /// This blocks and should be run in a thread
-pub fn launch_client_worker_thread<Provider: DelegateProvider>(
+pub fn launch_client_worker_thread<Maker>(
     mut channels: ClientChannels,
-) -> std::thread::JoinHandle<()> {
+    maker: Maker,
+) -> std::thread::JoinHandle<()>
+where
+    Maker: DelegateMaker + Send + 'static,
+{
     std::thread::spawn(move || {
+        let mut maker = maker;
         debug!("Starting client worker thread");
 
-        let mut state = ClientState::<Provider>::new(&channels);
+        let mut state = ClientState::new(&channels, &mut maker);
 
         while let Some(x) = channels.to_client_rx.blocking_recv() {
             match x {
                 IncomingMessage::NetworkMessage(root) => {
-                    handle_next(&mut state, root).unwrap();
+                    handle_next(&mut state, root.as_slice(), &mut maker)
+                        .unwrap();
                 }
                 IncomingMessage::Closed => {
                     break;
@@ -603,6 +485,6 @@ pub fn launch_client_worker_thread<Provider: DelegateProvider>(
 
         let _ = channels.stopper.send(1);
 
-        state.clear();
+        state.clear(&mut maker);
     })
 }

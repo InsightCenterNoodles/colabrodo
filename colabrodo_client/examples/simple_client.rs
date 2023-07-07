@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 
@@ -146,41 +147,42 @@ impl TableDataStorage for ReportingTable {
 
 // =============================================================================
 
-struct MyClient {}
+#[derive(Debug, Default)]
+struct MyMaker {}
 
-impl DelegateProvider for MyClient {
-    type MethodDelegate = DefaultMethodDelegate;
-    type SignalDelegate = DefaultSignalDelegate;
-    type BufferDelegate = DefaultBufferDelegate;
-    type BufferViewDelegate = DefaultBufferViewDelegate;
-    type SamplerDelegate = DefaultSamplerDelegate;
-    type ImageDelegate = DefaultImageDelegate;
-    type TextureDelegate = DefaultTextureDelegate;
-    type MaterialDelegate = DefaultMaterialDelegate;
-    type GeometryDelegate = DefaultGeometryDelegate;
-    type LightDelegate = DefaultLightDelegate;
-    type TableDelegate = MyTableDelegate;
-    type PlotDelegate = DefaultPlotDelegate;
-    type EntityDelegate = DefaultEntityDelegate;
-    type DocumentDelegate = DefaultDocumentDelegate;
+impl DelegateMaker for MyMaker {
+    fn make_table(
+        &mut self,
+        id: TableID,
+        state: ClientTableState,
+        client: &mut ClientState,
+    ) -> Box<TableDelegate> {
+        Box::new(MyTableDelegate::new(id, state, client))
+    }
 }
 
 struct MyTableDelegate {
     pre_made_delegate: AdvTableDelegate,
 }
 
+impl MyTableDelegate {
+    fn new(
+        id: TableID,
+        state: ClientTableState,
+        client: &mut ClientState,
+    ) -> Self {
+        Self {
+            pre_made_delegate: AdvTableDelegate::new(id, state, client),
+        }
+    }
+}
+
 impl Delegate for MyTableDelegate {
     type IDType = TableID;
     type InitStateType = ClientTableState;
 
-    fn on_new<Provider: DelegateProvider>(
-        id: Self::IDType,
-        state: Self::InitStateType,
-        client: &mut ClientState<Provider>,
-    ) -> Self {
-        Self {
-            pre_made_delegate: AdvTableDelegate::on_new(id, state, client),
-        }
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 
@@ -191,18 +193,18 @@ impl UpdatableDelegate for MyTableDelegate {
         self.pre_made_delegate.on_update(state);
     }
 
-    fn on_signal<Provider: DelegateProvider>(
+    fn on_signal(
         &mut self,
         id: colabrodo_common::nooid::SignalID,
-        client: &mut ClientState<Provider>,
+        client: &mut ClientState,
         args: Vec<ciborium::value::Value>,
     ) {
         self.pre_made_delegate.on_signal(id, client, args);
     }
 
-    fn on_method_reply<Provider: DelegateProvider>(
+    fn on_method_reply(
         &mut self,
-        client: &mut ClientState<Provider>,
+        client: &mut ClientState,
         invoke_id: uuid::Uuid,
         reply: MessageMethodReply,
     ) {
@@ -223,6 +225,8 @@ async fn main() {
             .await
             .unwrap();
 
+    let maker = MyMaker::default();
+
     // Launch a client thread to handle those channels
-    launch_client_worker_thread::<MyClient>(channels);
+    launch_client_worker_thread(channels, maker);
 }

@@ -193,7 +193,9 @@ impl Outfile {
     }
 
     fn write(&mut self, message: RecorderMessage) {
-        let delta = get_time_delta(self.timestamp);
+        let delta = colabrodo_common::recording::PacketStamp(get_time_delta(
+            self.timestamp,
+        ));
 
         let packet = match message {
             RecorderMessage::DropMarker(x) => Packet::DropMarker(delta, x),

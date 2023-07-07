@@ -24,26 +24,28 @@
 //!
 //! Type 1:
 //! CBOR from-server message content
-//!     - timestamp : integer, seconds from start,
-//!     - message : bytes, message from the server,
+//!     timestamp : integer, seconds from start,
+//!     message : bytes, message from the server,
 //!
 //! Type 2:
 //! Labelled timestamp w/ utf8 string identifier
-//!
-//!     - timestamp : integer, seconds from start,
-//!     - marker_name : string
+//!     timestamp : integer, seconds from start,
+//!     marker_name : string
 //!
 //! Type 3:
 //! Buffer location
-//!     - content : string, relative location of buffer file
+//!     content : string, relative location of buffer file
 //!
 
 use std::mem;
 
+#[derive(Debug, Clone, Copy)]
+pub struct PacketStamp(pub u32);
+
 #[derive(Debug)]
 pub enum Packet {
-    DropMarker(u32, String),
-    WriteCBOR(u32, Vec<u8>),
+    DropMarker(PacketStamp, String),
+    WriteCBOR(PacketStamp, Vec<u8>),
     BufferLocation(String),
 }
 
@@ -77,7 +79,7 @@ pub fn parse_record(mut value: ciborium::value::Value) -> Option<Packet> {
 
             mem::swap(&mut swapper, array.get_mut(2)?.as_text_mut()?);
 
-            Some(Packet::DropMarker(timestamp, swapper))
+            Some(Packet::DropMarker(PacketStamp(timestamp), swapper))
         }
         2 => {
             let timestamp: u32 = value_to_int::<u32>(array.get(1)?)?;
@@ -86,7 +88,7 @@ pub fn parse_record(mut value: ciborium::value::Value) -> Option<Packet> {
 
             mem::swap(&mut swapper, array.get_mut(2)?.as_bytes_mut()?);
 
-            Some(Packet::WriteCBOR(timestamp, swapper))
+            Some(Packet::WriteCBOR(PacketStamp(timestamp), swapper))
         }
         3 => {
             let mut swapper = String::new();
@@ -117,10 +119,10 @@ pub fn pack_record(record: Packet, sink: impl std::io::Write) {
 
     let value: Vec<ciborium::value::Value> = match record {
         Packet::DropMarker(t, v) => {
-            vec![id.into(), t.into(), v.into()]
+            vec![id.into(), t.0.into(), v.into()]
         }
         Packet::WriteCBOR(t, v) => {
-            vec![id.into(), t.into(), v.into()]
+            vec![id.into(), t.0.into(), v.into()]
         }
         Packet::BufferLocation(loc) => {
             vec![id.into(), loc.into()]

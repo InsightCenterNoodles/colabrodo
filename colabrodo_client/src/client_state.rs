@@ -23,108 +23,227 @@ use crate::{
     delegate::*,
 };
 
-pub trait DelegateProvider {
-    type MethodDelegate: Delegate<
-        IDType = MethodID,
-        InitStateType = ClientMethodState,
-    >;
-    type SignalDelegate: Delegate<
-        IDType = SignalID,
-        InitStateType = ClientSignalState,
-    >;
-    type BufferDelegate: Delegate<
-        IDType = BufferID,
-        InitStateType = BufferState,
-    >;
-    type BufferViewDelegate: Delegate<
-        IDType = BufferViewID,
-        InitStateType = ClientBufferViewState,
-    >;
-    type SamplerDelegate: Delegate<
-        IDType = SamplerID,
-        InitStateType = SamplerState,
-    >;
-    type ImageDelegate: Delegate<
-        IDType = ImageID,
-        InitStateType = ClientImageState,
-    >;
-    type TextureDelegate: Delegate<
-        IDType = TextureID,
-        InitStateType = ClientTextureState,
-    >;
-    type MaterialDelegate: UpdatableDelegate<
-        IDType = MaterialID,
-        InitStateType = ClientMaterialState,
-        UpdateStateType = ClientMaterialUpdate,
-    >;
-    type GeometryDelegate: Delegate<
-        IDType = GeometryID,
-        InitStateType = ClientGeometryState,
-    >;
-    type LightDelegate: UpdatableDelegate<
-        IDType = LightID,
-        InitStateType = LightState,
-        UpdateStateType = LightStateUpdatable,
-    >;
-    type TableDelegate: UpdatableDelegate<
-        IDType = TableID,
-        InitStateType = ClientTableState,
-        UpdateStateType = ClientTableUpdate,
-    >;
-    type PlotDelegate: UpdatableDelegate<
-        IDType = PlotID,
-        InitStateType = ClientPlotState,
-        UpdateStateType = ClientPlotUpdate,
-    >;
-    type EntityDelegate: UpdatableDelegate<
-        IDType = EntityID,
-        InitStateType = ClientEntityState,
-        UpdateStateType = ClientEntityUpdate,
-    >;
+// macro_rules! declare_client {
+//     ($method_del:ty, $signal_del:ty,$buffer_del:ty,$buffer_view_del:ty,$sampler_del:ty,$image_del:ty,$texture_del:ty,$material_del:ty,$geometry_del:ty,$light_del:ty,$table_del:ty,$plot_del:ty,$entity_del:ty,) => {};
+// }
 
-    type DocumentDelegate: DocumentDelegate + Default;
-}
+pub type MethodDelegate =
+    dyn Delegate<IDType = MethodID, InitStateType = ClientMethodState>;
+pub type SignalDelegate =
+    dyn Delegate<IDType = SignalID, InitStateType = ClientSignalState>;
+pub type BufferDelegate =
+    dyn Delegate<IDType = BufferID, InitStateType = BufferState>;
+pub type BufferViewDelegate =
+    dyn Delegate<IDType = BufferViewID, InitStateType = ClientBufferViewState>;
+pub type SamplerDelegate =
+    dyn Delegate<IDType = SamplerID, InitStateType = SamplerState>;
+pub type ImageDelegate =
+    dyn Delegate<IDType = ImageID, InitStateType = ClientImageState>;
+pub type TextureDelegate =
+    dyn Delegate<IDType = TextureID, InitStateType = ClientTextureState>;
+pub type MaterialDelegate = dyn UpdatableDelegate<
+    IDType = MaterialID,
+    InitStateType = ClientMaterialState,
+    UpdateStateType = ClientMaterialUpdate,
+>;
+pub type GeometryDelegate =
+    dyn Delegate<IDType = GeometryID, InitStateType = ClientGeometryState>;
+pub type LightDelegate = dyn UpdatableDelegate<
+    IDType = LightID,
+    InitStateType = LightState,
+    UpdateStateType = LightStateUpdatable,
+>;
+pub type TableDelegate = dyn UpdatableDelegate<
+    IDType = TableID,
+    InitStateType = ClientTableState,
+    UpdateStateType = ClientTableUpdate,
+>;
+pub type PlotDelegate = dyn UpdatableDelegate<
+    IDType = PlotID,
+    InitStateType = ClientPlotState,
+    UpdateStateType = ClientPlotUpdate,
+>;
+pub type EntityDelegate = dyn UpdatableDelegate<
+    IDType = EntityID,
+    InitStateType = ClientEntityState,
+    UpdateStateType = ClientEntityUpdate,
+>;
 
-pub struct ClientState<Provider: DelegateProvider> {
+pub struct ClientState {
     pub output: tokio::sync::mpsc::UnboundedSender<OutgoingMessage>,
 
-    pub method_list: ComponentList<MethodID, Provider::MethodDelegate>,
-    pub signal_list: ComponentList<SignalID, Provider::SignalDelegate>,
+    pub method_list: ComponentList<MethodID, MethodDelegate>,
+    pub signal_list: ComponentList<SignalID, SignalDelegate>,
 
-    pub buffer_list: ComponentList<BufferID, Provider::BufferDelegate>,
-    pub buffer_view_list:
-        ComponentList<BufferViewID, Provider::BufferViewDelegate>,
+    pub buffer_list: ComponentList<BufferID, BufferDelegate>,
+    pub buffer_view_list: ComponentList<BufferViewID, BufferViewDelegate>,
 
-    pub sampler_list: ComponentList<SamplerID, Provider::SamplerDelegate>,
-    pub image_list: ComponentList<ImageID, Provider::ImageDelegate>,
-    pub texture_list: ComponentList<TextureID, Provider::TextureDelegate>,
+    pub sampler_list: ComponentList<SamplerID, SamplerDelegate>,
+    pub image_list: ComponentList<ImageID, ImageDelegate>,
+    pub texture_list: ComponentList<TextureID, TextureDelegate>,
 
-    pub material_list: ComponentList<MaterialID, Provider::MaterialDelegate>,
-    pub geometry_list: ComponentList<GeometryID, Provider::GeometryDelegate>,
+    pub material_list: ComponentList<MaterialID, MaterialDelegate>,
+    pub geometry_list: ComponentList<GeometryID, GeometryDelegate>,
 
-    pub light_list: ComponentList<LightID, Provider::LightDelegate>,
+    pub light_list: ComponentList<LightID, LightDelegate>,
 
-    pub table_list: ComponentList<TableID, Provider::TableDelegate>,
-    pub plot_list: ComponentList<PlotID, Provider::PlotDelegate>,
-    pub entity_list: ComponentList<EntityID, Provider::EntityDelegate>,
+    pub table_list: ComponentList<TableID, TableDelegate>,
+    pub plot_list: ComponentList<PlotID, PlotDelegate>,
+    pub entity_list: ComponentList<EntityID, EntityDelegate>,
 
-    pub document: Option<Box<Provider::DocumentDelegate>>,
+    pub document: Option<Box<dyn DocumentDelegate>>,
 
     pub method_subs: HashMap<uuid::Uuid, InvokeContext>,
 }
 
-impl<Provider> Debug for ClientState<Provider>
-where
-    Provider: DelegateProvider,
-{
+pub trait DelegateMaker {
+    #[allow(unused_variables)]
+    fn make_method(
+        &mut self,
+        id: MethodID,
+        state: ClientMethodState,
+        client: &mut ClientState,
+    ) -> Box<MethodDelegate> {
+        Box::new(DefaultMethodDelegate::new(state))
+    }
+
+    #[allow(unused_variables)]
+    fn make_signal(
+        &mut self,
+        id: SignalID,
+        state: ClientSignalState,
+        client: &mut ClientState,
+    ) -> Box<SignalDelegate> {
+        Box::new(DefaultSignalDelegate::new(state))
+    }
+
+    #[allow(unused_variables)]
+    fn make_buffer(
+        &mut self,
+        id: BufferID,
+        state: BufferState,
+        client: &mut ClientState,
+    ) -> Box<BufferDelegate> {
+        Box::new(DefaultBufferDelegate::new(state))
+    }
+
+    #[allow(unused_variables)]
+    fn make_buffer_view(
+        &mut self,
+        id: BufferViewID,
+        state: ClientBufferViewState,
+        client: &mut ClientState,
+    ) -> Box<BufferViewDelegate> {
+        Box::new(DefaultBufferViewDelegate::new(state))
+    }
+
+    #[allow(unused_variables)]
+    fn make_sampler(
+        &mut self,
+        id: SamplerID,
+        state: SamplerState,
+        client: &mut ClientState,
+    ) -> Box<SamplerDelegate> {
+        Box::new(DefaultSamplerDelegate::new(state))
+    }
+
+    #[allow(unused_variables)]
+    fn make_image(
+        &mut self,
+        id: ImageID,
+        state: ClientImageState,
+        client: &mut ClientState,
+    ) -> Box<ImageDelegate> {
+        Box::new(DefaultImageDelegate::new(state))
+    }
+
+    #[allow(unused_variables)]
+    fn make_texture(
+        &mut self,
+        id: TextureID,
+        state: ClientTextureState,
+        client: &mut ClientState,
+    ) -> Box<TextureDelegate> {
+        Box::new(DefaultTextureDelegate::new(state))
+    }
+
+    #[allow(unused_variables)]
+    fn make_material(
+        &mut self,
+        id: MaterialID,
+        state: ClientMaterialState,
+        client: &mut ClientState,
+    ) -> Box<MaterialDelegate> {
+        Box::new(DefaultMaterialDelegate::new(state))
+    }
+
+    #[allow(unused_variables)]
+    fn make_geometry(
+        &mut self,
+        id: GeometryID,
+        state: ClientGeometryState,
+        client: &mut ClientState,
+    ) -> Box<GeometryDelegate> {
+        Box::new(DefaultGeometryDelegate::new(state))
+    }
+
+    #[allow(unused_variables)]
+    fn make_light(
+        &mut self,
+        id: LightID,
+        state: LightState,
+        client: &mut ClientState,
+    ) -> Box<LightDelegate> {
+        Box::new(DefaultLightDelegate::new(state))
+    }
+
+    #[allow(unused_variables)]
+    fn make_table(
+        &mut self,
+        id: TableID,
+        state: ClientTableState,
+        client: &mut ClientState,
+    ) -> Box<TableDelegate> {
+        Box::new(DefaultTableDelegate::new(state))
+    }
+
+    #[allow(unused_variables)]
+    fn make_plot(
+        &mut self,
+        id: PlotID,
+        state: ClientPlotState,
+        client: &mut ClientState,
+    ) -> Box<PlotDelegate> {
+        Box::new(DefaultPlotDelegate::new(state))
+    }
+
+    #[allow(unused_variables)]
+    fn make_entity(
+        &mut self,
+        id: EntityID,
+        state: ClientEntityState,
+        client: &mut ClientState,
+    ) -> Box<EntityDelegate> {
+        Box::new(DefaultEntityDelegate::new(state))
+    }
+
+    fn make_document(&mut self) -> Box<dyn DocumentDelegate> {
+        Box::new(DefaultDocumentDelegate::default())
+    }
+}
+
+impl Debug for ClientState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ClientState").finish()
     }
 }
 
-impl<Provider: DelegateProvider> ClientState<Provider> {
+impl ClientState {
     /// Create a new client state, using previously created channels.
-    pub fn new(channels: &ClientChannels) -> Self {
+    pub fn new<Maker>(channels: &ClientChannels, maker: &mut Maker) -> Self
+    where
+        Maker: DelegateMaker + Send,
+    {
         Self {
             output: channels.from_client_tx.clone(),
 
@@ -141,12 +260,15 @@ impl<Provider: DelegateProvider> ClientState<Provider> {
             table_list: Default::default(),
             plot_list: Default::default(),
             entity_list: Default::default(),
-            document: Some(Box::new(Provider::DocumentDelegate::default())),
+            document: Some(maker.make_document()),
             method_subs: Default::default(),
         }
     }
 
-    pub(crate) fn clear(&mut self) {
+    pub(crate) fn clear<Maker>(&mut self, maker: &mut Maker)
+    where
+        Maker: DelegateMaker + Send,
+    {
         self.method_list.clear();
         self.signal_list.clear();
         self.buffer_list.clear();
@@ -160,51 +282,9 @@ impl<Provider: DelegateProvider> ClientState<Provider> {
         self.table_list.clear();
         self.plot_list.clear();
         self.entity_list.clear();
-        self.document = Default::default();
+        self.document = Some(maker.make_document());
         self.method_subs.clear();
     }
-
-    // /// Update document method/signal handlers
-    // pub(crate) fn update_method_signals(&mut self) {
-    //     if let Some(siglist) = &self.document_communication.signals_list {
-    //         let siglist: Vec<_> = siglist
-    //             .iter()
-    //             .filter(|x| !self.signal_subs.contains_key(x))
-    //             .collect();
-
-    //         for sid in siglist {
-    //             self.signal_subs.remove(sid);
-    //         }
-    //     }
-    // }
-
-    // /// Subscribe to a signal on the document.
-    // ///
-    // /// # Returns
-    // ///
-    // /// Returns [None] if the subscription fails (non-existing component, etc). Otherwise returns a channel to be subscribed to.
-    // pub fn subscribe_signal(&mut self, signal: SignalID) -> Option<()> {
-    //     // if let Some(list) = &mut self.document_communication.signals_list {
-    //     //     log::debug!("Searching for signal {signal:?} in {list:?}");
-    //     //     if list.iter().any(|&f| f == signal) {
-    //     //         return Some(
-    //     //             self.signal_subs
-    //     //                 .entry(signal)
-    //     //                 .or_insert_with(|| {
-    //     //                     tokio::sync::broadcast::channel(16).0
-    //     //                 })
-    //     //                 .subscribe(),
-    //     //         );
-    //     //     }
-    //     // }
-    //     // log::debug!("Unable to find requested signal: {signal:?}");
-    //     None
-    // }
-
-    // /// Unsubscribe to a document signal
-    // pub fn unsubscribe_signal(&mut self, signal: SignalID) {
-    //     self.signal_subs.remove(&signal);
-    // }
 
     /// Invoke a method on a component.
     ///

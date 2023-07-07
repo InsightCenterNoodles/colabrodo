@@ -1,5 +1,8 @@
 //! Tools to help subscribe to server-side tables
-use std::collections::{BTreeMap, HashMap};
+use std::{
+    any::Any,
+    collections::{BTreeMap, HashMap},
+};
 
 use colabrodo_common::{
     arg_to_tuple, common::strings, nooid::*,
@@ -10,7 +13,6 @@ pub use colabrodo_common::table::*;
 
 use crate::{
     client::InvokeContext,
-    client_state::DelegateProvider,
     components::ClientTableUpdate,
     delegate::{Delegate, UpdatableDelegate},
 };
@@ -49,9 +51,21 @@ pub struct AdvTableDelegate {
 }
 
 impl AdvTableDelegate {
-    pub fn subscribe<Provider: DelegateProvider>(
+    pub fn new(
+        id: TableID,
+        state: ClientTableState,
+        client: &mut ClientState,
+    ) -> Self {
+        Self {
+            table_id: id,
+            table: Default::default(),
+            method_subs: Default::default(),
+        }
+    }
+
+    pub fn subscribe(
         &mut self,
-        client: &mut ClientState<Provider>,
+        client: &mut ClientState,
         table: Box<dyn TableDataStorage>,
     ) {
         self.table = Some(table);
@@ -74,9 +88,9 @@ impl AdvTableDelegate {
         Some(())
     }
 
-    pub fn ask_insert<Provider: DelegateProvider>(
+    pub fn ask_insert(
         &mut self,
-        client: &mut ClientState<Provider>,
+        client: &mut ClientState,
         rows: Vec<Vec<Value>>,
     ) {
         let _res = client.invoke_method(
@@ -87,9 +101,9 @@ impl AdvTableDelegate {
     }
 
     /// Ask to update keys on the remote table
-    pub fn ask_update<Provider: DelegateProvider>(
+    pub fn ask_update(
         &mut self,
-        client: &mut ClientState<Provider>,
+        client: &mut ClientState,
         keys: Vec<i64>,
         rows: Vec<Vec<Value>>,
     ) {
@@ -101,11 +115,7 @@ impl AdvTableDelegate {
     }
 
     /// Ask to remove keys on the remote table
-    pub fn ask_remove<Provider: DelegateProvider>(
-        &mut self,
-        client: &mut ClientState<Provider>,
-        keys: Vec<i64>,
-    ) {
+    pub fn ask_remove(&mut self, client: &mut ClientState, keys: Vec<i64>) {
         let _res = client.invoke_method(
             mthd_remove(client).expect("Unable to subscribe."),
             InvokeContext::Table(self.table_id),
@@ -114,10 +124,7 @@ impl AdvTableDelegate {
     }
 
     /// Ask to clear keys on the remote table
-    pub fn ask_clear<Provider: DelegateProvider>(
-        &mut self,
-        client: &mut ClientState<Provider>,
-    ) {
+    pub fn ask_clear(&mut self, client: &mut ClientState) {
         let _res = client.invoke_method(
             mthd_clear(client).expect("Unable to subscribe."),
             InvokeContext::Table(self.table_id),
@@ -126,9 +133,9 @@ impl AdvTableDelegate {
     }
 
     /// Ask to update a specific selection
-    pub fn ask_update_selection<Provider: DelegateProvider>(
+    pub fn ask_update_selection(
         &mut self,
-        client: &mut ClientState<Provider>,
+        client: &mut ClientState,
         selection: Selection,
     ) {
         let _res = client.invoke_method(
@@ -138,10 +145,10 @@ impl AdvTableDelegate {
         );
     }
 
-    fn on_signal_fallible<Provider: DelegateProvider>(
+    fn on_signal_fallible(
         &mut self,
         id: SignalID,
-        client: &mut ClientState<Provider>,
+        client: &mut ClientState,
         args: Vec<ciborium::value::Value>,
     ) -> Option<()> {
         // TODO: In the future we can just rescan ids on update.
@@ -178,25 +185,29 @@ impl Delegate for AdvTableDelegate {
     type IDType = TableID;
     type InitStateType = ClientTableState;
 
-    fn on_new<Provider: DelegateProvider>(
-        id: Self::IDType,
-        _state: Self::InitStateType,
-        _client: &mut ClientState<Provider>,
-    ) -> Self {
-        Self {
-            table_id: id,
-            table: Default::default(),
-            method_subs: Default::default(),
-        }
+    fn as_any(&self) -> &dyn Any {
+        self
     }
+
+    // fn on_new(
+    //     id: Self::IDType,
+    //     _state: Self::InitStateType,
+    //     _client: &mut ClientState,
+    // ) -> Self {
+    //     Self {
+    //         table_id: id,
+    //         table: Default::default(),
+    //         method_subs: Default::default(),
+    //     }
+    // }
 }
 
 impl UpdatableDelegate for AdvTableDelegate {
     type UpdateStateType = ClientTableUpdate;
 
-    fn on_method_reply<Provider: DelegateProvider>(
+    fn on_method_reply(
         &mut self,
-        _client: &mut ClientState<Provider>,
+        _client: &mut ClientState,
         invoke_id: uuid::Uuid,
         reply: MessageMethodReply,
     ) {
@@ -209,10 +220,10 @@ impl UpdatableDelegate for AdvTableDelegate {
         }
     }
 
-    fn on_signal<Provider: DelegateProvider>(
+    fn on_signal(
         &mut self,
         id: SignalID,
-        client: &mut ClientState<Provider>,
+        client: &mut ClientState,
         args: Vec<ciborium::value::Value>,
     ) {
         self.on_signal_fallible(id, client, args);
@@ -221,69 +232,49 @@ impl UpdatableDelegate for AdvTableDelegate {
 
 // =============================================================================
 
-pub fn sig_reset<Provider: DelegateProvider>(
-    state: &ClientState<Provider>,
-) -> Option<SignalID> {
+pub fn sig_reset(state: &ClientState) -> Option<SignalID> {
     state.signal_list.get_id_by_name(strings::SIG_TBL_RESET)
 }
 
-pub fn sig_updated<Provider: DelegateProvider>(
-    state: &ClientState<Provider>,
-) -> Option<SignalID> {
+pub fn sig_updated(state: &ClientState) -> Option<SignalID> {
     state.signal_list.get_id_by_name(strings::SIG_TBL_UPDATED)
 }
 
-pub fn sig_row_remove<Provider: DelegateProvider>(
-    state: &ClientState<Provider>,
-) -> Option<SignalID> {
+pub fn sig_row_remove(state: &ClientState) -> Option<SignalID> {
     state
         .signal_list
         .get_id_by_name(strings::SIG_TBL_ROWS_REMOVED)
 }
 
-pub fn sig_selection_update<Provider: DelegateProvider>(
-    state: &ClientState<Provider>,
-) -> Option<SignalID> {
+pub fn sig_selection_update(state: &ClientState) -> Option<SignalID> {
     state
         .signal_list
         .get_id_by_name(strings::SIG_TBL_SELECTION_UPDATED)
 }
 
-pub fn mthd_subscribe<Provider: DelegateProvider>(
-    state: &ClientState<Provider>,
-) -> Option<MethodID> {
+pub fn mthd_subscribe(state: &ClientState) -> Option<MethodID> {
     state
         .method_list
         .get_id_by_name(strings::MTHD_TBL_SUBSCRIBE)
 }
 
-pub fn mthd_insert<Provider: DelegateProvider>(
-    state: &ClientState<Provider>,
-) -> Option<MethodID> {
+pub fn mthd_insert(state: &ClientState) -> Option<MethodID> {
     state.method_list.get_id_by_name(strings::MTHD_TBL_INSERT)
 }
 
-pub fn mthd_update<Provider: DelegateProvider>(
-    state: &ClientState<Provider>,
-) -> Option<MethodID> {
+pub fn mthd_update(state: &ClientState) -> Option<MethodID> {
     state.method_list.get_id_by_name(strings::MTHD_TBL_UPDATE)
 }
 
-pub fn mthd_remove<Provider: DelegateProvider>(
-    state: &ClientState<Provider>,
-) -> Option<MethodID> {
+pub fn mthd_remove(state: &ClientState) -> Option<MethodID> {
     state.method_list.get_id_by_name(strings::MTHD_TBL_REMOVE)
 }
 
-pub fn mthd_clear<Provider: DelegateProvider>(
-    state: &ClientState<Provider>,
-) -> Option<MethodID> {
+pub fn mthd_clear(state: &ClientState) -> Option<MethodID> {
     state.method_list.get_id_by_name(strings::MTHD_TBL_CLEAR)
 }
 
-pub fn mthd_update_selection<Provider: DelegateProvider>(
-    state: &ClientState<Provider>,
-) -> Option<MethodID> {
+pub fn mthd_update_selection(state: &ClientState) -> Option<MethodID> {
     state
         .method_list
         .get_id_by_name(strings::MTHD_TBL_UPDATE_SELECTION)
