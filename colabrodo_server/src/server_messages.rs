@@ -8,7 +8,6 @@ use colabrodo_macros::UpdatableStateItem;
 use core::fmt::Debug;
 use serde::Serialize;
 use std::sync::Arc;
-use std::sync::Mutex;
 use tokio::sync::mpsc;
 
 use colabrodo_common::common;
@@ -46,21 +45,21 @@ pub struct AsyncMethodReply {
 
 #[derive(Default)]
 pub struct MethodHandlerChannels {
-    pub(crate) tx: Option<mpsc::Sender<AsyncMethodContent>>,
-    pub(crate) rx: Option<mpsc::Receiver<AsyncMethodReply>>,
+    pub(crate) tx: Option<mpsc::UnboundedSender<AsyncMethodContent>>,
+    pub(crate) rx: Option<mpsc::UnboundedReceiver<AsyncMethodReply>>,
 }
 
 async fn per_method_spinner<F>(
     f: F,
-    mut input: mpsc::Receiver<AsyncMethodContent>,
-    output: mpsc::Sender<AsyncMethodReply>,
+    mut input: mpsc::UnboundedReceiver<AsyncMethodContent>,
+    output: mpsc::UnboundedSender<AsyncMethodReply>,
 ) where
     F: Fn(AsyncMethodContent) -> MethodResult + Send,
 {
     while let Some(m) = input.recv().await {
         let result = f(m);
 
-        if output.send(AsyncMethodReply { result }).await.is_err() {
+        if output.send(AsyncMethodReply { result }).is_err() {
             return;
         }
     }
@@ -71,8 +70,8 @@ impl MethodHandlerChannels {
     where
         F: Fn(AsyncMethodContent) -> MethodResult + Send + 'static,
     {
-        let (to_tx, to_rx) = mpsc::channel(1);
-        let (from_tx, from_rx) = mpsc::channel(1);
+        let (to_tx, to_rx) = mpsc::unbounded_channel();
+        let (from_tx, from_rx) = mpsc::unbounded_channel();
 
         tokio::spawn(per_method_spinner(f, to_rx, from_tx));
 
@@ -88,7 +87,7 @@ impl MethodHandlerChannels {
     ) -> Option<AsyncMethodReply> {
         if let Some(channel) = &self.tx {
             log::debug!("Channel ok");
-            if channel.send(content).await.is_ok() {
+            if channel.send(content).is_ok() {
                 log::debug!("Channel send ok");
                 if let Some(recv_channel) = &mut self.rx {
                     log::debug!("Channel recv ok");
@@ -103,7 +102,7 @@ impl MethodHandlerChannels {
 
 #[derive(Clone, Default)]
 pub struct MethodHandlerSlot {
-    pub(crate) channels: Option<Arc<Mutex<MethodHandlerChannels>>>,
+    pub(crate) channels: Option<Arc<tokio::sync::Mutex<MethodHandlerChannels>>>,
 }
 
 impl MethodHandlerSlot {
@@ -112,7 +111,7 @@ impl MethodHandlerSlot {
         F: Fn(AsyncMethodContent) -> MethodResult + Send + 'static,
     {
         Self {
-            channels: Some(Arc::new(Mutex::new(
+            channels: Some(Arc::new(tokio::sync::Mutex::new(
                 MethodHandlerChannels::assign(f),
             ))),
         }

@@ -543,7 +543,7 @@ async fn invoke_helper(
     };
 
     if let Some(s) = signal.channels {
-        let mut func = s.lock().unwrap();
+        let mut func = s.lock().await;
 
         log::debug!("Sending invoke to function");
 

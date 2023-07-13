@@ -23,52 +23,74 @@ use crate::{
     delegate::*,
 };
 
-// macro_rules! declare_client {
-//     ($method_del:ty, $signal_del:ty,$buffer_del:ty,$buffer_view_del:ty,$sampler_del:ty,$image_del:ty,$texture_del:ty,$material_del:ty,$geometry_del:ty,$light_del:ty,$table_del:ty,$plot_del:ty,$entity_del:ty,) => {};
-// }
-
+/// Type representing a dynamic method delegate
 pub type MethodDelegate =
     dyn Delegate<IDType = MethodID, InitStateType = ClientMethodState>;
+
+/// Type representing a dynamic signal delegate
 pub type SignalDelegate =
     dyn Delegate<IDType = SignalID, InitStateType = ClientSignalState>;
+
+/// Type representing a dynamic buffer delegate
 pub type BufferDelegate =
     dyn Delegate<IDType = BufferID, InitStateType = BufferState>;
+
+/// Type representing a dynamic buffer view delegate
 pub type BufferViewDelegate =
     dyn Delegate<IDType = BufferViewID, InitStateType = ClientBufferViewState>;
+
+/// Type representing a dynamic sampler delegate
 pub type SamplerDelegate =
     dyn Delegate<IDType = SamplerID, InitStateType = SamplerState>;
+
+/// Type representing a dynamic image delegate
 pub type ImageDelegate =
     dyn Delegate<IDType = ImageID, InitStateType = ClientImageState>;
+
+/// Type representing a dynamic texture delegate
 pub type TextureDelegate =
     dyn Delegate<IDType = TextureID, InitStateType = ClientTextureState>;
+
+/// Type representing a dynamic material delegate
 pub type MaterialDelegate = dyn UpdatableDelegate<
     IDType = MaterialID,
     InitStateType = ClientMaterialState,
     UpdateStateType = ClientMaterialUpdate,
 >;
+
+/// Type representing a dynamic geometry delegate
 pub type GeometryDelegate =
     dyn Delegate<IDType = GeometryID, InitStateType = ClientGeometryState>;
+
+/// Type representing a dynamic light delegate
 pub type LightDelegate = dyn UpdatableDelegate<
     IDType = LightID,
     InitStateType = LightState,
     UpdateStateType = LightStateUpdatable,
 >;
+
+/// Type representing a dynamic table delegate
 pub type TableDelegate = dyn UpdatableDelegate<
     IDType = TableID,
     InitStateType = ClientTableState,
     UpdateStateType = ClientTableUpdate,
 >;
+
+/// Type representing a dynamic plot delegate
 pub type PlotDelegate = dyn UpdatableDelegate<
     IDType = PlotID,
     InitStateType = ClientPlotState,
     UpdateStateType = ClientPlotUpdate,
 >;
+
+/// Type representing a dynamic entity delegate
 pub type EntityDelegate = dyn UpdatableDelegate<
     IDType = EntityID,
     InitStateType = ClientEntityState,
     UpdateStateType = ClientEntityUpdate,
 >;
 
+/// Contains all the delegates for the client
 pub struct ClientDelegateLists {
     pub method_list: ComponentList<MethodID, MethodDelegate>,
     pub signal_list: ComponentList<SignalID, SignalDelegate>,
@@ -93,7 +115,7 @@ pub struct ClientDelegateLists {
 }
 
 impl ClientDelegateLists {
-    /// Create a new client state, using previously created channels.
+    /// Create a new client state, using a [DelegateMaker].
     pub fn new<Maker>(maker: &mut Maker) -> Self
     where
         Maker: DelegateMaker + Send,
@@ -134,6 +156,7 @@ impl ClientDelegateLists {
     }
 }
 
+/// Contains all the state for a current client session
 pub struct ClientState {
     pub output: tokio::sync::mpsc::UnboundedSender<OutgoingMessage>,
 
@@ -144,6 +167,9 @@ pub struct ClientState {
     pub method_subs: HashMap<uuid::Uuid, InvokeContext>,
 }
 
+/// This trait is used to inform a client which delegate to construct when a new component is requested.
+///
+/// Define a struct that implements this trait and override a 'make_*' method that returns a type that satisfies the delegate trait.
 pub trait DelegateMaker: Send {
     #[allow(unused_variables)]
     fn make_method(
@@ -287,7 +313,7 @@ impl Debug for ClientState {
 }
 
 impl ClientState {
-    /// Create a new client state, using previously created channels.
+    /// Create a new client state, providing communication channels, and a delegate maker.
     pub fn new<Maker>(channels: &ClientChannels, mut maker: Maker) -> Self
     where
         Maker: DelegateMaker + 'static,

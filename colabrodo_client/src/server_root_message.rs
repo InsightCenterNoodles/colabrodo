@@ -11,6 +11,7 @@ use colabrodo_common::{
 use num_traits::FromPrimitive;
 use serde::{de::Visitor, Deserialize, Serialize};
 
+/// A type to represent a message pack from the server
 #[derive(Debug)]
 pub struct ServerRootMessage {
     pub list: Vec<FromServer>,
@@ -303,6 +304,7 @@ impl<'de> Deserialize<'de> for ServerRootMessage {
 
 // ============================================================================
 
+/// A message that has an id attached to it
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ClientCommonTagged<IDType, Nested> {
     pub id: IDType,
@@ -311,18 +313,21 @@ pub struct ClientCommonTagged<IDType, Nested> {
     pub content: Nested,
 }
 
+/// A message that is method oriented
 #[derive(Debug)]
 pub enum ModMethod {
     Create(ClientCommonTagged<MethodID, ClientMethodState>),
     Delete(CommonDeleteMessage<MethodID>),
 }
 
+/// A message that is signal oriented
 #[derive(Debug)]
 pub enum ModSignal {
     Create(ClientCommonTagged<SignalID, ClientSignalState>),
     Delete(CommonDeleteMessage<SignalID>),
 }
 
+/// A message that is entity oriented
 #[derive(Debug)]
 pub enum ModEntity {
     Create(ClientCommonTagged<EntityID, ClientEntityState>),
@@ -330,6 +335,7 @@ pub enum ModEntity {
     Delete(CommonDeleteMessage<EntityID>),
 }
 
+/// A message that is plot oriented
 #[derive(Debug)]
 pub enum ModPlot {
     Create(ClientCommonTagged<PlotID, ClientPlotState>),
@@ -337,18 +343,21 @@ pub enum ModPlot {
     Delete(CommonDeleteMessage<PlotID>),
 }
 
+/// A message that is buffer oriented
 #[derive(Debug)]
 pub enum ModBuffer {
     Create(ClientCommonTagged<BufferID, BufferState>),
     Delete(CommonDeleteMessage<BufferID>),
 }
 
+/// A message that is buffer view oriented
 #[derive(Debug)]
 pub enum ModBufferView {
     Create(ClientCommonTagged<BufferViewID, ClientBufferViewState>),
     Delete(CommonDeleteMessage<BufferViewID>),
 }
 
+/// A message that is material oriented
 #[derive(Debug)]
 pub enum ModMaterial {
     Create(ClientCommonTagged<MaterialID, ClientMaterialState>),
@@ -356,24 +365,28 @@ pub enum ModMaterial {
     Delete(CommonDeleteMessage<MaterialID>),
 }
 
+/// A message that is image oriented
 #[derive(Debug)]
 pub enum ModImage {
     Create(ClientCommonTagged<ImageID, ClientImageState>),
     Delete(CommonDeleteMessage<ImageID>),
 }
 
+/// A message that is texture oriented
 #[derive(Debug)]
 pub enum ModTexture {
     Create(ClientCommonTagged<TextureID, ClientTextureState>),
     Delete(CommonDeleteMessage<TextureID>),
 }
 
+/// A message that is sampler oriented
 #[derive(Debug)]
 pub enum ModSampler {
     Create(ClientCommonTagged<SamplerID, SamplerState>),
     Delete(CommonDeleteMessage<SamplerID>),
 }
 
+/// A message that is light oriented
 #[derive(Debug)]
 pub enum ModLight {
     Create(ClientCommonTagged<LightID, LightState>),
@@ -381,12 +394,14 @@ pub enum ModLight {
     Delete(CommonDeleteMessage<LightID>),
 }
 
+/// A message that is geometry oriented
 #[derive(Debug)]
 pub enum ModGeometry {
     Create(ClientCommonTagged<GeometryID, ClientGeometryState>),
     Delete(CommonDeleteMessage<GeometryID>),
 }
 
+/// A message that is table oriented
 #[derive(Debug)]
 pub enum ModTable {
     Create(ClientCommonTagged<TableID, ClientTableState>),
@@ -394,7 +409,9 @@ pub enum ModTable {
     Delete(CommonDeleteMessage<TableID>),
 }
 
-#[allow(clippy::enum_variant_names)] // These all start wtih Msg to match spec
+/// An enum to represent all messages from the server.
+///
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug)]
 pub enum FromServer {
     Method(ModMethod),

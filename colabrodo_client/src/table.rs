@@ -45,6 +45,7 @@ enum TableAction {
     Subreply,
 }
 
+/// A delegate with convenience functions for subscription, adding, deleting, and updating data.
 pub struct AdvTableDelegate {
     table_id: TableID,
     table: Option<Box<dyn TableDataStorage>>,
@@ -60,6 +61,9 @@ impl AdvTableDelegate {
         }
     }
 
+    /// Subscribe to this table
+    ///
+    /// A reference to the client state is required to invoke methods. The function also needs a [TableDataStorage] that will be used to store data
     pub fn subscribe(
         &mut self,
         client: &mut ClientState,
@@ -86,6 +90,7 @@ impl AdvTableDelegate {
         Some(())
     }
 
+    /// Ask to insert records into the table
     pub fn ask_insert(
         &mut self,
         client: &mut ClientState,
@@ -187,18 +192,6 @@ impl Delegate for AdvTableDelegate {
     fn as_any(&self) -> &dyn Any {
         self
     }
-
-    // fn on_new(
-    //     id: Self::IDType,
-    //     _state: Self::InitStateType,
-    //     _client: &mut ClientState,
-    // ) -> Self {
-    //     Self {
-    //         table_id: id,
-    //         table: Default::default(),
-    //         method_subs: Default::default(),
-    //     }
-    // }
 }
 
 impl UpdatableDelegate for AdvTableDelegate {

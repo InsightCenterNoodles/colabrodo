@@ -2,8 +2,9 @@
 //!
 //! To create your own client:
 //! - First create a [ClientChannels] structure. This sets up required channels for client async communication.
+//! - Define and create a [DelegateMaker] that defines how delegates should be built.
 //! - Next, create a [ClientState].
-//! - Then launch the client with [start_client].
+//! - Then launch the client with [launch_client_worker_thread].
 //!
 //! See the simple client example to see how to set up a client, and also how to
 //! structure the code to launch tasks as soon as the client connects.
@@ -36,6 +37,7 @@ pub enum InvokeContext {
 
 // =============================================================================
 
+/// Error type for message processing
 #[derive(Error, Debug)]
 pub enum UserClientNext {
     #[error("Decode error")]
@@ -76,6 +78,7 @@ pub fn handle_next(
     Ok(())
 }
 
+/// Processes a single message
 fn handle_next_message(
     state: &mut ClientState,
     m: FromServer,
@@ -400,6 +403,7 @@ impl ClientChannels {
     }
 }
 
+/// For certain clients, we don't actually want to connect to anything. Normally, users will want to use [start_client_stream]
 pub fn start_blank_stream() -> ClientChannels {
     let (stop_tx, _) = tokio::sync::broadcast::channel::<u8>(1);
 
@@ -413,12 +417,11 @@ pub fn start_blank_stream() -> ClientChannels {
     }
 }
 
-/// Start running the client machinery.
+/// Create communication channels over a websocket
 ///
 /// # Parameters
 /// - url: The host to connect to
 /// - name: The name of the client to use during introduction to the server
-/// - channels: Input/output channels
 pub async fn start_client_stream(
     url: String,
     name: String,
@@ -560,8 +563,9 @@ async fn forward_task(
     debug!("Ending thread forwarding task");
 }
 
-/// Consume messages and apply it to a given client state
-/// This blocks and should be run in a thread
+/// Consume messages and apply it to a given client state.
+///
+/// This blocks and should be run in a thread.
 pub fn launch_client_worker_thread<Maker>(
     mut channels: ClientChannels,
     maker: Maker,

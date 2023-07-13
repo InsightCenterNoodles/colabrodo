@@ -222,6 +222,7 @@ pub fn value_serde(input: TokenStream) -> TokenStream {
         ",
     );
 
+    #[allow(clippy::redundant_clone)]
     fn handle_part(
         fld: &syn::Field,
         updater_impl: &mut String,

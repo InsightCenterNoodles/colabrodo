@@ -7,18 +7,24 @@ use colabrodo_common::{
 
 use crate::{client_state::*, components::*};
 
+/// Basic trait for a delegate.
 pub trait Delegate: Send {
     type IDType;
     type InitStateType;
 
+    /// Called when the delegate is about to be destroyed
     fn on_delete(&mut self) {}
 
+    /// As we use virtual types, this should be implemented, likely with
+    /// `fn as_any(&self) -> &dyn Any { self }`
     fn as_any(&self) -> &dyn Any;
 }
 
+/// A trait for delegates that can be updated.
 pub trait UpdatableDelegate: Delegate {
     type UpdateStateType;
 
+    /// Called when the server wishes to update the delegate
     #[allow(unused_variables)]
     fn on_update(
         &mut self,
@@ -27,6 +33,7 @@ pub trait UpdatableDelegate: Delegate {
     ) {
     }
 
+    /// Called when the server has issued a signal to this delegate
     #[allow(unused_variables)]
     fn on_signal(
         &mut self,
@@ -36,6 +43,7 @@ pub trait UpdatableDelegate: Delegate {
     ) {
     }
 
+    /// Called when the server has a reply from a method invoked on this delegate
     #[allow(unused_variables)]
     fn on_method_reply(
         &mut self,
@@ -46,7 +54,9 @@ pub trait UpdatableDelegate: Delegate {
     }
 }
 
+/// Trait for the delegate that handles the document
 pub trait DocumentDelegate {
+    /// Called when the server has issued a signal to this delegate
     #[allow(unused_variables)]
     fn on_signal(
         &mut self,
@@ -56,6 +66,7 @@ pub trait DocumentDelegate {
     ) {
     }
 
+    /// Called when the server has a reply from a method invoked on this delegate
     #[allow(unused_variables)]
     fn on_method_reply(
         &mut self,
@@ -65,6 +76,7 @@ pub trait DocumentDelegate {
     ) {
     }
 
+    /// Called when the document should be updated
     #[allow(unused_variables)]
     fn on_document_update(
         &mut self,
@@ -73,12 +85,14 @@ pub trait DocumentDelegate {
     ) {
     }
 
+    /// Called when the document is ready
     #[allow(unused_variables)]
     fn on_ready(&mut self, client: &mut ClientState) {}
 }
 
 // =============================================================================
 
+/// [ComponentList] contains a list of delegates
 #[derive(Debug)]
 pub struct ComponentList<IDType, Del>
 where
@@ -109,7 +123,8 @@ where
     IDType: Eq + Hash + Copy,
     Del: Delegate + ?Sized + Send,
 {
-    pub fn on_create(
+    /// Called when a delegate should be created
+    pub(crate) fn on_create(
         &mut self,
         id: IDType,
         name: Option<String>,
@@ -123,7 +138,8 @@ where
         }
     }
 
-    pub fn on_delete(&mut self, id: IDType) {
+    /// Called when a delegate should be destroyed
+    pub(crate) fn on_delete(&mut self, id: IDType) {
         let mut pack = self.components.remove(&id).unwrap();
         pack.on_delete();
         let name = self.name_rev_map.remove(&id);
@@ -167,6 +183,7 @@ where
         self.components.clear();
     }
 
+    /// Get a delegate by ID, downcasting to the provided delegate type
     pub fn find_as<T: 'static>(&self, id: &IDType) -> Option<&T> {
         self.find(id).and_then(|f| f.as_any().downcast_ref::<T>())
     }
