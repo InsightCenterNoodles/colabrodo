@@ -306,6 +306,8 @@ pub type ServerGeometryAttribute = GeometryAttribute<BufferViewReference>;
 
 pub type ServerGeometryIndex = GeometryIndex<BufferViewReference>;
 
+pub type ServerGeometryInstance = InstanceSource<BufferViewReference>;
+
 pub type ServerGeometryPatch =
     GeometryPatch<BufferViewReference, MaterialReference>;
 
@@ -373,10 +375,10 @@ pub struct ServerPlotStateUpdatable {
 #[serde_with::skip_serializing_none]
 #[derive(Debug, Default, Serialize)]
 pub struct ServerPlotState {
-    name: Option<String>,
+    pub name: Option<String>,
 
     #[serde(flatten)]
-    pub(crate) mutable: ServerPlotStateUpdatable,
+    pub mutable: ServerPlotStateUpdatable,
 }
 
 impl ComponentMessageIDs for ServerPlotState {
@@ -473,6 +475,7 @@ pub type MaterialReference =
 // ========================================================================
 
 pub type ServerImageState = ImageState<BufferViewReference>;
+pub type ServerImageStateSource = ImageSource<BufferViewReference>;
 
 pub trait ImageStateHelpers {
     fn new_from_buffer(buffer: BufferViewReference) -> Self;
@@ -537,7 +540,7 @@ pub struct ServerLightState {
     pub light_type: LightType,
 
     #[serde(flatten)]
-    pub mutable: LightStateUpdatable,
+    pub mutable: ServerLightStateUpdatable,
 }
 
 impl ComponentMessageIDs for ServerLightState {

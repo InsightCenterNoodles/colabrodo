@@ -185,8 +185,12 @@ impl Delegate for MyTableDelegate {
 impl UpdatableDelegate for MyTableDelegate {
     type UpdateStateType = ClientTableUpdate;
 
-    fn on_update(&mut self, state: Self::UpdateStateType) {
-        self.pre_made_delegate.on_update(state);
+    fn on_update(
+        &mut self,
+        client: &mut ClientDelegateLists,
+        state: Self::UpdateStateType,
+    ) {
+        self.pre_made_delegate.on_update(client, state);
     }
 
     fn on_signal(

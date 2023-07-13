@@ -1,7 +1,8 @@
 use colabrodo_common::recording::{self, parse_record, Packet, PacketStamp};
 use colabrodo_server::server::ciborium;
 use colabrodo_server::server::ciborium::value::Value;
-use colabrodo_server::server_state::ServerState;
+use colabrodo_server::server_http::AssetStore;
+use colabrodo_server::server_state::{ServerState, ServerStatePtr};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -15,13 +16,20 @@ pub struct ReplayerServerState {
     last_packet_index: u64,
     last_time: u64,
 
+    server_state: ServerStatePtr,
+    _asset_server: Arc<Mutex<AssetStore>>,
+
     client_state: ReplayClientPtr,
 }
 
 pub type ReplayerStatePtr = Arc<Mutex<ReplayerServerState>>;
 
 impl ReplayerServerState {
-    pub fn new(path: std::path::PathBuf) -> Arc<Mutex<Self>> {
+    pub fn new(
+        path: std::path::PathBuf,
+        server_state: ServerStatePtr,
+        asset_server: Arc<Mutex<AssetStore>>,
+    ) -> Arc<Mutex<Self>> {
         let in_file =
             std::fs::File::open(path).expect("Unable to open session file.");
 
@@ -54,6 +62,8 @@ impl ReplayerServerState {
                 marker_table: table,
                 last_packet_index: 0,
                 last_time: 0,
+                server_state,
+                _asset_server: asset_server,
                 client_state: make_client_ptr(me.clone()),
             })
         })
@@ -90,7 +100,7 @@ impl ReplayerServerState {
     pub fn advance_by_time(
         &mut self,
         relative_seconds: u64,
-        state: &mut ServerState,
+        _state: &mut ServerState,
     ) -> Option<()> {
         let target_ts = self.last_time + relative_seconds;
 
@@ -100,7 +110,7 @@ impl ReplayerServerState {
     pub fn advance_by_marker(
         &mut self,
         label: String,
-        state: &mut ServerState,
+        _state: &mut ServerState,
     ) -> Option<()> {
         let target_time = self.marker_table.get(&label)?.0 as u64;
 
@@ -109,5 +119,9 @@ impl ReplayerServerState {
         }
 
         self.advance_to_time(target_time)
+    }
+
+    pub fn server_state(&self) -> ServerStatePtr {
+        self.server_state.clone()
     }
 }

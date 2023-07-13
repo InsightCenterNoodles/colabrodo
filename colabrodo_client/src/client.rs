@@ -44,6 +44,16 @@ pub enum UserClientNext {
     MethodError,
 }
 
+macro_rules! do_item_update {
+    ($list:ident, $state:expr, $info:expr) => {{
+        let delegate = $state.delegate_lists.$list.take(&($info).id);
+        if let Some(mut delegate) = delegate {
+            delegate.on_update(&mut $state.delegate_lists, $info.content);
+            $state.delegate_lists.$list.replace(&$info.id, delegate);
+        }
+    }};
+}
+
 /// Execute the next message from a server on your client state
 pub fn handle_next(
     state: &mut ClientState,
@@ -126,7 +136,7 @@ fn handle_next_message(
                 state.delegate_lists.entity_list.on_create(x.id, name, del)
             }
             ModEntity::Update(x) => {
-                state.delegate_lists.entity_list.on_update(x.id, x.content)
+                do_item_update!(entity_list, state, x);
             }
             ModEntity::Delete(x) => {
                 state.delegate_lists.entity_list.on_delete(x.id)
@@ -144,7 +154,7 @@ fn handle_next_message(
                 state.delegate_lists.plot_list.on_create(x.id, name, del)
             }
             ModPlot::Update(x) => {
-                state.delegate_lists.plot_list.on_update(x.id, x.content)
+                do_item_update!(plot_list, state, x);
             }
             ModPlot::Delete(x) => {
                 state.delegate_lists.plot_list.on_delete(x.id)
@@ -197,10 +207,9 @@ fn handle_next_message(
                     .material_list
                     .on_create(x.id, name, del)
             }
-            ModMaterial::Update(x) => state
-                .delegate_lists
-                .material_list
-                .on_update(x.id, x.content),
+            ModMaterial::Update(x) => {
+                do_item_update!(material_list, state, x);
+            }
             ModMaterial::Delete(x) => {
                 state.delegate_lists.material_list.on_delete(x.id)
             }
@@ -262,7 +271,7 @@ fn handle_next_message(
                 state.delegate_lists.light_list.on_create(x.id, name, del)
             }
             ModLight::Update(x) => {
-                state.delegate_lists.light_list.on_update(x.id, x.content)
+                do_item_update!(light_list, state, x);
             }
             ModLight::Delete(x) => {
                 state.delegate_lists.light_list.on_delete(x.id)
@@ -298,7 +307,7 @@ fn handle_next_message(
                 state.delegate_lists.table_list.on_create(x.id, name, del)
             }
             ModTable::Update(x) => {
-                state.delegate_lists.table_list.on_update(x.id, x.content)
+                do_item_update!(table_list, state, x);
             }
             ModTable::Delete(x) => {
                 state.delegate_lists.table_list.on_delete(x.id)

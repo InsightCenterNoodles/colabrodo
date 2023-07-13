@@ -273,8 +273,8 @@ impl<BufferViewRef, MaterialRef> ComponentMessageIDs
 #[serde_with::skip_serializing_none]
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct ImageSource<BufferViewRef> {
-    buffer_source: Option<BufferViewRef>,
-    uri_source: Option<url::Url>,
+    pub buffer_source: Option<BufferViewRef>,
+    pub uri_source: Option<url::Url>,
 }
 
 impl<BufferViewRef> ImageSource<BufferViewRef> {
@@ -669,9 +669,43 @@ pub struct EntityRepresentation<GeometryRef, BufferViewRef> {
     render_rep: Option<RenderRepresentation<GeometryRef, BufferViewRef>>,
 }
 
+pub enum CurrentRepresentation<GeometryRef, BufferViewRef> {
+    Null(NullRepresentation),
+    Text(TextRepresentation),
+    Web(WebRepresentation),
+    Render(RenderRepresentation<GeometryRef, BufferViewRef>),
+}
+
 impl<GeometryRef, BufferViewRef>
     EntityRepresentation<GeometryRef, BufferViewRef>
 {
+    pub fn extract_current(
+        self,
+    ) -> CurrentRepresentation<GeometryRef, BufferViewRef> {
+        if let Some(null) = self.null_rep {
+            CurrentRepresentation::Null(null)
+        } else if let Some(text) = self.text_rep {
+            CurrentRepresentation::Text(text)
+        } else if let Some(web) = self.web_rep {
+            CurrentRepresentation::Web(web)
+        } else if let Some(render) = self.render_rep {
+            CurrentRepresentation::Render(render)
+        } else {
+            panic!("Unknown representation")
+        }
+    }
+
+    pub fn build_from(
+        rep: CurrentRepresentation<GeometryRef, BufferViewRef>,
+    ) -> Self {
+        match rep {
+            CurrentRepresentation::Null(_) => Self::new_null(),
+            CurrentRepresentation::Text(x) => Self::new_text(x),
+            CurrentRepresentation::Web(x) => Self::new_web(x),
+            CurrentRepresentation::Render(x) => Self::new_render(x),
+        }
+    }
+
     pub fn new_null() -> Self {
         Self {
             null_rep: Some(NullRepresentation),

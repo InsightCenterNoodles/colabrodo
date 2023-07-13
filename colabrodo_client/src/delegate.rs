@@ -20,7 +20,12 @@ pub trait UpdatableDelegate: Delegate {
     type UpdateStateType;
 
     #[allow(unused_variables)]
-    fn on_update(&mut self, state: Self::UpdateStateType) {}
+    fn on_update(
+        &mut self,
+        client: &mut ClientDelegateLists,
+        state: Self::UpdateStateType,
+    ) {
+    }
 
     #[allow(unused_variables)]
     fn on_signal(
@@ -161,17 +166,9 @@ where
         self.name_map.clear();
         self.components.clear();
     }
-}
 
-impl<IDType, Del> ComponentList<IDType, Del>
-where
-    IDType: Eq + Hash + Copy,
-    Del: UpdatableDelegate + ?Sized,
-{
-    pub fn on_update(&mut self, id: IDType, update: Del::UpdateStateType) {
-        if let Some(item) = self.components.get_mut(&id) {
-            item.on_update(update);
-        }
+    pub fn find_as<T: 'static>(&self, id: &IDType) -> Option<&T> {
+        self.find(id).and_then(|f| f.as_any().downcast_ref::<T>())
     }
 }
 

@@ -411,6 +411,8 @@ pub struct ServerState {
     pub materials: PubUserCompList<MaterialID, ServerMaterialState>,
     pub geometries: PubUserCompList<GeometryID, ServerGeometryState>,
 
+    pub lights: PubUserCompList<LightID, ServerLightState>,
+
     pub tables: PubUserCompList<TableID, ServerTableState>,
     pub plots: PubUserCompList<PlotID, ServerPlotState>,
 
@@ -447,6 +449,7 @@ impl Serialize for ServerState {
         self.textures.dump_state_helper(&mut s)?;
         self.materials.dump_state_helper(&mut s)?;
         self.geometries.dump_state_helper(&mut s)?;
+        self.lights.dump_state_helper(&mut s)?;
         self.tables.dump_state_helper(&mut s)?;
         self.plots.dump_state_helper(&mut s)?;
         self.entities.dump_state_helper(&mut s)?;
@@ -480,6 +483,7 @@ impl ServerState {
             textures: PubUserCompList::new(bcast_send.clone()),
             materials: PubUserCompList::new(bcast_send.clone()),
             geometries: PubUserCompList::new(bcast_send.clone()),
+            lights: PubUserCompList::new(bcast_send.clone()),
             tables: PubUserCompList::new(bcast_send.clone()),
             plots: PubUserCompList::new(bcast_send.clone()),
             entities: PubUserCompList::new(bcast_send),
