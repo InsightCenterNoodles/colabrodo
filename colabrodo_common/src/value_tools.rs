@@ -148,7 +148,7 @@ impl CBORTransform for f32 {
 impl CBORTransform for f64 {
     fn try_from_cbor(value: Value) -> Result<Self, FromValueError> {
         if let Value::Float(s) = value {
-            return Ok(s as f64);
+            return Ok(s);
         }
         Err(FromValueError::WrongType {
             expected: "Float".into(),

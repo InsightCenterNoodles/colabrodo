@@ -8,7 +8,6 @@ use colabrodo_macros::UpdatableStateItem;
 use core::fmt::Debug;
 use serde::Serialize;
 use std::sync::Arc;
-use std::sync::Mutex;
 use tokio::sync::mpsc;
 
 use colabrodo_common::common;
@@ -46,21 +45,21 @@ pub struct AsyncMethodReply {
 
 #[derive(Default)]
 pub struct MethodHandlerChannels {
-    pub(crate) tx: Option<mpsc::Sender<AsyncMethodContent>>,
-    pub(crate) rx: Option<mpsc::Receiver<AsyncMethodReply>>,
+    pub(crate) tx: Option<mpsc::UnboundedSender<AsyncMethodContent>>,
+    pub(crate) rx: Option<mpsc::UnboundedReceiver<AsyncMethodReply>>,
 }
 
 async fn per_method_spinner<F>(
     f: F,
-    mut input: mpsc::Receiver<AsyncMethodContent>,
-    output: mpsc::Sender<AsyncMethodReply>,
+    mut input: mpsc::UnboundedReceiver<AsyncMethodContent>,
+    output: mpsc::UnboundedSender<AsyncMethodReply>,
 ) where
     F: Fn(AsyncMethodContent) -> MethodResult + Send,
 {
     while let Some(m) = input.recv().await {
         let result = f(m);
 
-        if let Err(_) = output.send(AsyncMethodReply { result }).await {
+        if output.send(AsyncMethodReply { result }).is_err() {
             return;
         }
     }
@@ -71,8 +70,8 @@ impl MethodHandlerChannels {
     where
         F: Fn(AsyncMethodContent) -> MethodResult + Send + 'static,
     {
-        let (to_tx, to_rx) = mpsc::channel(1);
-        let (from_tx, from_rx) = mpsc::channel(1);
+        let (to_tx, to_rx) = mpsc::unbounded_channel();
+        let (from_tx, from_rx) = mpsc::unbounded_channel();
 
         tokio::spawn(per_method_spinner(f, to_rx, from_tx));
 
@@ -87,8 +86,11 @@ impl MethodHandlerChannels {
         content: AsyncMethodContent,
     ) -> Option<AsyncMethodReply> {
         if let Some(channel) = &self.tx {
-            if let Ok(_) = channel.send(content).await {
+            log::debug!("Channel ok");
+            if channel.send(content).is_ok() {
+                log::debug!("Channel send ok");
                 if let Some(recv_channel) = &mut self.rx {
+                    log::debug!("Channel recv ok");
                     return recv_channel.recv().await;
                 }
             }
@@ -100,7 +102,7 @@ impl MethodHandlerChannels {
 
 #[derive(Clone, Default)]
 pub struct MethodHandlerSlot {
-    pub(crate) channels: Option<Arc<Mutex<MethodHandlerChannels>>>,
+    pub(crate) channels: Option<Arc<tokio::sync::Mutex<MethodHandlerChannels>>>,
 }
 
 impl MethodHandlerSlot {
@@ -109,7 +111,7 @@ impl MethodHandlerSlot {
         F: Fn(AsyncMethodContent) -> MethodResult + Send + 'static,
     {
         Self {
-            channels: Some(Arc::new(Mutex::new(
+            channels: Some(Arc::new(tokio::sync::Mutex::new(
                 MethodHandlerChannels::assign(f),
             ))),
         }
@@ -303,6 +305,8 @@ pub type ServerGeometryAttribute = GeometryAttribute<BufferViewReference>;
 
 pub type ServerGeometryIndex = GeometryIndex<BufferViewReference>;
 
+pub type ServerGeometryInstance = InstanceSource<BufferViewReference>;
+
 pub type ServerGeometryPatch =
     GeometryPatch<BufferViewReference, MaterialReference>;
 
@@ -370,10 +374,10 @@ pub struct ServerPlotStateUpdatable {
 #[serde_with::skip_serializing_none]
 #[derive(Debug, Default, Serialize)]
 pub struct ServerPlotState {
-    name: Option<String>,
+    pub name: Option<String>,
 
     #[serde(flatten)]
-    pub(crate) mutable: ServerPlotStateUpdatable,
+    pub mutable: ServerPlotStateUpdatable,
 }
 
 impl ComponentMessageIDs for ServerPlotState {
@@ -470,6 +474,7 @@ pub type MaterialReference =
 // ========================================================================
 
 pub type ServerImageState = ImageState<BufferViewReference>;
+pub type ServerImageStateSource = ImageSource<BufferViewReference>;
 
 pub trait ImageStateHelpers {
     fn new_from_buffer(buffer: BufferViewReference) -> Self;
@@ -534,7 +539,7 @@ pub struct ServerLightState {
     pub light_type: LightType,
 
     #[serde(flatten)]
-    pub mutable: LightStateUpdatable,
+    pub mutable: ServerLightStateUpdatable,
 }
 
 impl ComponentMessageIDs for ServerLightState {

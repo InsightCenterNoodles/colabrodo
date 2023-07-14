@@ -1,10 +1,16 @@
+use std::any::Any;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 
 use ciborium::value::Value;
 use clap::Parser;
 use colabrodo_client::client::*;
+use colabrodo_client::client_state::*;
+use colabrodo_client::components::ClientTableState;
+use colabrodo_client::components::ClientTableUpdate;
+use colabrodo_client::delegate::*;
 use colabrodo_client::table::*;
+use colabrodo_common::nooid::TableID;
 
 // =============================================================================
 
@@ -56,6 +62,7 @@ fn dump_value(v: &Value) {
 }
 
 /// A table that prints out changes
+#[derive(Default)]
 struct ReportingTable {
     header: Vec<TableColumnInfo>,
     data: BTreeMap<i64, Vec<Value>>,
@@ -141,9 +148,96 @@ impl TableDataStorage for ReportingTable {
 
 // =============================================================================
 
-/// You can install a callback in your client to handle raw messages.
-fn callback(_client: &mut ClientState, msg: &FromServer) {
-    println!("Message: {msg:?}");
+#[derive(Debug, Default)]
+struct MyMaker {}
+
+impl DelegateMaker for MyMaker {
+    fn make_table(
+        &mut self,
+        id: TableID,
+        _state: ClientTableState,
+        _client: &mut ClientDelegateLists,
+    ) -> Box<TableDelegate> {
+        Box::new(MyTableDelegate::new(id))
+    }
+}
+
+struct MyTableDelegate {
+    pre_made_delegate: AdvTableDelegate,
+}
+
+impl MyTableDelegate {
+    fn new(id: TableID) -> Self {
+        Self {
+            pre_made_delegate: AdvTableDelegate::new(id),
+        }
+    }
+}
+
+impl Delegate for MyTableDelegate {
+    type IDType = TableID;
+    type InitStateType = ClientTableState;
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+}
+
+impl UpdatableDelegate for MyTableDelegate {
+    type UpdateStateType = ClientTableUpdate;
+
+    fn on_update(
+        &mut self,
+        client: &mut ClientDelegateLists,
+        state: Self::UpdateStateType,
+    ) {
+        self.pre_made_delegate.on_update(client, state);
+    }
+
+    fn on_signal(
+        &mut self,
+        id: colabrodo_common::nooid::SignalID,
+        client: &mut ClientDelegateLists,
+        args: Vec<ciborium::value::Value>,
+    ) {
+        self.pre_made_delegate.on_signal(id, client, args);
+    }
+
+    fn on_method_reply(
+        &mut self,
+        client: &mut ClientDelegateLists,
+        invoke_id: uuid::Uuid,
+        reply: MessageMethodReply,
+    ) {
+        self.pre_made_delegate
+            .on_method_reply(client, invoke_id, reply);
+    }
+}
+
+// =============================================================================
+
+struct MyDocumentDelegate {}
+
+impl DocumentDelegate for MyDocumentDelegate {
+    fn on_ready(&mut self, client: &mut ClientState) {
+        let to_sub_list: Vec<_> = client
+            .delegate_lists
+            .table_list
+            .iter()
+            .map(|kv| kv.0.clone())
+            .collect();
+
+        for id in to_sub_list {
+            mutate_table::<MyTableDelegate>(client, id, |c, del| {
+                del.pre_made_delegate
+                    .subscribe(c, Box::new(ReportingTable::default()))
+            });
+        }
+    }
 }
 
 #[tokio::main]
@@ -153,38 +247,13 @@ async fn main() {
     let args = Arguments::parse();
 
     // Create required channels for the client
-    let channels = ClientChannels::new();
+    let channels =
+        start_client_stream(args.address.into(), "Simple Client".into())
+            .await
+            .unwrap();
 
-    // Create the client state
-    let state = ClientState::new_with_callback(&channels, callback);
+    let maker = MyMaker::default();
 
-    // Launch the client runner in a different thread
-    let handle = tokio::spawn(start_client(
-        args.address,
-        "Simple Client".to_string(),
-        state.clone(),
-        channels,
-    ));
-
-    // Wait for the clent to connect
-    wait_for_start(state.clone()).await;
-
-    // Subscribe to whichever table we can find
-    let table_list: Vec<_> = {
-        let lock = state.lock().unwrap();
-        lock.table_list.component_map().keys().cloned().collect()
-    };
-
-    let mut sub_table_list = Vec::new();
-
-    for k in table_list {
-        sub_table_list.push(
-            connect_table(state.clone(), k, BasicTable::default())
-                .await
-                .unwrap(),
-        );
-    }
-
-    // We are done, just wait for the client runner to end
-    let _ = handle.await.unwrap();
+    // Launch a client thread to handle those channels
+    launch_client_worker_thread(channels, maker);
 }

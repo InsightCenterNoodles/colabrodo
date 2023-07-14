@@ -22,9 +22,9 @@ futures-util = "0.3.24"
 futures-channel = "0.3.24"
 indexmap = "1.9"
 tokio-util = "0.7"
-bytemuck = { version="1.13.0", features = ["derive"]}
+bytemuck = { workspace = true }
 closure = "0.3"
-uuid = {workspace = true}
+uuid = { workspace = true }
 
 [dev-dependencies]
 env_logger = "0.10.0"

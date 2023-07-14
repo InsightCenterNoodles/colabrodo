@@ -443,7 +443,7 @@ async fn client_handler(
 
     log::info!("Closing client, waiting for tasks...");
 
-    let _ = client_stop_tx.send(1);
+    client_stop_tx.send(1).unwrap();
 
     h1.await.unwrap();
     h2.await.unwrap();
@@ -481,6 +481,8 @@ async fn invoke_helper(
     client_id: uuid::Uuid,
     invoke: MethodInvokeMessage,
 ) -> MethodResult {
+    log::debug!("Running invoke for client {:?}", client_id);
+
     let signal = {
         let lock = state.lock().unwrap();
 
@@ -492,6 +494,8 @@ async fn invoke_helper(
         })?;
 
         // get context
+
+        log::debug!("Getting invoke context");
 
         let context = match invoke.context {
             None => Some(InvokeObj::Document),
@@ -512,6 +516,8 @@ async fn invoke_helper(
             code: ExceptionCodes::MethodNotFound as i32,
             ..Default::default()
         })?;
+
+        log::debug!("Context is {:?}", context);
 
         // make sure the object has the method attached
 
@@ -539,6 +545,8 @@ async fn invoke_helper(
             }
         };
 
+        log::debug!("Context has method {}", has_method);
+
         if !has_method {
             return Err(MethodException {
                 code: ExceptionCodes::MethodNotFound as i32,
@@ -546,11 +554,15 @@ async fn invoke_helper(
             });
         }
 
+        log::debug!("Sending to context...");
+
         // send it along
         lock.methods
             .inspect(method.id(), |m| m.state.clone())
             .unwrap()
     };
+
+    log::debug!("Building message for invoke channel");
 
     let msg = AsyncMethodContent {
         state: state.clone(),
@@ -560,12 +572,20 @@ async fn invoke_helper(
     };
 
     if let Some(s) = signal.channels {
-        let mut func = s.lock().unwrap();
+        let mut func = s.lock().await;
 
+        log::debug!("Sending invoke to function");
+
+        // holding a lock across an await. not good. not sure how to fix this yet
         if let Some(rep) = func.activate(msg).await {
+            if log::log_enabled!(log::Level::Debug) {
+                log::debug!("Result {:?}", rep.result);
+            }
             return rep.result;
         }
     }
+
+    log::debug!("Internal error");
 
     Err(MethodException {
         code: ExceptionCodes::InternalError as i32,

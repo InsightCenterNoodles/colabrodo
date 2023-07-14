@@ -263,7 +263,7 @@ where
     ) -> Result<IntermediateGeometryPatch, BufferBuildError> {
         let v_byte_size = size_of::<V>();
 
-        let vertex_bytes = (v_byte_size * self.vertex.len()) as u64;
+        let vertex_bytes = (std::mem::size_of_val(self.vertex)) as u64;
 
         let i_total_bytes = self.index.total_byte_count() as u64;
 
