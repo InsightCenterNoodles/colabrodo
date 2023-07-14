@@ -18,6 +18,10 @@ pub trait Delegate: Send {
     /// As we use virtual types, this should be implemented, likely with
     /// `fn as_any(&self) -> &dyn Any { self }`
     fn as_any(&self) -> &dyn Any;
+
+    /// As we use virtual types, this should be implemented, likely with
+    /// `fn as_any_mut(&self) -> &mut dyn Any { self }`
+    fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 
 /// A trait for delegates that can be updated.
@@ -187,6 +191,22 @@ where
     pub fn find_as<T: 'static>(&self, id: &IDType) -> Option<&T> {
         self.find(id).and_then(|f| f.as_any().downcast_ref::<T>())
     }
+
+    /// Get a mutable delegate by ID, downcasting to the provided delegate type
+    pub fn find_as_mut<T: 'static>(&mut self, id: &IDType) -> Option<&mut T> {
+        self.find_mut(id)
+            .and_then(|f| f.as_any_mut().downcast_mut::<T>())
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&IDType, &Box<Del>)> {
+        self.components.iter()
+    }
+
+    pub fn iter_mut(
+        &mut self,
+    ) -> impl Iterator<Item = (&IDType, &mut Box<Del>)> {
+        self.components.iter_mut()
+    }
 }
 
 // =============================================================================
@@ -211,13 +231,9 @@ macro_rules! define_default_delegates {
                 self
             }
 
-            // fn on_new(
-            //     _id: Self::IDType,
-            //     state: Self::InitStateType,
-            //     _client: &mut ClientState,
-            // ) -> Self {
-            //     Self { _state: state }
-            // }
+            fn as_any_mut(&mut self) -> &mut dyn Any {
+                self
+            }
         }
     };
 }

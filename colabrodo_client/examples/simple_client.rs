@@ -62,6 +62,7 @@ fn dump_value(v: &Value) {
 }
 
 /// A table that prints out changes
+#[derive(Default)]
 struct ReportingTable {
     header: Vec<TableColumnInfo>,
     data: BTreeMap<i64, Vec<Value>>,
@@ -180,6 +181,10 @@ impl Delegate for MyTableDelegate {
     fn as_any(&self) -> &dyn Any {
         self
     }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
 }
 
 impl UpdatableDelegate for MyTableDelegate {
@@ -210,6 +215,28 @@ impl UpdatableDelegate for MyTableDelegate {
     ) {
         self.pre_made_delegate
             .on_method_reply(client, invoke_id, reply);
+    }
+}
+
+// =============================================================================
+
+struct MyDocumentDelegate {}
+
+impl DocumentDelegate for MyDocumentDelegate {
+    fn on_ready(&mut self, client: &mut ClientState) {
+        let to_sub_list: Vec<_> = client
+            .delegate_lists
+            .table_list
+            .iter()
+            .map(|kv| kv.0.clone())
+            .collect();
+
+        for id in to_sub_list {
+            mutate_table::<MyTableDelegate>(client, id, |c, del| {
+                del.pre_made_delegate
+                    .subscribe(c, Box::new(ReportingTable::default()))
+            });
+        }
     }
 }
 

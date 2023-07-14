@@ -595,3 +595,73 @@ where
         state.clear();
     })
 }
+
+// =============================================================================
+
+macro_rules! build_mut_func {
+    ($name:ident, $altname:ident, $idtype:ty, $list:ident) => {
+        pub fn $name<T>(
+            client: &mut ClientState,
+            id: $idtype,
+            f: impl FnOnce(&mut ClientState, &mut T),
+        ) -> Option<()>
+        where
+            T: 'static,
+        {
+            let mut del = client.delegate_lists.$list.take(&id)?;
+            let downcast_del = del.as_any_mut().downcast_mut::<T>()?;
+            f(client, downcast_del);
+            client.delegate_lists.$list.replace(&id, del);
+            Some(())
+        }
+
+        pub fn $altname<T>(
+            lists: &mut ClientDelegateLists,
+            id: $idtype,
+            f: impl FnOnce(&mut ClientDelegateLists, &mut T),
+        ) -> Option<()>
+        where
+            T: 'static,
+        {
+            let mut del = lists.$list.take(&id)?;
+            let downcast_del = del.as_any_mut().downcast_mut::<T>()?;
+            f(lists, downcast_del);
+            lists.$list.replace(&id, del);
+            Some(())
+        }
+    };
+}
+
+build_mut_func!(mutate_plot, mutate_plot_list, PlotID, plot_list);
+build_mut_func!(mutate_table, mutate_table_list, TableID, table_list);
+build_mut_func!(mutate_entity, mutate_entity_list, EntityID, entity_list);
+
+build_mut_func!(mutate_method, mutate_method_list, MethodID, method_list);
+build_mut_func!(mutate_signal, mutate_signal_list, SignalID, signal_list);
+
+build_mut_func!(mutate_buffer, mutate_buffer_list, BufferID, buffer_list);
+build_mut_func!(
+    mutate_buffer_view,
+    mutate_buffer_view_list,
+    BufferViewID,
+    buffer_view_list
+);
+
+build_mut_func!(mutate_sampler, mutate_sampler_list, SamplerID, sampler_list);
+build_mut_func!(mutate_image, mutate_image_list, ImageID, image_list);
+build_mut_func!(mutate_texture, mutate_texture_list, TextureID, texture_list);
+build_mut_func!(
+    mutate_material,
+    mutate_material_list,
+    MaterialID,
+    material_list
+);
+
+build_mut_func!(
+    mutate_geometry,
+    mutate_geometry_list,
+    GeometryID,
+    geometry_list
+);
+
+build_mut_func!(mutate_light, mutate_light_list, LightID, light_list);
