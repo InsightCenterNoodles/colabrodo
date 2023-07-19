@@ -185,7 +185,7 @@ impl DocumentDelegate for MyDocumentDelegate {
 
 async fn client_path() {
     let channels = start_client_stream(
-        "ws://localhost:50000".into(),
+        "ws://localhost:50000".parse().unwrap(),
         "Simple Client".into(),
     )
     .await
@@ -217,7 +217,7 @@ fn do_server() {
 
     runtime.block_on(async {
         let opts = ServerOptions {
-            host: "127.0.0.1:50000".to_string(),
+            host: "ws://127.0.0.1:50000/".parse().unwrap(),
         };
 
         let state = ServerState::new();

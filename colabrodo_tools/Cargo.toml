@@ -3,6 +3,10 @@ name = "colabrodo_tools"
 version = "0.5.0"
 edition = "2021"
 
+[lib]
+name = "replay"
+path = "src/lib/replay.rs"
+
 [dependencies]
 colabrodo_client = { path = "../colabrodo_client" }
 colabrodo_server = { path = "../colabrodo_server" }

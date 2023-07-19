@@ -3,6 +3,7 @@
 pub mod client_communication;
 pub mod common;
 pub mod components;
+pub mod network;
 pub mod nooid;
 pub mod recording;
 pub mod server_communication;

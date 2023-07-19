@@ -10,6 +10,7 @@ use colabrodo_client::components::ClientTableState;
 use colabrodo_client::components::ClientTableUpdate;
 use colabrodo_client::delegate::*;
 use colabrodo_client::table::*;
+use colabrodo_common::network::default_local_ip_address;
 use colabrodo_common::nooid::TableID;
 
 // =============================================================================
@@ -20,8 +21,7 @@ use colabrodo_common::nooid::TableID;
 #[command(about = "Example NOODLES client", long_about = None)]
 pub struct Arguments {
     /// Host address to connect to
-    #[arg(default_value_t = String::from("ws://localhost:50000"))]
-    pub address: String,
+    pub address: Option<url::Url>,
 }
 
 // =============================================================================
@@ -247,13 +247,15 @@ async fn main() {
     let args = Arguments::parse();
 
     // Create required channels for the client
-    let channels =
-        start_client_stream(args.address.into(), "Simple Client".into())
-            .await
-            .unwrap();
+    let channels = start_client_stream(
+        args.address.unwrap_or_else(|| default_local_ip_address()),
+        "Simple Client".into(),
+    )
+    .await
+    .unwrap();
 
     let maker = MyMaker::default();
 
     // Launch a client thread to handle those channels
-    launch_client_worker_thread(channels, maker);
+    launch_client_worker_thread(channels, maker).join().unwrap();
 }

@@ -42,9 +42,10 @@ fn main() {
 
     log::info!("Input: {}", cli_args.session_name.display());
 
-    let asset_server = make_asset_server(AssetServerOptions::default());
-
     let noo_server_opts = ServerOptions::default();
+
+    let asset_server =
+        make_asset_server(AssetServerOptions::new(&noo_server_opts));
 
     let state = ServerState::new();
 

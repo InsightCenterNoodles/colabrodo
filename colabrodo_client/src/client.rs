@@ -423,7 +423,7 @@ pub fn start_blank_stream() -> ClientChannels {
 /// - url: The host to connect to
 /// - name: The name of the client to use during introduction to the server
 pub async fn start_client_stream(
-    url: String,
+    url: url::Url,
     name: String,
 ) -> Result<ClientChannels, UserClientError> {
     // create streams to stop machinery

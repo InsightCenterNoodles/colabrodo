@@ -16,7 +16,7 @@ pub struct ReplayerServerState {
     last_packet_index: u64,
     last_time: u64,
 
-    server_state: ServerStatePtr,
+    _server_state: ServerStatePtr,
     _asset_server: Arc<Mutex<AssetStore>>,
 
     client_state: ReplayClientPtr,
@@ -56,17 +56,17 @@ impl ReplayerServerState {
             };
         }
 
-        Arc::new_cyclic(|me| {
-            Mutex::new(Self {
-                packets: packet_vec,
-                marker_table: table,
-                last_packet_index: 0,
-                last_time: 0,
-                server_state,
-                _asset_server: asset_server,
-                client_state: make_client_ptr(me.clone()),
-            })
-        })
+        Arc::new(Mutex::new(Self {
+            packets: packet_vec,
+            marker_table: table,
+            last_packet_index: 0,
+            last_time: 0,
+            _server_state: server_state.clone(),
+            _asset_server: asset_server,
+            client_state: make_client_ptr(
+                Arc::<std::sync::Mutex<ServerState>>::downgrade(&server_state),
+            ),
+        }))
     }
 
     fn advance(&mut self) -> Option<PacketStamp> {
@@ -121,7 +121,8 @@ impl ReplayerServerState {
         self.advance_to_time(target_time)
     }
 
+    #[allow(dead_code)]
     pub fn server_state(&self) -> ServerStatePtr {
-        self.server_state.clone()
+        self._server_state.clone()
     }
 }

@@ -140,11 +140,10 @@ async fn main() {
 
     println!("Connect clients to localhost:50000");
 
-    // Set up the web binary asset server
-    let asset_server = make_asset_server(AssetServerOptions::default());
-
-    // Proceed as normal
     let opts = ServerOptions::default();
+
+    // Set up the web binary asset server
+    let asset_server = make_asset_server(AssetServerOptions::new(&opts));
 
     let mut state = ServerState::new();
 

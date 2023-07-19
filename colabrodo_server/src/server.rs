@@ -20,6 +20,8 @@ use colabrodo_common::client_communication::{
     AllClientMessages, ClientRootMessage, MethodInvokeMessage,
 };
 use colabrodo_common::common::ServerMessageIDs;
+use colabrodo_common::network::default_local_ip_address;
+use colabrodo_common::network::url_to_sockaddr;
 pub use colabrodo_common::server_communication::*;
 pub use colabrodo_common::value_tools::*;
 pub use colabrodo_macros::make_method_function;
@@ -74,14 +76,15 @@ enum ToServerMessage {
     //Command(CommandType),
 }
 
+#[derive(Debug)]
 pub struct ServerOptions {
-    pub host: String,
+    pub host: url::Url,
 }
 
 impl Default for ServerOptions {
     fn default() -> Self {
         Self {
-            host: "0.0.0.0:50000".to_string(),
+            host: default_local_ip_address(),
         }
     }
 }
@@ -178,9 +181,13 @@ async fn shutdown_watcher(
 
 // Task to construct a listening socket
 async fn listen(opts: &ServerOptions) -> TcpListener {
-    TcpListener::bind(&opts.host)
-        .await
-        .expect("Unable to bind to address")
+    log::debug!("Starting tcp listener: {opts:?}");
+
+    TcpListener::bind(
+        url_to_sockaddr(&opts.host).expect("Missing valid address"),
+    )
+    .await
+    .expect("Unable to bind to address")
 }
 
 // Task that waits for a new client to connect and spawns a new client
@@ -316,7 +323,8 @@ async fn client_handler(
     // probably more elegant ways of doing this, but this seems to be
     // an appropriate way to merge messages from a broadcast and possible
     // single-client replies
-    let (out_tx, mut out_rx) = mpsc::unbounded_channel::<tokio_tungstenite::tungstenite::Message>();
+    let (out_tx, mut out_rx) =
+        mpsc::unbounded_channel::<tokio_tungstenite::tungstenite::Message>();
 
     let (client_stop_tx, mut client_stop_rx) = broadcast::channel(1);
 
@@ -364,15 +372,16 @@ async fn client_handler(
         })
     };
 
-    let (out_raw_tx, mut out_raw_rx) =  mpsc::unbounded_channel();
+    let (out_raw_tx, mut out_raw_rx) = mpsc::unbounded_channel();
 
     let out_clone = out_tx.clone();
 
     tokio::spawn(async move {
-        
         loop {
             while let Some(x) = out_raw_rx.recv().await {
-                out_clone.send(tokio_tungstenite::tungstenite::Message::Binary(x)).unwrap();
+                out_clone
+                    .send(tokio_tungstenite::tungstenite::Message::Binary(x))
+                    .unwrap();
             }
         }
     });
@@ -424,7 +433,7 @@ async fn client_handler(
                         }
                         WSMessage::Close(_) => {
                             log::debug!("Client {} sent close...", client_id);
-                        }                        
+                        }
                         _ => {
                             log::debug!("Unknown message from client {}, closing connection", client_id);
                             break;

@@ -2,11 +2,12 @@
 //!
 //! See the cube_http example to see how to use this module.
 
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::{collections::HashMap, sync::Mutex};
 
+use colabrodo_common::network::determine_ip_address;
 use hyper::body::Bytes;
 use hyper::http::HeaderValue;
 use hyper::Server;
@@ -20,6 +21,8 @@ use tokio_util::codec::{BytesCodec, FramedRead};
 use tokio::sync::broadcast;
 
 pub use uuid;
+
+use crate::server::ServerOptions;
 
 /// An asset to be served. Assets can either be in-memory, or on-disk.
 #[derive(Debug)]
@@ -40,10 +43,6 @@ pub fn create_asset_id() -> uuid::Uuid {
     uuid::Uuid::new_v4()
 }
 
-fn determine_ip_address() -> Option<String> {
-    local_ip_address::local_ip().map(|f| f.to_string()).ok()
-}
-
 /// Storage for assets to be served
 pub struct AssetStore {
     stop_tx: broadcast::Sender<u8>,
@@ -59,7 +58,8 @@ impl AssetStore {
             .or(determine_ip_address())
             .unwrap();
 
-        let hname = format!("http://{hname}:{}/", options.port);
+        let hname =
+            format!("http://{hname}:{}/", options.url.port().unwrap_or(50001));
 
         let (stop_tx, _) = broadcast::channel(2);
 
@@ -167,16 +167,19 @@ async fn handle_request(
 
 /// Options for the asset server
 pub struct AssetServerOptions {
-    ip: IpAddr,
-    port: u16,
-    external_host: Option<String>,
+    pub url: url::Url,
+    pub external_host: Option<String>,
 }
 
-impl Default for AssetServerOptions {
-    fn default() -> Self {
+impl AssetServerOptions {
+    pub fn new(opts: &ServerOptions) -> Self {
+        let mut asset_url = opts.host.clone();
+        asset_url
+            .set_port(Some(asset_url.port().unwrap_or(50000) + 1))
+            .unwrap();
+
         Self {
-            ip: IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
-            port: 50001,
+            url: asset_url,
             external_host: None,
         }
     }
@@ -258,7 +261,10 @@ pub fn shutdown(store: AssetStorePtr) {
 
 /// Make an asset server, and launch the web handler
 pub fn make_asset_server(options: AssetServerOptions) -> AssetStorePtr {
-    let addr = SocketAddr::new(options.ip, options.port);
+    let addr = SocketAddr::new(
+        options.url.host_str().unwrap().parse().unwrap(),
+        options.url.port().unwrap_or(50001),
+    );
 
     let state = Arc::new(Mutex::new(AssetStore::new(&options)));
 
@@ -296,8 +302,7 @@ mod tests {
 
     async fn simple_structure_main() {
         let asset_server = make_asset_server(AssetServerOptions {
-            ip: "127.0.0.1".parse().unwrap(),
-            port: 50001,
+            url: "http://127.0.0.1:50001/".parse().unwrap(),
             external_host: Some("127.0.0.1".to_string()),
         });
 
