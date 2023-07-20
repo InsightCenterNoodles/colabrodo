@@ -7,7 +7,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::{collections::HashMap, sync::Mutex};
 
-use colabrodo_common::network::determine_ip_address;
 use hyper::body::Bytes;
 use hyper::http::HeaderValue;
 use hyper::Server;
@@ -52,14 +51,7 @@ pub struct AssetStore {
 
 impl AssetStore {
     fn new(options: &AssetServerOptions) -> Self {
-        let hname = options
-            .external_host
-            .clone()
-            .or(determine_ip_address())
-            .unwrap();
-
-        let hname =
-            format!("http://{hname}:{}/", options.url.port().unwrap_or(50001));
+        let hname = options.url.to_string();
 
         let (stop_tx, _) = broadcast::channel(2);
 
@@ -168,7 +160,7 @@ async fn handle_request(
 /// Options for the asset server
 pub struct AssetServerOptions {
     pub url: url::Url,
-    pub external_host: Option<String>,
+    //pub external_host: Option<String>,
 }
 
 impl AssetServerOptions {
@@ -180,7 +172,7 @@ impl AssetServerOptions {
 
         Self {
             url: asset_url,
-            external_host: None,
+            //external_host: None,
         }
     }
 }
@@ -303,7 +295,7 @@ mod tests {
     async fn simple_structure_main() {
         let asset_server = make_asset_server(AssetServerOptions {
             url: "http://127.0.0.1:50001/".parse().unwrap(),
-            external_host: Some("127.0.0.1".to_string()),
+            //external_host: Some("127.0.0.1".to_string()),
         });
 
         let new_id = create_asset_id();

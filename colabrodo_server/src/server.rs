@@ -20,7 +20,7 @@ use colabrodo_common::client_communication::{
     AllClientMessages, ClientRootMessage, MethodInvokeMessage,
 };
 use colabrodo_common::common::ServerMessageIDs;
-use colabrodo_common::network::default_local_ip_address;
+use colabrodo_common::network::default_server_address;
 use colabrodo_common::network::url_to_sockaddr;
 pub use colabrodo_common::server_communication::*;
 pub use colabrodo_common::value_tools::*;
@@ -84,7 +84,7 @@ pub struct ServerOptions {
 impl Default for ServerOptions {
     fn default() -> Self {
         Self {
-            host: default_local_ip_address(),
+            host: default_server_address(),
         }
     }
 }

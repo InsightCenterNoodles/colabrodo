@@ -49,7 +49,7 @@ async fn server_task(args: CLIArgs) -> anyhow::Result<()> {
         .server_url
         .as_ref()
         .map(|f| ServerOptions { host: f.clone() })
-        .unwrap_or_else(|| ServerOptions::default());
+        .unwrap_or_else(ServerOptions::default);
 
     let state = ServerState::new();
 
@@ -72,10 +72,9 @@ async fn make_client(
     url: url::Url,
     server: Weak<Mutex<ServerState>>,
 ) -> Option<std::thread::JoinHandle<()>> {
-    let channels =
-        start_client_stream(url.into(), "NOODLES Merge Client".into())
-            .await
-            .ok()?;
+    let channels = start_client_stream(url, "NOODLES Merge Client".into())
+        .await
+        .ok()?;
     let maker = replay::ReplayDelegateMaker {
         server_link: server,
     };

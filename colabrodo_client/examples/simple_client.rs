@@ -10,7 +10,7 @@ use colabrodo_client::components::ClientTableState;
 use colabrodo_client::components::ClientTableUpdate;
 use colabrodo_client::delegate::*;
 use colabrodo_client::table::*;
-use colabrodo_common::network::default_local_ip_address;
+use colabrodo_common::network::default_client_address;
 use colabrodo_common::nooid::TableID;
 
 // =============================================================================
@@ -248,7 +248,7 @@ async fn main() {
 
     // Create required channels for the client
     let channels = start_client_stream(
-        args.address.unwrap_or_else(|| default_local_ip_address()),
+        args.address.unwrap_or_else(default_client_address),
         "Simple Client".into(),
     )
     .await
