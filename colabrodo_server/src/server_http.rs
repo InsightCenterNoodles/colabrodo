@@ -166,6 +166,7 @@ pub struct AssetServerOptions {
 impl AssetServerOptions {
     pub fn new(opts: &ServerOptions) -> Self {
         let mut asset_url = opts.host.clone();
+        asset_url.set_scheme("http").unwrap();
         asset_url
             .set_port(Some(asset_url.port().unwrap_or(50000) + 1))
             .unwrap();
