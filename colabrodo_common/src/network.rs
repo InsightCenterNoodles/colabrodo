@@ -1,18 +1,5 @@
 use std::net::SocketAddr;
 
-// pub fn determine_ip_address() -> Option<String> {
-//     local_ip_address::local_ip().map(|f| f.to_string()).ok()
-// }
-
-// pub fn default_local_ip_address() -> url::Url {
-//     format!(
-//         "ws://{}:50000/",
-//         determine_ip_address().unwrap_or_else(|| "0.0.0.0".into())
-//     )
-//     .parse()
-//     .unwrap()
-// }
-
 pub fn default_server_address() -> url::Url {
     "ws://0.0.0.0:50000/".parse().unwrap()
 }
