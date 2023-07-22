@@ -39,10 +39,8 @@ pub struct TableSignals {
 }
 
 impl TableSignals {
-    fn new(state: &mut Arc<Mutex<ServerState>>) -> Self {
-        let mut lock = state.lock().unwrap();
-
-        let sig_reset = lock.signals.new_component(ServerSignalState {
+    fn new(state: &mut ServerState) -> Self {
+        let sig_reset = state.signals.new_component(ServerSignalState {
             name: strings::SIG_TBL_RESET.to_string(),
             doc: Some("The table context has been reset.".to_string()),
             arg_doc: vec![MethodArg {
@@ -51,7 +49,7 @@ impl TableSignals {
             }],
             ..Default::default()
         });
-        let sig_updated = lock.signals.new_component(ServerSignalState {
+        let sig_updated = state.signals.new_component(ServerSignalState {
             name: strings::SIG_TBL_UPDATED.to_string(),
             doc: Some("The table rows have been updated".to_string()),
             arg_doc: vec![
@@ -66,7 +64,7 @@ impl TableSignals {
             ],
             ..Default::default()
         });
-        let sig_row_remove = lock.signals.new_component(ServerSignalState {
+        let sig_row_remove = state.signals.new_component(ServerSignalState {
             name: strings::SIG_TBL_ROWS_REMOVED.to_string(),
             doc: Some("Rows have been removed from the table".to_string()),
             arg_doc: vec![MethodArg {
@@ -76,7 +74,7 @@ impl TableSignals {
             ..Default::default()
         });
         let sig_selection_update =
-            lock.signals.new_component(ServerSignalState {
+            state.signals.new_component(ServerSignalState {
                 name: strings::SIG_TBL_SELECTION_UPDATED.to_string(),
                 doc: Some(
                     "A selection for the table has been updated".to_string(),
@@ -102,8 +100,6 @@ impl TableSignals {
 pub type TableSystemPtr = Arc<Mutex<TableSystem>>;
 
 pub struct TableSystem {
-    state: std::sync::Weak<Mutex<ServerState>>,
-
     signals: TableSignals,
 
     managed_tables: HashMap<TableReference, Arc<Mutex<TableController>>>,
@@ -113,19 +109,15 @@ pub struct TableSystem {
 }
 
 impl TableSystem {
-    pub fn new(mut state: Arc<Mutex<ServerState>>) -> Arc<Mutex<TableSystem>> {
+    pub fn new(state: &mut ServerState) -> Arc<Mutex<TableSystem>> {
         let ret = Arc::new(Mutex::new(TableSystem {
-            state: Arc::downgrade(&state),
-            signals: TableSignals::new(&mut state),
+            signals: TableSignals::new(state),
             managed_tables: HashMap::new(),
             valid_signal_hash: HashSet::new(),
             valid_method_hash: HashSet::new(),
         }));
 
-        // init methods
-        let mut lock = state.lock().unwrap();
-
-        let tbl_sub = lock.methods.new_owned_component(ServerMethodState {
+        let tbl_sub = state.methods.new_owned_component(ServerMethodState {
             name: strings::MTHD_TBL_SUBSCRIBE.to_string(),
             doc: Some("Subscribe to the given table".to_string()),
             return_doc: Some("Initial table data structure".to_string()),
@@ -135,7 +127,7 @@ impl TableSystem {
             })),
         });
 
-        let tbl_insert = lock.methods.new_owned_component(ServerMethodState {
+        let tbl_insert = state.methods.new_owned_component(ServerMethodState {
             name: strings::MTHD_TBL_INSERT.to_string(),
             doc: Some("Ask to insert data into the table".to_string()),
             return_doc: None,
@@ -151,7 +143,7 @@ impl TableSystem {
             })),
         });
 
-        let tbl_update = lock.methods.new_owned_component(ServerMethodState {
+        let tbl_update = state.methods.new_owned_component(ServerMethodState {
             name: strings::MTHD_TBL_UPDATE.to_string(),
             doc: Some("Ask to update data in the table".to_string()),
             return_doc: None,
@@ -173,7 +165,7 @@ impl TableSystem {
             })),
         });
 
-        let tbl_remove = lock.methods.new_owned_component(ServerMethodState {
+        let tbl_remove = state.methods.new_owned_component(ServerMethodState {
             name: strings::MTHD_TBL_REMOVE.to_string(),
             doc: Some("Ask to remove data in the table".to_string()),
             return_doc: None,
@@ -186,7 +178,7 @@ impl TableSystem {
             })),
         });
 
-        let tbl_clear = lock.methods.new_owned_component(ServerMethodState {
+        let tbl_clear = state.methods.new_owned_component(ServerMethodState {
             name: strings::MTHD_TBL_CLEAR.to_string(),
             doc: Some("Ask to clear all data in the table".to_string()),
             return_doc: None,
@@ -196,7 +188,7 @@ impl TableSystem {
             })),
         });
 
-        let tbl_up_sel = lock.methods.new_owned_component(ServerMethodState {
+        let tbl_up_sel = state.methods.new_owned_component(ServerMethodState {
             name: strings::MTHD_TBL_UPDATE_SELECTION.to_string(),
             doc: Some("Ask to update a selection in the table".to_string()),
             return_doc: None,
@@ -235,6 +227,7 @@ impl TableSystem {
     pub fn register_table(
         &mut self,
         table: TableReference,
+        state: &mut ServerState,
         storage: impl TableTrait + Send + 'static,
     ) {
         self.managed_tables.insert(
@@ -247,19 +240,11 @@ impl TableSystem {
             })),
         );
 
-        if let Some(st) = self.state.upgrade() {
-            self.attach(table, st);
-        }
+        self.attach(table, state);
     }
 
-    fn attach(
-        &mut self,
-        table: TableReference,
-        state: Arc<Mutex<ServerState>>,
-    ) {
-        let lock = state.lock().unwrap();
-
-        let methods_to_update = lock
+    fn attach(&mut self, table: TableReference, state: &mut ServerState) {
+        let methods_to_update = state
             .tables
             .inspect(table.id(), |t| {
                 let mut existing = HashSet::new();
@@ -278,7 +263,7 @@ impl TableSystem {
                 self.valid_method_hash.iter().cloned().collect()
             });
 
-        let signals_to_update = lock
+        let signals_to_update = state
             .tables
             .inspect(table.id(), |t| {
                 let mut existing = HashSet::new();

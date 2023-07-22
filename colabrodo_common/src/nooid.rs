@@ -3,6 +3,7 @@
 use ciborium::{cbor, value};
 use serde::{de::Visitor, ser::SerializeTuple, Deserialize, Serialize};
 
+/// A basic NOODLES ID
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 pub struct NooID {
     slot: u32,
@@ -66,6 +67,7 @@ impl Default for NooID {
 }
 
 impl NooID {
+    /// Create the next generation ID from a given ID
     pub fn next_generation(old: Self) -> Self {
         Self {
             slot: old.slot,
@@ -73,26 +75,33 @@ impl NooID {
         }
     }
 
+    /// Create a new ID from a slot and generation
     pub fn new(slot: u32, gen: u32) -> Self {
         Self { slot, gen }
     }
 
+    /// Create a new ID from a slot, with generation 0
     pub fn new_with_slot(slot: u32) -> Self {
         Self { slot, gen: 0 }
     }
 
+    /// Get the slot of the ID
     pub fn slot(&self) -> u32 {
         self.slot
     }
 
+    /// Get the generation of the ID
     pub fn gen(&self) -> u32 {
         self.gen
     }
 
+    /// Asks if the ID is valid, that is, if both slot and generation
+    /// are not u32 max.
     pub fn valid(&self) -> bool {
-        self.slot == u32::MAX || self.gen == u32::MAX
+        self.slot != u32::MAX && self.gen != u32::MAX
     }
 
+    /// Create an ID from a CBOR value
     pub fn from_value(v: &value::Value) -> Option<NooID> {
         let arr = v.as_array()?;
 
@@ -117,167 +126,49 @@ impl From<NooID> for value::Value {
 
 // =============================================================================
 
-#[derive(
-    Copy, Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize,
-)]
-pub struct MethodID(pub NooID);
-#[derive(
-    Copy, Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize,
-)]
-pub struct SignalID(pub NooID);
-#[derive(
-    Copy, Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize,
-)]
-pub struct EntityID(pub NooID);
-#[derive(
-    Copy, Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize,
-)]
-pub struct PlotID(pub NooID);
-#[derive(
-    Copy, Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize,
-)]
-pub struct BufferID(pub NooID);
-#[derive(
-    Copy, Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize,
-)]
-pub struct BufferViewID(pub NooID);
-#[derive(
-    Copy, Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize,
-)]
-pub struct MaterialID(pub NooID);
-#[derive(
-    Copy, Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize,
-)]
-pub struct ImageID(pub NooID);
-#[derive(
-    Copy, Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize,
-)]
-pub struct TextureID(pub NooID);
-#[derive(
-    Copy, Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize,
-)]
-pub struct SamplerID(pub NooID);
-#[derive(
-    Copy, Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize,
-)]
-pub struct LightID(pub NooID);
-#[derive(
-    Copy, Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize,
-)]
-pub struct GeometryID(pub NooID);
-#[derive(
-    Copy, Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize,
-)]
-pub struct TableID(pub NooID);
+macro_rules! declare_id_type {
+    ($id:ident) => {
+        #[derive(
+            Copy,
+            Clone,
+            Debug,
+            Default,
+            PartialEq,
+            Eq,
+            Hash,
+            Serialize,
+            Deserialize,
+        )]
+        pub struct $id(pub NooID);
+
+        impl IDClass for $id {
+            fn new(n: NooID) -> Self {
+                Self(n)
+            }
+            fn as_nooid(&self) -> NooID {
+                self.0
+            }
+        }
+    };
+}
+
+declare_id_type!(MethodID);
+declare_id_type!(SignalID);
+declare_id_type!(EntityID);
+declare_id_type!(PlotID);
+declare_id_type!(BufferID);
+declare_id_type!(BufferViewID);
+declare_id_type!(MaterialID);
+declare_id_type!(ImageID);
+declare_id_type!(TextureID);
+declare_id_type!(SamplerID);
+declare_id_type!(LightID);
+declare_id_type!(GeometryID);
+declare_id_type!(TableID);
 
 pub trait IDClass:
     core::fmt::Debug + Copy + Clone + Serialize + std::hash::Hash + PartialEq + Eq
 {
     fn new(n: NooID) -> Self;
     fn as_nooid(&self) -> NooID;
-}
-
-impl IDClass for MethodID {
-    fn new(n: NooID) -> Self {
-        Self(n)
-    }
-    fn as_nooid(&self) -> NooID {
-        self.0
-    }
-}
-impl IDClass for SignalID {
-    fn new(n: NooID) -> Self {
-        Self(n)
-    }
-    fn as_nooid(&self) -> NooID {
-        self.0
-    }
-}
-impl IDClass for EntityID {
-    fn new(n: NooID) -> Self {
-        Self(n)
-    }
-    fn as_nooid(&self) -> NooID {
-        self.0
-    }
-}
-impl IDClass for PlotID {
-    fn new(n: NooID) -> Self {
-        Self(n)
-    }
-    fn as_nooid(&self) -> NooID {
-        self.0
-    }
-}
-impl IDClass for TableID {
-    fn new(n: NooID) -> Self {
-        Self(n)
-    }
-    fn as_nooid(&self) -> NooID {
-        self.0
-    }
-}
-impl IDClass for BufferID {
-    fn new(n: NooID) -> Self {
-        Self(n)
-    }
-    fn as_nooid(&self) -> NooID {
-        self.0
-    }
-}
-impl IDClass for BufferViewID {
-    fn new(n: NooID) -> Self {
-        Self(n)
-    }
-    fn as_nooid(&self) -> NooID {
-        self.0
-    }
-}
-impl IDClass for MaterialID {
-    fn new(n: NooID) -> Self {
-        Self(n)
-    }
-    fn as_nooid(&self) -> NooID {
-        self.0
-    }
-}
-impl IDClass for ImageID {
-    fn new(n: NooID) -> Self {
-        Self(n)
-    }
-    fn as_nooid(&self) -> NooID {
-        self.0
-    }
-}
-impl IDClass for TextureID {
-    fn new(n: NooID) -> Self {
-        Self(n)
-    }
-    fn as_nooid(&self) -> NooID {
-        self.0
-    }
-}
-impl IDClass for SamplerID {
-    fn new(n: NooID) -> Self {
-        Self(n)
-    }
-    fn as_nooid(&self) -> NooID {
-        self.0
-    }
-}
-impl IDClass for LightID {
-    fn new(n: NooID) -> Self {
-        Self(n)
-    }
-    fn as_nooid(&self) -> NooID {
-        self.0
-    }
-}
-impl IDClass for GeometryID {
-    fn new(n: NooID) -> Self {
-        Self(n)
-    }
-    fn as_nooid(&self) -> NooID {
-        self.0
-    }
 }

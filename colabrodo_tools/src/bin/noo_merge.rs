@@ -62,11 +62,7 @@ async fn server_task(args: CLIArgs) -> anyhow::Result<()> {
 
 // =============================================================================
 
-struct MergerServerState {
-    //clients: Vec<Option<std::thread::JoinHandle<()>>>,
-}
-
-//type MergerServerPtr = Arc<Mutex<MergerServerState>>;
+struct MergerServerState {}
 
 async fn make_client(
     url: url::Url,
@@ -103,7 +99,3 @@ impl MergerServerState {
         Arc::new(Mutex::new(Self {}))
     }
 }
-
-// =============================================================================
-
-//type MergerClientPtr = Arc<Mutex<ClientState>>;

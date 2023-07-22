@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::replay_client::{make_client_ptr, ReplayClientPtr};
 
+/// Our application state
 pub struct ReplayerServerState {
     // we are going to just read everything in as is for now.
     packets: Vec<Packet>,

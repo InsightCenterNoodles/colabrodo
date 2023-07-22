@@ -1,3 +1,5 @@
+//! Common delegates and tools for replaying information from a server
+
 use colabrodo_client::client::*;
 use colabrodo_client::client_state::*;
 use colabrodo_client::components::*;

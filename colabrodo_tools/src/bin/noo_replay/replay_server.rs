@@ -21,6 +21,7 @@ make_method_function!(advance_time,
         Ok(None)
     });
 
+/// Initialize a replayer server app
 pub fn setup_server(state: ServerStatePtr, app: ReplayerStatePtr) {
     let mut state_lock = state.lock().unwrap();
 

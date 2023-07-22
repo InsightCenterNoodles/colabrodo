@@ -39,9 +39,12 @@
 
 use std::mem;
 
+/// A timestamp for a packet
 #[derive(Debug, Clone, Copy)]
 pub struct PacketStamp(pub u32);
 
+/// A packet, holding either a marker string, a cbor-encoded bit of data, or
+/// a location of a buffer
 #[derive(Debug)]
 pub enum Packet {
     DropMarker(PacketStamp, String),
@@ -50,6 +53,7 @@ pub enum Packet {
 }
 
 impl Packet {
+    /// Get the identifier of this packet
     pub fn message_stamp(&self) -> u8 {
         match &self {
             Packet::DropMarker(_, _) => 1,
@@ -59,6 +63,7 @@ impl Packet {
     }
 }
 
+/// Parse CBOR into a packet
 pub fn parse_record(mut value: ciborium::value::Value) -> Option<Packet> {
     let array = value.as_array_mut()?;
     let id: i128 = array.get(0)?.as_integer()?.into();

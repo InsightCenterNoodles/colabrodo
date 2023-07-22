@@ -7,10 +7,12 @@ use serde_with;
 use crate::components::{DeltaPatch, UpdatableWith};
 use crate::{common::ServerMessageIDs, nooid::NooID};
 
+/// Associates a NOODLES message ID with structs that implement this trait
 pub trait ServerMessageID {
     fn message_id() -> u32;
 }
 
+/// A way to descriminate the target of a signal
 #[serde_with::skip_serializing_none]
 #[derive(Debug, Deserialize, Serialize)]
 pub struct SignalInvokeObj<EntityRef, TableRef, PlotRef> {

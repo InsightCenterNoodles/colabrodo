@@ -51,13 +51,18 @@ fn setup(state: ServerStatePtr) -> ExampleState {
     };
 
     // Initialize the table handling system
-    let table_system = TableSystem::new(state.clone());
+    let table_system = {
+        let mut lock = state.lock().unwrap();
+
+        TableSystem::new(&mut lock)
+    };
 
     // Link the data with the table component
     {
+        let mut lock = state.lock().unwrap();
         let mut table_lock = table_system.lock().unwrap();
 
-        table_lock.register_table(table, make_init_table());
+        table_lock.register_table(table, &mut lock, make_init_table());
     }
 
     ExampleState {

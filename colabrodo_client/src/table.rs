@@ -283,8 +283,14 @@ pub fn mthd_update_selection(state: &ClientDelegateLists) -> Option<MethodID> {
 /// This class can be used directly, or used as a model for custom user classes
 #[derive(Debug, Default)]
 pub struct BasicTable {
+    /// List of table columns
     header: Vec<TableColumnInfo>,
+
+    /// A not-so-optimal storage for table data.
+    /// This is row oriented
     data: BTreeMap<i64, Vec<Value>>,
+
+    /// Storage for table selection
     selections: HashMap<String, Selection>,
 }
 

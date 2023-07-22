@@ -27,211 +27,189 @@ where
     A: serde::de::SeqAccess<'de>,
 {
     let ret = match id {
-        ServerMessageIDs::MsgMethodCreate => {
-            FromServer::Method(ModMethod::Create(
-                seq.next_element()?
-                    .ok_or_else(|| serde::de::Error::custom(""))?,
-            ))
-        }
-        ServerMessageIDs::MsgMethodDelete => {
-            FromServer::Method(ModMethod::Delete(
-                seq.next_element()?
-                    .ok_or_else(|| serde::de::Error::custom(""))?,
-            ))
-        }
-        ServerMessageIDs::MsgSignalCreate => {
-            FromServer::Signal(ModSignal::Create(
-                seq.next_element()?
-                    .ok_or_else(|| serde::de::Error::custom(""))?,
-            ))
-        }
-        ServerMessageIDs::MsgSignalDelete => {
-            FromServer::Signal(ModSignal::Delete(
-                seq.next_element()?
-                    .ok_or_else(|| serde::de::Error::custom(""))?,
-            ))
-        }
-        ServerMessageIDs::MsgEntityCreate => {
-            FromServer::Entity(ModEntity::Create(
-                seq.next_element()?
-                    .ok_or_else(|| serde::de::Error::custom(""))?,
-            ))
-        }
-        ServerMessageIDs::MsgEntityUpdate => {
-            FromServer::Entity(ModEntity::Update(
-                seq.next_element()?
-                    .ok_or_else(|| serde::de::Error::custom(""))?,
-            ))
-        }
-        ServerMessageIDs::MsgEntityDelete => {
-            FromServer::Entity(ModEntity::Delete(
-                seq.next_element()?
-                    .ok_or_else(|| serde::de::Error::custom(""))?,
-            ))
-        }
-        ServerMessageIDs::MsgPlotCreate => FromServer::Plot(ModPlot::Create(
-            seq.next_element()?
-                .ok_or_else(|| serde::de::Error::custom(""))?,
-        )),
-        ServerMessageIDs::MsgPlotUpdate => FromServer::Plot(ModPlot::Update(
-            seq.next_element()?
-                .ok_or_else(|| serde::de::Error::custom(""))?,
-        )),
-        ServerMessageIDs::MsgPlotDelete => FromServer::Plot(ModPlot::Delete(
-            seq.next_element()?
-                .ok_or_else(|| serde::de::Error::custom(""))?,
-        )),
-        ServerMessageIDs::MsgBufferCreate => {
-            FromServer::Buffer(ModBuffer::Create(
-                seq.next_element()?
-                    .ok_or_else(|| serde::de::Error::custom(""))?,
-            ))
-        }
-        ServerMessageIDs::MsgBufferDelete => {
-            FromServer::Buffer(ModBuffer::Delete(
-                seq.next_element()?
-                    .ok_or_else(|| serde::de::Error::custom(""))?,
-            ))
-        }
-        ServerMessageIDs::MsgBufferViewCreate => {
-            FromServer::BufferView(ModBufferView::Create(
-                seq.next_element()?
-                    .ok_or_else(|| serde::de::Error::custom(""))?,
-            ))
-        }
-        ServerMessageIDs::MsgBufferViewDelete => {
-            FromServer::BufferView(ModBufferView::Delete(
-                seq.next_element()?
-                    .ok_or_else(|| serde::de::Error::custom(""))?,
-            ))
-        }
-        ServerMessageIDs::MsgMaterialCreate => {
-            FromServer::Material(ModMaterial::Create(
-                seq.next_element()?
-                    .ok_or_else(|| serde::de::Error::custom(""))?,
-            ))
-        }
-        ServerMessageIDs::MsgMaterialUpdate => {
-            FromServer::Material(ModMaterial::Update(
-                seq.next_element()?
-                    .ok_or_else(|| serde::de::Error::custom(""))?,
-            ))
-        }
-        ServerMessageIDs::MsgMaterialDelete => {
-            FromServer::Material(ModMaterial::Delete(
-                seq.next_element()?
-                    .ok_or_else(|| serde::de::Error::custom(""))?,
-            ))
-        }
-        ServerMessageIDs::MsgImageCreate => {
-            FromServer::Image(ModImage::Create(
-                seq.next_element()?
-                    .ok_or_else(|| serde::de::Error::custom(""))?,
-            ))
-        }
-        ServerMessageIDs::MsgImageDelete => {
-            FromServer::Image(ModImage::Delete(
-                seq.next_element()?
-                    .ok_or_else(|| serde::de::Error::custom(""))?,
-            ))
-        }
-        ServerMessageIDs::MsgTextureCreate => {
-            FromServer::Texture(ModTexture::Create(
-                seq.next_element()?
-                    .ok_or_else(|| serde::de::Error::custom(""))?,
-            ))
-        }
-        ServerMessageIDs::MsgTextureDelete => {
-            FromServer::Texture(ModTexture::Delete(
-                seq.next_element()?
-                    .ok_or_else(|| serde::de::Error::custom(""))?,
-            ))
-        }
-        ServerMessageIDs::MsgSamplerCreate => {
-            FromServer::Sampler(ModSampler::Create(
-                seq.next_element()?
-                    .ok_or_else(|| serde::de::Error::custom(""))?,
-            ))
-        }
-        ServerMessageIDs::MsgSamplerDelete => {
-            FromServer::Sampler(ModSampler::Delete(
-                seq.next_element()?
-                    .ok_or_else(|| serde::de::Error::custom(""))?,
-            ))
-        }
-        ServerMessageIDs::MsgLightCreate => {
-            FromServer::Light(ModLight::Create(
-                seq.next_element()?
-                    .ok_or_else(|| serde::de::Error::custom(""))?,
-            ))
-        }
-        ServerMessageIDs::MsgLightUpdate => {
-            FromServer::Light(ModLight::Update(
-                seq.next_element()?
-                    .ok_or_else(|| serde::de::Error::custom(""))?,
-            ))
-        }
-        ServerMessageIDs::MsgLightDelete => {
-            FromServer::Light(ModLight::Delete(
-                seq.next_element()?
-                    .ok_or_else(|| serde::de::Error::custom(""))?,
-            ))
-        }
-        ServerMessageIDs::MsgGeometryCreate => {
-            FromServer::Geometry(ModGeometry::Create(
-                seq.next_element()?
-                    .ok_or_else(|| serde::de::Error::custom(""))?,
-            ))
-        }
-        ServerMessageIDs::MsgGeometryDelete => {
-            FromServer::Geometry(ModGeometry::Delete(
-                seq.next_element()?
-                    .ok_or_else(|| serde::de::Error::custom(""))?,
-            ))
-        }
-        ServerMessageIDs::MsgTableCreate => {
-            FromServer::Table(ModTable::Create(
-                seq.next_element()?
-                    .ok_or_else(|| serde::de::Error::custom(""))?,
-            ))
-        }
-        ServerMessageIDs::MsgTableUpdate => {
-            FromServer::Table(ModTable::Update(
-                seq.next_element()?
-                    .ok_or_else(|| serde::de::Error::custom(""))?,
-            ))
-        }
-        ServerMessageIDs::MsgTableDelete => {
-            FromServer::Table(ModTable::Delete(
-                seq.next_element()?
-                    .ok_or_else(|| serde::de::Error::custom(""))?,
-            ))
-        }
-        ServerMessageIDs::MsgDocumentUpdate => FromServer::MsgDocumentUpdate(
-            seq.next_element()?
-                .ok_or_else(|| serde::de::Error::custom(""))?,
+        ServerMessageIDs::MsgMethodCreate => FromServer::Method(
+            ModMethod::Create(seq.next_element()?.ok_or_else(|| {
+                serde::de::Error::custom("Missing required message")
+            })?),
         ),
-        ServerMessageIDs::MsgDocumentReset => FromServer::MsgDocumentReset(
-            seq.next_element()?
-                .ok_or_else(|| serde::de::Error::custom(""))?,
+        ServerMessageIDs::MsgMethodDelete => FromServer::Method(
+            ModMethod::Delete(seq.next_element()?.ok_or_else(|| {
+                serde::de::Error::custom("Missing required message")
+            })?),
         ),
-        ServerMessageIDs::MsgSignalInvoke => FromServer::MsgSignalInvoke(
-            seq.next_element()?
-                .ok_or_else(|| serde::de::Error::custom(""))?,
+        ServerMessageIDs::MsgSignalCreate => FromServer::Signal(
+            ModSignal::Create(seq.next_element()?.ok_or_else(|| {
+                serde::de::Error::custom("Missing required message")
+            })?),
         ),
-        ServerMessageIDs::MsgMethodReply => FromServer::MsgMethodReply(
-            seq.next_element()?
-                .ok_or_else(|| serde::de::Error::custom(""))?,
+        ServerMessageIDs::MsgSignalDelete => FromServer::Signal(
+            ModSignal::Delete(seq.next_element()?.ok_or_else(|| {
+                serde::de::Error::custom("Missing required message")
+            })?),
         ),
+        ServerMessageIDs::MsgEntityCreate => FromServer::Entity(
+            ModEntity::Create(seq.next_element()?.ok_or_else(|| {
+                serde::de::Error::custom("Missing required message")
+            })?),
+        ),
+        ServerMessageIDs::MsgEntityUpdate => FromServer::Entity(
+            ModEntity::Update(seq.next_element()?.ok_or_else(|| {
+                serde::de::Error::custom("Missing required message")
+            })?),
+        ),
+        ServerMessageIDs::MsgEntityDelete => FromServer::Entity(
+            ModEntity::Delete(seq.next_element()?.ok_or_else(|| {
+                serde::de::Error::custom("Missing required message")
+            })?),
+        ),
+        ServerMessageIDs::MsgPlotCreate => {
+            FromServer::Plot(ModPlot::Create(seq.next_element()?.ok_or_else(
+                || serde::de::Error::custom("Missing required message"),
+            )?))
+        }
+        ServerMessageIDs::MsgPlotUpdate => {
+            FromServer::Plot(ModPlot::Update(seq.next_element()?.ok_or_else(
+                || serde::de::Error::custom("Missing required message"),
+            )?))
+        }
+        ServerMessageIDs::MsgPlotDelete => {
+            FromServer::Plot(ModPlot::Delete(seq.next_element()?.ok_or_else(
+                || serde::de::Error::custom("Missing required message"),
+            )?))
+        }
+        ServerMessageIDs::MsgBufferCreate => FromServer::Buffer(
+            ModBuffer::Create(seq.next_element()?.ok_or_else(|| {
+                serde::de::Error::custom("Missing required message")
+            })?),
+        ),
+        ServerMessageIDs::MsgBufferDelete => FromServer::Buffer(
+            ModBuffer::Delete(seq.next_element()?.ok_or_else(|| {
+                serde::de::Error::custom("Missing required message")
+            })?),
+        ),
+        ServerMessageIDs::MsgBufferViewCreate => FromServer::BufferView(
+            ModBufferView::Create(seq.next_element()?.ok_or_else(|| {
+                serde::de::Error::custom("Missing required message")
+            })?),
+        ),
+        ServerMessageIDs::MsgBufferViewDelete => FromServer::BufferView(
+            ModBufferView::Delete(seq.next_element()?.ok_or_else(|| {
+                serde::de::Error::custom("Missing required message")
+            })?),
+        ),
+        ServerMessageIDs::MsgMaterialCreate => FromServer::Material(
+            ModMaterial::Create(seq.next_element()?.ok_or_else(|| {
+                serde::de::Error::custom("Missing required message")
+            })?),
+        ),
+        ServerMessageIDs::MsgMaterialUpdate => FromServer::Material(
+            ModMaterial::Update(seq.next_element()?.ok_or_else(|| {
+                serde::de::Error::custom("Missing required message")
+            })?),
+        ),
+        ServerMessageIDs::MsgMaterialDelete => FromServer::Material(
+            ModMaterial::Delete(seq.next_element()?.ok_or_else(|| {
+                serde::de::Error::custom("Missing required message")
+            })?),
+        ),
+        ServerMessageIDs::MsgImageCreate => FromServer::Image(
+            ModImage::Create(seq.next_element()?.ok_or_else(|| {
+                serde::de::Error::custom("Missing required message")
+            })?),
+        ),
+        ServerMessageIDs::MsgImageDelete => FromServer::Image(
+            ModImage::Delete(seq.next_element()?.ok_or_else(|| {
+                serde::de::Error::custom("Missing required message")
+            })?),
+        ),
+        ServerMessageIDs::MsgTextureCreate => FromServer::Texture(
+            ModTexture::Create(seq.next_element()?.ok_or_else(|| {
+                serde::de::Error::custom("Missing required message")
+            })?),
+        ),
+        ServerMessageIDs::MsgTextureDelete => FromServer::Texture(
+            ModTexture::Delete(seq.next_element()?.ok_or_else(|| {
+                serde::de::Error::custom("Missing required message")
+            })?),
+        ),
+        ServerMessageIDs::MsgSamplerCreate => FromServer::Sampler(
+            ModSampler::Create(seq.next_element()?.ok_or_else(|| {
+                serde::de::Error::custom("Missing required message")
+            })?),
+        ),
+        ServerMessageIDs::MsgSamplerDelete => FromServer::Sampler(
+            ModSampler::Delete(seq.next_element()?.ok_or_else(|| {
+                serde::de::Error::custom("Missing required message")
+            })?),
+        ),
+        ServerMessageIDs::MsgLightCreate => FromServer::Light(
+            ModLight::Create(seq.next_element()?.ok_or_else(|| {
+                serde::de::Error::custom("Missing required message")
+            })?),
+        ),
+        ServerMessageIDs::MsgLightUpdate => FromServer::Light(
+            ModLight::Update(seq.next_element()?.ok_or_else(|| {
+                serde::de::Error::custom("Missing required message")
+            })?),
+        ),
+        ServerMessageIDs::MsgLightDelete => FromServer::Light(
+            ModLight::Delete(seq.next_element()?.ok_or_else(|| {
+                serde::de::Error::custom("Missing required message")
+            })?),
+        ),
+        ServerMessageIDs::MsgGeometryCreate => FromServer::Geometry(
+            ModGeometry::Create(seq.next_element()?.ok_or_else(|| {
+                serde::de::Error::custom("Missing required message")
+            })?),
+        ),
+        ServerMessageIDs::MsgGeometryDelete => FromServer::Geometry(
+            ModGeometry::Delete(seq.next_element()?.ok_or_else(|| {
+                serde::de::Error::custom("Missing required message")
+            })?),
+        ),
+        ServerMessageIDs::MsgTableCreate => FromServer::Table(
+            ModTable::Create(seq.next_element()?.ok_or_else(|| {
+                serde::de::Error::custom("Missing required message")
+            })?),
+        ),
+        ServerMessageIDs::MsgTableUpdate => FromServer::Table(
+            ModTable::Update(seq.next_element()?.ok_or_else(|| {
+                serde::de::Error::custom("Missing required message")
+            })?),
+        ),
+        ServerMessageIDs::MsgTableDelete => FromServer::Table(
+            ModTable::Delete(seq.next_element()?.ok_or_else(|| {
+                serde::de::Error::custom("Missing required message")
+            })?),
+        ),
+        ServerMessageIDs::MsgDocumentUpdate => {
+            FromServer::MsgDocumentUpdate(seq.next_element()?.ok_or_else(
+                || serde::de::Error::custom("Missing required message"),
+            )?)
+        }
+        ServerMessageIDs::MsgDocumentReset => {
+            FromServer::MsgDocumentReset(seq.next_element()?.ok_or_else(
+                || serde::de::Error::custom("Missing required message"),
+            )?)
+        }
+        ServerMessageIDs::MsgSignalInvoke => {
+            FromServer::MsgSignalInvoke(seq.next_element()?.ok_or_else(
+                || serde::de::Error::custom("Missing required message"),
+            )?)
+        }
+        ServerMessageIDs::MsgMethodReply => {
+            FromServer::MsgMethodReply(seq.next_element()?.ok_or_else(
+                || serde::de::Error::custom("Missing required message"),
+            )?)
+        }
         ServerMessageIDs::MsgDocumentInitialized => {
-            FromServer::MsgDocumentInitialized(
-                seq.next_element()?
-                    .ok_or_else(|| serde::de::Error::custom(""))?,
-            )
+            FromServer::MsgDocumentInitialized(seq.next_element()?.ok_or_else(
+                || serde::de::Error::custom("Missing required message"),
+            )?)
         }
         ServerMessageIDs::Unknown => {
             log::debug!("Unknown ID, bailing");
-            return Err(serde::de::Error::custom(""));
+            return Err(serde::de::Error::custom("Unknown message id"));
         }
     };
 
