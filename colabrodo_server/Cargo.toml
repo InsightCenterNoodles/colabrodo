@@ -23,6 +23,7 @@ indexmap = "1.9"
 tokio-util = "0.7"
 bytemuck = { workspace = true }
 closure = "0.3"
+local-ip-address = "0.5.1"
 uuid = { workspace = true }
 url = { workspace = true }
 

@@ -49,9 +49,30 @@ pub struct AssetStore {
     asset_list: HashMap<uuid::Uuid, Arc<Asset>>,
 }
 
+fn remap_host() -> String {
+    let Ok(ip) = local_ip_address::local_ip() else {
+        return "0.0.0.0".to_string();
+    };
+
+    ip.to_string()
+}
+
 impl AssetStore {
     fn new(options: &AssetServerOptions) -> Self {
-        let hname = options.url.to_string();
+        let mut local_url = options.url.clone();
+
+        let should_remap = local_url
+            .host()
+            .map(|f| f.to_string() == "0.0.0.0")
+            .unwrap_or(true);
+
+        if should_remap {
+            let _ = local_url.set_host(Some(&remap_host()));
+        }
+
+        let hname = local_url.to_string();
+
+        //local-ip-address = "0.5.1"
 
         let (stop_tx, _) = broadcast::channel(2);
 
