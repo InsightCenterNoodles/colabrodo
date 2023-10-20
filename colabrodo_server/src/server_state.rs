@@ -24,11 +24,11 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::sync::{Arc, Mutex};
 use tokio::sync::broadcast::{self, Sender};
+use tokio_util::sync::CancellationToken;
 
 #[derive(Debug, Clone)]
 pub enum Output {
     Broadcast(Vec<u8>),
-    Shutdown,
 }
 
 pub type CallbackPtr = Sender<Output>;
@@ -397,6 +397,7 @@ where
 /// See examples for usage.
 pub struct ServerState {
     tx: CallbackPtr,
+    halt_token: CancellationToken,
 
     pub methods: PubUserCompList<MethodID, ServerMethodState>,
     pub signals: PubUserCompList<SignalID, ServerSignalState>,
@@ -473,6 +474,7 @@ impl ServerState {
 
         Arc::new(Mutex::new(Self {
             tx: bcast_send.clone(),
+            halt_token: CancellationToken::new(),
 
             methods: PubUserCompList::new(bcast_send.clone()),
             signals: PubUserCompList::new(bcast_send.clone()),
@@ -502,9 +504,13 @@ impl ServerState {
         self.tx.clone()
     }
 
+    pub fn new_cancel_token(&self) -> CancellationToken {
+        self.halt_token.clone()
+    }
+
     pub fn shutdown(&self) {
         log::debug!("Server attempting shutdown...");
-        self.tx.send(Output::Shutdown).unwrap();
+        self.halt_token.cancel();
     }
 
     /// Update the document's methods and signals
@@ -739,7 +745,6 @@ mod tests {
 
             let msg = match msg {
                 Output::Broadcast(x) => x,
-                _ => panic!("Wrong message"),
             };
 
             println!("GOT: {:?}", decode(&msg));

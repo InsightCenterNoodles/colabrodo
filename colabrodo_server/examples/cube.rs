@@ -121,6 +121,8 @@ fn setup(state: &mut ServerStatePtr) {
 
 #[tokio::main]
 async fn main() {
+    env_logger::init();
+
     println!("Connect clients to localhost:50000");
     let opts = ServerOptions::default();
 

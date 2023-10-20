@@ -1,29 +1,31 @@
 [workspace]
 members = [
-    "colabrodo_tools",
-    "colabrodo_client",
-    "colabrodo_common",
-    "colabrodo_server",
-    "colabrodo_macros",
-    "tests",
+  "colabrodo_tools",
+  "colabrodo_client",
+  "colabrodo_common",
+  "colabrodo_server",
+  "colabrodo_macros",
+  "tests",
 ]
+
+resolver = "2"
 
 [workspace.dependencies]
-thiserror = "1.0"
+bytemuck = {version = "1.13.0", features = ["derive"]}
 ciborium = "0.2.0"
-ciborium-io = { version = "0.2.0", features = ["alloc"] }
+ciborium-io = {version = "0.2.0", features = ["alloc"]}
+log = "0.4"
 serde = "1.0"
 serde_with = "2.2"
-tokio = { version = "1", features = ["full"] }
+thiserror = "1.0"
+tokio = {version = "1", features = ["full"]}
 tokio-tungstenite = "*"
-log = "0.4"
-url = {version = "2.2", features=["serde"] }
-bytemuck = { version="1.13.0", features = ["derive"]}
+url = {version = "2.2", features = ["serde"]}
 
 [workspace.dependencies.uuid]
-version = "1.2"
 features = [
-    "v4",                
-    "fast-rng",          
-    "macro-diagnostics", 
+  "v4",
+  "fast-rng",
+  "macro-diagnostics",
 ]
+version = "1.2"

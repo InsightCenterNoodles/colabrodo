@@ -471,13 +471,13 @@ pub async fn start_client_stream(
         stop_tx.subscribe(),
     ));
 
-    debug!("Tasks launched");
-
     tokio::spawn(incoming_message_task(
         stop_tx.clone(),
         socket_rx,
         to_client_tx,
     ));
+
+    debug!("Tasks launched");
 
     //debug!("Loop closed. Client system done.");
 
@@ -497,6 +497,7 @@ async fn incoming_message_task(
     >,
     to_client_tx: tokio::sync::mpsc::UnboundedSender<IncomingMessage>,
 ) {
+    debug!("Starting incoming message task");
     let mut stop_rx = stopper_tx.subscribe();
     loop {
         tokio::select! {
@@ -517,6 +518,7 @@ async fn incoming_message_task(
             }
         }
     }
+    debug!("Stopping incoming message task");
 }
 
 /// Task that sends outgoing messages from the client to the socket.

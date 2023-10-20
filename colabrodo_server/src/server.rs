@@ -4,24 +4,26 @@ use std::fmt::Debug;
 use std::sync::Arc;
 use std::sync::Mutex;
 
-use crate::server_messages::AsyncMethodContent;
-use crate::server_messages::MethodReference;
-use crate::server_messages::Recorder;
+use crate::server_messages::{AsyncMethodContent, MethodReference, Recorder};
+
 pub use crate::server_messages::{
     ComponentReference, MethodHandlerSlot, ServerDocumentUpdate,
     ServerMethodState,
 };
+
 pub use crate::server_state::MethodResult;
+
 use crate::server_state::Output;
+
 pub use crate::server_state::{InvokeObj, ServerState, ServerStatePtr};
+
 pub use ciborium;
 pub use colabrodo_common::client_communication::InvokeIDType;
 use colabrodo_common::client_communication::{
     AllClientMessages, ClientRootMessage, MethodInvokeMessage,
 };
 use colabrodo_common::common::ServerMessageIDs;
-use colabrodo_common::network::default_server_address;
-use colabrodo_common::network::url_to_sockaddr;
+use colabrodo_common::network::{default_server_address, url_to_sockaddr};
 pub use colabrodo_common::server_communication::*;
 pub use colabrodo_common::value_tools::*;
 pub use colabrodo_macros::make_method_function;
@@ -36,6 +38,7 @@ use tokio::{
 };
 use tokio_tungstenite;
 use tokio_tungstenite::tungstenite::Message as WSMessage;
+use tokio_util::sync::CancellationToken;
 pub use uuid;
 
 // We have a fun structure here.
@@ -110,7 +113,7 @@ pub async fn server_main(opts: ServerOptions, state: Arc<Mutex<ServerState>>) {
     let bcast_send = state.lock().unwrap().new_broadcast_send();
 
     // channel for task control
-    let (stop_tx, _stop_rx) = tokio::sync::broadcast::channel::<u8>(1);
+    let client_cancel_token = CancellationToken::new();
 
     // channel for server to recv messages
     let (to_server_send, to_server_recv) = tokio::sync::mpsc::channel(16);
@@ -125,8 +128,10 @@ pub async fn server_main(opts: ServerOptions, state: Arc<Mutex<ServerState>>) {
 
     log::info!("NOODLES server accepting clients @ {local_addy}");
 
-    let stop_watch_task =
-        tokio::spawn(shutdown_watcher(bcast_send.subscribe(), stop_tx.clone()));
+    let stop_watch_task = tokio::spawn(shutdown_watcher(
+        state.lock().unwrap().new_cancel_token(),
+        client_cancel_token.clone(),
+    ));
 
     // move the listener off to start accepting clients
     // it needs a handle for the broadcast channel to hand to new clients
@@ -135,22 +140,10 @@ pub async fn server_main(opts: ServerOptions, state: Arc<Mutex<ServerState>>) {
         listener,
         bcast_send.clone(),
         to_server_send.clone(),
-        stop_tx.clone(),
-        stop_tx.subscribe(),
+        client_cancel_token.clone(),
     ));
 
-    // if let Some(q) = command_queue {
-    //     tokio::spawn(command_sender::<T>(q, to_server_send.clone()));
-    // }
-
-    // let state_handle = thread::spawn(move || {
-
-    // });
-
-    server_state_loop(state, to_server_recv, stop_tx.subscribe()).await;
-
-    //server_message_pump(bcast_send, from_server_recv, to_server_send.clone())
-    //    .await;
+    server_state_loop(state, to_server_recv, client_cancel_token.clone()).await;
 
     log::debug!("Server is closing down, waiting for stopwatch task...");
 
@@ -160,23 +153,18 @@ pub async fn server_main(opts: ServerOptions, state: Arc<Mutex<ServerState>>) {
 
     h1.await.unwrap();
 
-    //state_handle.join().unwrap();
-
     log::debug!("Server is done.");
 }
 
 async fn shutdown_watcher(
-    mut server_bcast: tokio::sync::broadcast::Receiver<Output>,
-    stop_tx: tokio::sync::broadcast::Sender<u8>,
+    server_cancel_token: CancellationToken,
+    client_cancel_token: CancellationToken,
 ) {
-    while let Ok(msg) = server_bcast.recv().await {
-        log::debug!("WATCHER GOT A MESSAGE");
-        if let Output::Shutdown = msg {
-            log::debug!("Server is asking to stop, broadcasting stop bit");
-            stop_tx.send(1).unwrap();
-            return;
-        }
-    }
+    log::debug!("Shutdown watcher startup");
+    server_cancel_token.cancelled().await;
+    log::debug!("Server is asking to stop, broadcasting stop bit");
+    client_cancel_token.cancel();
+    log::debug!("Shutdown watcher complete");
 }
 
 // Task to construct a listening socket
@@ -196,14 +184,14 @@ async fn client_connect_task(
     listener: TcpListener,
     bcast_send: broadcast::Sender<Output>,
     to_server_send: tokio::sync::mpsc::Sender<ToServerMessage>,
-    stop_tx: tokio::sync::broadcast::Sender<u8>,
-    mut stop_rx: tokio::sync::broadcast::Receiver<u8>,
+    stop_tx: CancellationToken,
 ) {
     log::debug!("Starting client connect task");
 
     loop {
+        log::debug!("LOOP: CLIENT CONNECT TASK");
         tokio::select! {
-            _ = stop_rx.recv() => break,
+            _ = stop_tx.cancelled() => break,
             acc = listener.accept() => {
                 if let Ok((stream, _)) = acc {
                     tokio::spawn(client_handler(
@@ -225,13 +213,14 @@ async fn client_connect_task(
 async fn server_state_loop(
     server_state: Arc<Mutex<ServerState>>,
     mut from_world: tokio::sync::mpsc::Receiver<ToServerMessage>,
-    mut stop_rx: tokio::sync::broadcast::Receiver<u8>,
+    stop_rx: CancellationToken,
 ) {
     log::debug!("Starting server state thread");
 
     loop {
+        log::debug!("LOOP: SERVER STATE THREAD");
         tokio::select! {
-            _ = stop_rx.recv() => break,
+            _ = stop_rx.cancelled() => break,
             Some(msg) = from_world.recv() => {
                 match msg {
                     ToServerMessage::ClientConnected(cr) => {
@@ -277,13 +266,6 @@ async fn server_state_loop(
 
                         lock.active_client_info.remove(&id);
                     }
-                    // ToServerMessage::Shutdown => {
-                    //     stop_tx.send(1).unwrap();
-                    //     break;
-                    // }
-                    //ToServerMessage::Command(comm_msg) => {
-                        //user_state.handle_command(comm_msg);
-                    //}
                 }
             }
         }
@@ -292,13 +274,39 @@ async fn server_state_loop(
     log::debug!("Ending server state thread");
 }
 
+async fn client_forwarder(
+    mut message_in: tokio::sync::mpsc::UnboundedReceiver<Vec<u8>>,
+    message_out: tokio::sync::mpsc::UnboundedSender<
+        tokio_tungstenite::tungstenite::Message,
+    >,
+    stop_tx: CancellationToken,
+) {
+    loop {
+        log::debug!("LOOP: CLIENT FORWARDER");
+        tokio::select! {
+            _ = stop_tx.cancelled() => break,
+            message = message_in.recv() => {
+                if let Some(x) = message {
+                    message_out
+                    .send(tokio_tungstenite::tungstenite::Message::Binary(x))
+                    .unwrap();
+                } else {
+                    break;
+                }
+            }
+        }
+    }
+}
+
 /// Task for each client that has joined up
 async fn client_handler(
     stream: TcpStream,
     to_server_send: tokio::sync::mpsc::Sender<ToServerMessage>,
     mut bcast_recv: broadcast::Receiver<Output>,
-    stop_tx: tokio::sync::broadcast::Sender<u8>,
+    stop_tx: CancellationToken,
 ) -> Result<(), ()> {
+    log::debug!("Client handler task start");
+
     let addr = stream
         .peer_addr()
         .expect("Connected stream missing peer address");
@@ -328,12 +336,13 @@ async fn client_handler(
 
     let (client_stop_tx, mut client_stop_rx) = broadcast::channel(1);
 
-    let mut socket_stopper = stop_tx.subscribe();
+    let socket_stopper = stop_tx.clone();
     let h1 = tokio::spawn(async move {
         // task that just sends data to the socket
         loop {
+            log::debug!("LOOP: ANOTHER CLIENT FORWARDER");
             tokio::select! {
-                _ = socket_stopper.recv() => break,
+                _ = socket_stopper.cancelled() => break,
                 _ = client_stop_rx.recv() => break,
                 data = out_rx.recv() => {
                     if let Some(data) = data {
@@ -348,15 +357,16 @@ async fn client_handler(
         log::debug!("Ending per-client data-forwarder");
     });
 
-    let mut bcast_stopper = stop_tx.subscribe();
+    let bcast_stopper = stop_tx.clone();
     // task that takes broadcast information and sends it to the out queue
     let h2 = {
         let this_tx = out_tx.clone();
         let mut this_client_stopper = client_stop_tx.subscribe();
         tokio::spawn(async move {
             loop {
+                log::debug!("LOOP: BCAST TO OUT QUEUE");
                 tokio::select! {
-                        _ = bcast_stopper.recv() => break,
+                        _ = bcast_stopper.cancelled() => break,
                         _ = this_client_stopper.recv() => break,
                         bcast = bcast_recv.recv() => {
                 // take each message from the broadcast channel and add it to the
@@ -372,19 +382,13 @@ async fn client_handler(
         })
     };
 
-    let (out_raw_tx, mut out_raw_rx) = mpsc::unbounded_channel();
+    let (out_raw_tx, out_raw_rx) = mpsc::unbounded_channel();
 
-    let out_clone = out_tx.clone();
-
-    tokio::spawn(async move {
-        loop {
-            while let Some(x) = out_raw_rx.recv().await {
-                out_clone
-                    .send(tokio_tungstenite::tungstenite::Message::Binary(x))
-                    .unwrap();
-            }
-        }
-    });
+    tokio::spawn(client_forwarder(
+        out_raw_rx,
+        out_tx.clone(),
+        stop_tx.clone(),
+    ));
 
     to_server_send
         .send(ToServerMessage::ClientConnected(ClientRecord {
@@ -394,11 +398,10 @@ async fn client_handler(
         .await
         .unwrap();
 
-    let mut stop_rx = stop_tx.subscribe();
-
     loop {
+        log::debug!("LOOP: ANOTHER CLIENT FORWARDER 2");
         tokio::select! {
-            _ = stop_rx.recv() => break,
+            _ = stop_tx.cancelled() => break,
 
             message = rx.next() => match message {
                 None => break,
