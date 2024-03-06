@@ -476,6 +476,10 @@ impl TableController {
         }
     }
 
+    pub fn current_data(&self) -> TableInitData {
+        self.table.get_init_data()
+    }
+
     pub fn insert_data(&mut self, new_data: Vec<Vec<Value>>) -> Option<()> {
         let (keys, fixed) = self.table.insert_data(new_data)?;
 
