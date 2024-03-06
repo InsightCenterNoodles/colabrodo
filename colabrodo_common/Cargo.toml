@@ -1,18 +1,17 @@
 [package]
+edition = "2021"
 name = "colabrodo_common"
 version = "0.5.1"
-edition = "2021"
 
 [dependencies]
-colabrodo_macros = { path = "../colabrodo_macros" }
+bytemuck = {workspace = true}
 ciborium = {workspace = true}
 ciborium-io = {workspace = true}
+colabrodo_macros = {path = "../colabrodo_macros"}
+log = {workspace = true}
+num-derive = "0.4"
+num-traits = "0.2"
 serde = {workspace = true}
 serde_with = {workspace = true}
-log = {workspace = true}
 thiserror = {workspace = true}
-num-traits = "0.2"
-num-derive = "0.3"
 url = {workspace = true}
-bytemuck = { workspace = true }
-

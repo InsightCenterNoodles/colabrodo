@@ -1,25 +1,25 @@
 [package]
+edition = "2021"
 name = "colabrodo_client"
 version = "0.5.2"
-edition = "2021"
 
 [dependencies]
-colabrodo_common = { path = "../colabrodo_common" }
-thiserror = {workspace = true}
 ciborium = {workspace = true}
 ciborium-io = {workspace = true}
+colabrodo_common = {path = "../colabrodo_common"}
+futures-channel = "0.3.24"
+futures-util = "0.3.24"
+log = {workspace = true}
+num-derive = "0.4.2"
 num-traits = "0.2"
-num-derive = "0.3"
 serde = {workspace = true}
-serde_with ={workspace = true}
+serde_with = {workspace = true}
+thiserror = {workspace = true}
 tokio = {workspace = true}
 tokio-tungstenite = {workspace = true}
-log = {workspace = true}
 url = {workspace = true}
-futures-util = "0.3.24"
-futures-channel = "0.3.24"
 uuid = {workspace = true}
 
 [dev-dependencies]
-clap = { version = "4.1", features = ["derive"] }
-env_logger = "0.10.0"
+clap = {version = "4.1", features = ["derive"]}
+env_logger = "0.11"

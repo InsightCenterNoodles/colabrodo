@@ -1,31 +1,31 @@
 [package]
+edition = "2021"
 name = "colabrodo_server"
 version = "0.5.2"
-edition = "2021"
 
 [dependencies]
-colabrodo_macros = { path = "../colabrodo_macros" }
-colabrodo_common = { path = "../colabrodo_common" }
-thiserror = {workspace = true}
+bytemuck = {workspace = true}
 ciborium = {workspace = true}
 ciborium-io = {workspace = true}
+closure = "0.3"
+colabrodo_common = {path = "../colabrodo_common"}
+colabrodo_macros = {path = "../colabrodo_macros"}
+futures-channel = "0.3.24"
+futures-util = "0.3.24"
+hyper = {version = "0.14", features = ["full"]}
+indexmap = "2.2.5"
+local-ip-address = "0.6"
+log = {workspace = true}
+num-derive = "0.4.2"
 num-traits = "0.2"
-num-derive = "0.3"
 serde = {workspace = true}
 serde_with = {workspace = true}
+thiserror = {workspace = true}
 tokio = {workspace = true}
-hyper = { version = "0.14", features = ["full"] }
 tokio-tungstenite = {workspace = true}
-log = {workspace = true}
-futures-util = "0.3.24"
-futures-channel = "0.3.24"
-indexmap = "1.9"
 tokio-util = "0.7"
-bytemuck = { workspace = true }
-closure = "0.3"
-local-ip-address = "0.5.1"
-uuid = { workspace = true }
-url = { workspace = true }
+url = {workspace = true}
+uuid = {workspace = true}
 
 [dev-dependencies]
-env_logger = "0.10.0"
+env_logger = "0.11"

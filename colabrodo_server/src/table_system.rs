@@ -243,6 +243,13 @@ impl TableSystem {
         self.attach(table, state);
     }
 
+    pub fn fetch_table(
+        &mut self,
+        table: &TableReference,
+    ) -> Option<&Arc<Mutex<TableController>>> {
+        self.managed_tables.get(&table)
+    }
+
     fn attach(&mut self, table: TableReference, state: &mut ServerState) {
         let methods_to_update = state
             .tables

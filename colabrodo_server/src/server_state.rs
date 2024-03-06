@@ -226,7 +226,7 @@ impl<
 
         self.id_list.remove(&id);
         self.free_list.push(id);
-        self.list.remove(&id)
+        self.list.shift_remove(&id)
     }
 
     // Create a new component. User provides initial state, and we need a pointer to the list (ourselves) to hand out to the new component.
