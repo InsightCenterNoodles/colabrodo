@@ -248,12 +248,16 @@ async fn server_state_loop(
                                 client_msg.0,
                                 |out| {
                                     if log::log_enabled!(log::Level::Debug) {
-                                        log::debug!("SEND TO CLIENT:");
+                                        log::debug!("SEND TO CLIENT: {} bytes", out.len());
                                         debug_cbor(&out);
                                     }
                                     // clients could already be gone, so don't
                                     // unwrap.
-                                    let _ = client.sender.send(out);
+                                    let res = client.sender.send(out);
+
+                                    if res.is_err() {
+                                        log::warn!("Unable to send to client. Disconnected?");
+                                    }
                                 },
                             ).await;
 
@@ -287,6 +291,7 @@ async fn client_forwarder(
             _ = stop_tx.cancelled() => break,
             message = message_in.recv() => {
                 if let Some(x) = message {
+                    log::debug!("Forwarding {} bytes", x.len());
                     message_out
                     .send(tokio_tungstenite::tungstenite::Message::Binary(x))
                     .unwrap();
@@ -296,6 +301,8 @@ async fn client_forwarder(
             }
         }
     }
+
+    log::debug!("END LOOP: CLIENT FORWARDER");
 }
 
 /// Task for each client that has joined up

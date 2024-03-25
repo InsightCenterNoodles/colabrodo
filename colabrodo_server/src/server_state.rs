@@ -193,6 +193,10 @@ impl<
     /// Send a CBOR message to the broadcast sink
     fn send_to_broadcast(&self, rec: Recorder) {
         let _ret = self.broadcast.send(Output::Broadcast(rec.data));
+
+        if _ret.is_err() {
+            log::warn!("Unable to send to broadcast queue!");
+        }
     }
 
     /// Obtain a new id. Either generates a new ID if there are no free slots. If there are free slots, reuse and bump the generation.
@@ -223,6 +227,10 @@ impl<
 
         // not sending a message could just mean that the broadcast pipe has been shut down, so we ignore it
         let _err = self.broadcast.send(Output::Broadcast(recorder.data));
+
+        if _err.is_err() {
+            log::warn!("Unable to broadcast deletion!");
+        }
 
         self.id_list.remove(&id);
         self.free_list.push(id);
@@ -521,6 +529,10 @@ impl ServerState {
         );
 
         let _ret = self.tx.send(Output::Broadcast(recorder.data));
+
+        if _ret.is_err() {
+            log::warn!("Unable to broadcast document update!");
+        }
 
         self.comm = update;
     }
