@@ -5,18 +5,13 @@ use std::sync::Arc;
 use std::sync::Mutex;
 
 use crate::server_messages::{AsyncMethodContent, MethodReference, Recorder};
-
 pub use crate::server_messages::{
     ComponentReference, MethodHandlerSlot, ServerDocumentUpdate,
     ServerMethodState,
 };
-
 pub use crate::server_state::MethodResult;
-
 use crate::server_state::Output;
-
 pub use crate::server_state::{InvokeObj, ServerState, ServerStatePtr};
-
 pub use ciborium;
 pub use colabrodo_common::client_communication::InvokeIDType;
 use colabrodo_common::client_communication::{
@@ -32,6 +27,7 @@ use futures_util::StreamExt;
 use log;
 use thiserror::Error;
 pub use tokio;
+use tokio::sync::broadcast::error::RecvError;
 use tokio::{
     net::{TcpListener, TcpStream},
     sync::{broadcast, mpsc},
@@ -378,10 +374,17 @@ async fn client_handler(
                         bcast = bcast_recv.recv() => {
                 // take each message from the broadcast channel and add it to the
                 // queue
-                            if let Ok(Output::Broadcast(bcast)) = bcast {
-                                this_tx.send(tokio_tungstenite::tungstenite::Message::Binary(bcast)).unwrap();
-                            } else {
-                                log::warn!("Bad broadcast {:?}", bcast)
+                            match bcast {
+                                Ok(Output::Broadcast(bcast)) => {
+                                    this_tx.send(tokio_tungstenite::tungstenite::Message::Binary(bcast)).unwrap();
+                                },
+                                Err(RecvError::Lagged(_)) => {
+                                    log::error!("Bad broadcast, system is lagging {:?}", bcast)
+                                },
+                                Err(RecvError::Closed) => {
+                                    log::debug!("Out queue forwarder closed");
+                                    break;
+                                }
                             }
                         }
                     }

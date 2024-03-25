@@ -196,7 +196,7 @@ impl<
         let _ret = self.broadcast.send(Output::Broadcast(rec.data));
 
         if _ret.is_err() {
-            log::warn!("Unable to send to broadcast queue!");
+            log::debug!("Unable to send to broadcast queue!");
         }
     }
 
@@ -231,7 +231,7 @@ impl<
         let _err = self.broadcast.send(Output::Broadcast(recorder.data));
 
         if _err.is_err() {
-            log::warn!("Unable to broadcast deletion!");
+            log::debug!("Unable to broadcast deletion!");
         }
 
         self.id_list.remove(&id);
@@ -480,7 +480,7 @@ impl Serialize for ServerState {
 impl ServerState {
     /// Create a new server state.
     pub fn new() -> Arc<Mutex<Self>> {
-        let (bcast_send, _) = broadcast::channel(16);
+        let (bcast_send, _) = broadcast::channel(256);
 
         Arc::new(Mutex::new(Self {
             tx: bcast_send.clone(),
@@ -535,7 +535,7 @@ impl ServerState {
         let _ret = self.tx.send(Output::Broadcast(recorder.data));
 
         if _ret.is_err() {
-            log::warn!("Unable to broadcast document update!");
+            log::debug!("Unable to broadcast document update!");
         }
 
         self.comm = update;
