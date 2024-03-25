@@ -192,6 +192,7 @@ impl<
 
     /// Send a CBOR message to the broadcast sink
     fn send_to_broadcast(&self, rec: Recorder) {
+        log::debug!("Broadcasting {} bytes", rec.data.len());
         let _ret = self.broadcast.send(Output::Broadcast(rec.data));
 
         if _ret.is_err() {
@@ -226,6 +227,7 @@ impl<
         );
 
         // not sending a message could just mean that the broadcast pipe has been shut down, so we ignore it
+        log::debug!("Broadcasting delete, {} bytes", recorder.data.len());
         let _err = self.broadcast.send(Output::Broadcast(recorder.data));
 
         if _err.is_err() {
@@ -527,6 +529,8 @@ impl ServerState {
             ServerMessageIDs::MsgDocumentUpdate as u32,
             &update,
         );
+
+        log::debug!("Broadcasting doc update, {} bytes", recorder.data.len());
 
         let _ret = self.tx.send(Output::Broadcast(recorder.data));
 
