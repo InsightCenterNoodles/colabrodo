@@ -380,6 +380,8 @@ async fn client_handler(
                 // queue
                             if let Ok(Output::Broadcast(bcast)) = bcast {
                                 this_tx.send(tokio_tungstenite::tungstenite::Message::Binary(bcast)).unwrap();
+                            } else {
+                                log::warn!("Bad broadcast {:?}", bcast)
                             }
                         }
                     }
