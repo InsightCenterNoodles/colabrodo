@@ -134,7 +134,7 @@ impl ComponentMessageIDs for BufferState {
 
 // =============================================================================
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub enum BufferViewType {
     #[default]
     #[serde(rename = "UNK")]
@@ -147,7 +147,7 @@ pub enum BufferViewType {
 
 #[serde_as]
 #[serde_with::skip_serializing_none]
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Clone, Deserialize)]
 pub struct BufferViewState<BufferReference> {
     pub name: Option<String>,
 
@@ -193,7 +193,7 @@ pub enum AttributeSemantic {
 }
 
 #[serde_with::skip_serializing_none]
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GeometryAttribute<BufferViewRef> {
     pub view: BufferViewRef,
     pub semantic: AttributeSemantic,
@@ -207,7 +207,7 @@ pub struct GeometryAttribute<BufferViewRef> {
 }
 
 #[serde_with::skip_serializing_none]
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GeometryIndex<BufferViewRef> {
     pub view: BufferViewRef,
     pub count: u32,
@@ -216,7 +216,7 @@ pub struct GeometryIndex<BufferViewRef> {
     pub format: Format,
 }
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub enum PrimitiveType {
     #[default]
     #[serde(rename = "POINTS")]
@@ -234,7 +234,7 @@ pub enum PrimitiveType {
 }
 
 #[serde_with::skip_serializing_none]
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GeometryPatch<BufferViewRef, MaterialRef> {
     pub attributes: Vec<GeometryAttribute<BufferViewRef>>,
     pub vertex_count: u64,
@@ -245,7 +245,7 @@ pub struct GeometryPatch<BufferViewRef, MaterialRef> {
 }
 
 #[serde_with::skip_serializing_none]
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct GeometryState<BufferViewRef, MaterialRef> {
     pub name: Option<String>,
 
