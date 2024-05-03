@@ -165,6 +165,7 @@ declare_id_type!(SamplerID);
 declare_id_type!(LightID);
 declare_id_type!(GeometryID);
 declare_id_type!(TableID);
+declare_id_type!(PhysicsID);
 
 pub trait IDClass:
     core::fmt::Debug + Copy + Clone + Serialize + std::hash::Hash + PartialEq + Eq

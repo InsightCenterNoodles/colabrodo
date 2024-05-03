@@ -122,6 +122,14 @@ impl NamedComponent for ClientPlotState {
     }
 }
 
+pub type ClientPhysicsState = PhysicsState<BufferViewID>;
+
+impl NamedComponent for ClientPhysicsState {
+    fn name(&self) -> Option<&String> {
+        self.name.as_ref()
+    }
+}
+
 pub type ClientEntityUpdate = EntityStateUpdatable<
     EntityID,
     BufferViewID,

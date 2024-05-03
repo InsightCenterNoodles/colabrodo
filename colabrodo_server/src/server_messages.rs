@@ -267,6 +267,8 @@ pub struct ServerEntityStateUpdatable {
     pub plots: Option<Vec<PlotReference>>,
     pub tags: Option<Vec<String>>,
 
+    pub physics: Option<Vec<PhysicsReference>>,
+
     pub methods_list: Option<Vec<MethodReference>>,
     pub signals_list: Option<Vec<SignalReference>>,
 
@@ -395,6 +397,12 @@ impl ComponentMessageIDs for ServerPlotState {
 }
 
 pub type PlotReference = ComponentReference<PlotID, ServerPlotState>;
+
+// ========================================================================
+
+pub type ServerPhysicsState = PhysicsState<BufferViewReference>;
+
+pub type PhysicsReference = ComponentReference<PhysicsID, ServerPhysicsState>;
 
 // ========================================================================
 

@@ -800,6 +800,7 @@ fn convert_entity_update(
         tables: convert_tables(client, state.tables),
         plots: convert_plots(client, state.plots),
         tags: state.tags,
+        physics: None, // TODO!
         methods_list: convert_methods(client, state.methods_list),
         signals_list: convert_signals(client, state.signals_list),
         influence: state.influence,

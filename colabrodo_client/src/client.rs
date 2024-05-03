@@ -348,6 +348,7 @@ fn handle_next_message(
                 state.delegate_lists.document = Some(local_doc);
             }
         }
+        FromServer::Physics(_) => todo!("Not yet implemented!"),
     }
 
     debug!("Handling next message...Done");

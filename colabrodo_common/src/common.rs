@@ -74,6 +74,9 @@ pub enum ServerMessageIDs {
     MsgMethodReply = 34,
     MsgDocumentInitialized = 35,
 
+    MsgPhysicsCreate = 36,
+    MsgPhysicsDelete = 37,
+
     Unknown = 255,
 }
 

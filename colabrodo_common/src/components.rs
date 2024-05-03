@@ -887,6 +887,52 @@ impl<
 }
 
 // =============================================================================
+
+#[serde_with::skip_serializing_none]
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct StreamFlowAttribute {
+    name: String,
+    data_type: String,
+}
+
+#[serde_with::skip_serializing_none]
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub struct StreamFlowHeader {
+    line_count: u32,
+    attributes: Vec<StreamFlowAttribute>,
+}
+
+#[serde_with::skip_serializing_none]
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub struct PhysicsStreamFlowState<BufferViewRef> {
+    header: StreamFlowHeader,
+    data: BufferViewRef,
+}
+
+#[serde_with::skip_serializing_none]
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub struct PhysicsState<BufferViewRef> {
+    pub name: Option<String>,
+    #[serde(rename = "type")]
+    pub ty: String,
+    pub stream_flow: Option<PhysicsStreamFlowState<BufferViewRef>>,
+}
+
+impl<BufferViewRef> ComponentMessageIDs for PhysicsState<BufferViewRef> {
+    fn update_message_id() -> ServerMessageIDs {
+        ServerMessageIDs::Unknown
+    }
+
+    fn create_message_id() -> ServerMessageIDs {
+        ServerMessageIDs::MsgPhysicsCreate
+    }
+
+    fn delete_message_id() -> ServerMessageIDs {
+        ServerMessageIDs::MsgPhysicsDelete
+    }
+}
+
+// =============================================================================
 // =============================================================================
 // =============================================================================
 

@@ -207,6 +207,16 @@ where
                 || serde::de::Error::custom("Missing required message"),
             )?)
         }
+        ServerMessageIDs::MsgPhysicsCreate => FromServer::Physics(
+            ModPhysics::Create(seq.next_element()?.ok_or_else(|| {
+                serde::de::Error::custom("Missing required message")
+            })?),
+        ),
+        ServerMessageIDs::MsgPhysicsDelete => FromServer::Physics(
+            ModPhysics::Delete(seq.next_element()?.ok_or_else(|| {
+                serde::de::Error::custom("Missing required message")
+            })?),
+        ),
         ServerMessageIDs::Unknown => {
             log::debug!("Unknown ID, bailing");
             return Err(serde::de::Error::custom("Unknown message id"));
@@ -387,6 +397,13 @@ pub enum ModTable {
     Delete(CommonDeleteMessage<TableID>),
 }
 
+/// A message that is table oriented
+#[derive(Debug)]
+pub enum ModPhysics {
+    Create(ClientCommonTagged<PhysicsID, ClientPhysicsState>),
+    Delete(CommonDeleteMessage<PhysicsID>),
+}
+
 /// An enum to represent all messages from the server.
 ///
 #[allow(clippy::enum_variant_names)]
@@ -405,6 +422,7 @@ pub enum FromServer {
     Light(ModLight),
     Geometry(ModGeometry),
     Table(ModTable),
+    Physics(ModPhysics),
     MsgDocumentUpdate(ClientDocumentUpdate),
     MsgDocumentReset(DocumentReset),
     MsgSignalInvoke(ClientMessageSignalInvoke),

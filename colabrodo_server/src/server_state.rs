@@ -426,6 +426,7 @@ pub struct ServerState {
 
     pub tables: PubUserCompList<TableID, ServerTableState>,
     pub plots: PubUserCompList<PlotID, ServerPlotState>,
+    pub physics: PubUserCompList<PhysicsID, ServerPhysicsState>,
 
     pub entities: PubUserCompList<EntityID, ServerEntityState>,
 
@@ -463,6 +464,7 @@ impl Serialize for ServerState {
         self.lights.dump_state_helper(&mut s)?;
         self.tables.dump_state_helper(&mut s)?;
         self.plots.dump_state_helper(&mut s)?;
+        self.physics.dump_state_helper(&mut s)?;
         self.entities.dump_state_helper(&mut s)?;
 
         // custom handling for the doc update.
@@ -498,6 +500,7 @@ impl ServerState {
             lights: PubUserCompList::new(bcast_send.clone()),
             tables: PubUserCompList::new(bcast_send.clone()),
             plots: PubUserCompList::new(bcast_send.clone()),
+            physics: PubUserCompList::new(bcast_send.clone()),
             entities: PubUserCompList::new(bcast_send),
 
             comm: Default::default(),
