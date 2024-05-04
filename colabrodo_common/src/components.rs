@@ -890,7 +890,7 @@ impl<
 
 #[serde_with::skip_serializing_none]
 #[derive(Debug, Default, Serialize, Deserialize)]
-struct StreamFlowAttribute {
+pub struct StreamFlowAttribute {
     pub name: String,
     pub data_type: String,
 }
