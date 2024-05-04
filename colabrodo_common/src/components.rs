@@ -891,22 +891,22 @@ impl<
 #[serde_with::skip_serializing_none]
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct StreamFlowAttribute {
-    name: String,
-    data_type: String,
+    pub name: String,
+    pub data_type: String,
 }
 
 #[serde_with::skip_serializing_none]
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct StreamFlowHeader {
-    line_count: u32,
-    attributes: Vec<StreamFlowAttribute>,
+    pub line_count: u32,
+    pub attributes: Vec<StreamFlowAttribute>,
 }
 
 #[serde_with::skip_serializing_none]
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct PhysicsStreamFlowState<BufferViewRef> {
-    header: StreamFlowHeader,
-    data: BufferViewRef,
+    pub header: StreamFlowHeader,
+    pub data: BufferViewRef,
 }
 
 #[serde_with::skip_serializing_none]
