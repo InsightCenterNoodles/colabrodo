@@ -104,7 +104,8 @@ async fn noodles_task(
     server: url::Url,
     sender: tokio::sync::mpsc::UnboundedSender<RecorderMessage>,
 ) -> anyhow::Result<()> {
-    let (mut ws_stream, _) = tokio_tungstenite::connect_async(server).await?;
+    let (mut ws_stream, _) =
+        tokio_tungstenite::connect_async(server.as_str()).await?;
 
     // send introduction
     {
@@ -122,7 +123,7 @@ async fn noodles_task(
 
         ws_stream
             .send(tokio_tungstenite::tungstenite::protocol::Message::Binary(
-                intro_bytes,
+                intro_bytes.into(),
             ))
             .await
             .unwrap();
@@ -138,7 +139,7 @@ async fn noodles_task(
         // we can, for now, just assume that this message is valid cbor.
 
         sender
-            .send(RecorderMessage::WriteCBOR(data))
+            .send(RecorderMessage::WriteCBOR(data.into()))
             .expect("internal error");
     })
     .await;

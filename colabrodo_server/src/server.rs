@@ -289,7 +289,7 @@ async fn client_forwarder(
                 if let Some(x) = message {
                     log::debug!("Forwarding {} bytes", x.len());
                     message_out
-                    .send(tokio_tungstenite::tungstenite::Message::Binary(x))
+                    .send(tokio_tungstenite::tungstenite::Message::Binary(x.into()))
                     .unwrap();
                 } else {
                     break;
@@ -376,7 +376,7 @@ async fn client_handler(
                 // queue
                             match bcast {
                                 Ok(Output::Broadcast(bcast)) => {
-                                    this_tx.send(tokio_tungstenite::tungstenite::Message::Binary(bcast)).unwrap();
+                                    this_tx.send(tokio_tungstenite::tungstenite::Message::Binary(bcast.into())).unwrap();
                                 },
                                 Err(RecvError::Lagged(_)) => {
                                     log::error!("Bad broadcast, system is lagging {:?}", bcast)
@@ -432,7 +432,7 @@ async fn client_handler(
                             to_server_send
                             .send(ToServerMessage::Client(FromClientMessage(
                                 client_id,
-                                x,
+                                x.into(),
                             ))).await
                             .unwrap();
                         }

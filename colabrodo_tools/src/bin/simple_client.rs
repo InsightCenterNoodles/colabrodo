@@ -265,7 +265,7 @@ async fn cli_main() {
 
     let (stdin_tx, stdin_rx) = futures_channel::mpsc::unbounded();
 
-    let conn_result = connect_async(url).await;
+    let conn_result = connect_async(url.to_string()).await;
 
     if conn_result.is_err() {
         error!("Unable to connect to given server.");
@@ -293,7 +293,10 @@ async fn cli_main() {
         ser::into_writer(&introduction, &mut intro_bytes)
             .expect("Unable to serialize introduction message!");
 
-        ws_stream.send(Message::Binary(intro_bytes)).await.unwrap();
+        ws_stream
+            .send(Message::Binary(intro_bytes.into()))
+            .await
+            .unwrap();
     }
 
     let (write, read) = ws_stream.split();
@@ -580,7 +583,7 @@ fn call_method(
                 .insert(invoke_identifier, "called".to_string());
         }
 
-        let send_result = tx.unbounded_send(Message::Binary(buffer));
+        let send_result = tx.unbounded_send(Message::Binary(buffer.into()));
 
         if send_result.is_err() {
             return;

@@ -437,7 +437,7 @@ pub async fn start_client_stream(
     info!("Connecting to {url}...");
 
     // connect to a server...
-    let conn_result = connect_async(&url)
+    let conn_result = connect_async(url.as_str())
         .await
         .map_err(UserClientError::ConnectionError)?;
 
@@ -461,7 +461,10 @@ pub async fn start_client_stream(
 
         ciborium::ser::into_writer(&content, &mut buffer).unwrap();
 
-        socket_tx.send(Message::Binary(buffer)).await.unwrap();
+        socket_tx
+            .send(Message::Binary(buffer.into()))
+            .await
+            .unwrap();
     }
 
     // spawn task that forwards messages from the client to the socket
@@ -508,7 +511,7 @@ async fn incoming_message_task(
                 match msg.unwrap() {
                     Ok(x) => {
                         to_client_tx
-                        .send(IncomingMessage::NetworkMessage(x.into_data()))
+                        .send(IncomingMessage::NetworkMessage(x.into_data().into()))
                         .unwrap();
                     },
                     Err(_) => {
@@ -557,7 +560,7 @@ async fn forward_task(
                 }
 
                 socket_out
-                    .send(tokio_tungstenite::tungstenite::Message::Binary(buffer))
+                    .send(tokio_tungstenite::tungstenite::Message::Binary(buffer.into()))
                     .await
                     .unwrap();
             }
