@@ -274,6 +274,7 @@ pub struct ServerEntityStateUpdatable {
 
     pub influence: Option<BoundingBox>,
     pub visible: Option<bool>,
+    pub billboard: Option<bool>,
 }
 
 #[serde_with::skip_serializing_none]

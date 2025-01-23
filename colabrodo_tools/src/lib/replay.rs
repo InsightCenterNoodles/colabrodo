@@ -805,5 +805,6 @@ fn convert_entity_update(
         signals_list: convert_signals(client, state.signals_list),
         influence: state.influence,
         visible: state.visible,
+        billboard: Default::default(),
     }
 }
