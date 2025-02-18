@@ -23,7 +23,7 @@ use serde::{ser::SerializeSeq, Serialize};
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::sync::{Arc, Mutex};
-use tokio::sync::broadcast::{self, Sender};
+use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 #[derive(Debug, Clone)]
@@ -31,7 +31,28 @@ pub enum Output {
     Broadcast(Vec<u8>),
 }
 
-pub type CallbackPtr = Sender<Output>;
+pub type CallbackPtr = Broadcaster;
+
+#[derive(Default, Clone)]
+pub struct Broadcaster {
+    outputs: std::sync::Arc<
+        std::sync::Mutex<Vec<tokio::sync::mpsc::UnboundedSender<Output>>>,
+    >,
+}
+
+impl Broadcaster {
+    pub fn subscribe(&self) -> mpsc::UnboundedReceiver<Output> {
+        let (tx, rx) = mpsc::unbounded_channel();
+        self.outputs.lock().unwrap().push(tx);
+        rx
+    }
+
+    pub fn send(&self, message: Output) {
+        let mut lock = self.outputs.lock().unwrap();
+
+        lock.retain(|sender| sender.send(message.clone()).is_ok());
+    }
+}
 
 // =============================================================================
 
@@ -193,11 +214,7 @@ impl<
     /// Send a CBOR message to the broadcast sink
     fn send_to_broadcast(&self, rec: Recorder) {
         log::debug!("Broadcasting {} bytes", rec.data.len());
-        let _ret = self.broadcast.send(Output::Broadcast(rec.data));
-
-        if _ret.is_err() {
-            log::debug!("Unable to send to broadcast queue!");
-        }
+        self.broadcast.send(Output::Broadcast(rec.data));
     }
 
     /// Obtain a new id. Either generates a new ID if there are no free slots. If there are free slots, reuse and bump the generation.
@@ -228,11 +245,7 @@ impl<
 
         // not sending a message could just mean that the broadcast pipe has been shut down, so we ignore it
         log::debug!("Broadcasting delete, {} bytes", recorder.data.len());
-        let _err = self.broadcast.send(Output::Broadcast(recorder.data));
-
-        if _err.is_err() {
-            log::debug!("Unable to broadcast deletion!");
-        }
+        self.broadcast.send(Output::Broadcast(recorder.data));
 
         self.id_list.remove(&id);
         self.free_list.push(id);
@@ -406,7 +419,7 @@ where
 /// Core server state, or Document. Maintains a list of all components that clients may discover. Also maintains state for document lists.
 /// See examples for usage.
 pub struct ServerState {
-    tx: CallbackPtr,
+    tx: Broadcaster,
     halt_token: CancellationToken,
 
     pub methods: PubUserCompList<MethodID, ServerMethodState>,
@@ -482,7 +495,7 @@ impl Serialize for ServerState {
 impl ServerState {
     /// Create a new server state.
     pub fn new() -> Arc<Mutex<Self>> {
-        let (bcast_send, _) = broadcast::channel(256);
+        let bcast_send = Broadcaster::default();
 
         Arc::new(Mutex::new(Self {
             tx: bcast_send.clone(),
@@ -509,11 +522,11 @@ impl ServerState {
         }))
     }
 
-    pub fn new_broadcast_recv(&self) -> broadcast::Receiver<Output> {
+    pub fn new_broadcast_recv(&self) -> mpsc::UnboundedReceiver<Output> {
         self.tx.subscribe()
     }
 
-    pub fn new_broadcast_send(&self) -> broadcast::Sender<Output> {
+    pub fn new_broadcast_send(&self) -> Broadcaster {
         self.tx.clone()
     }
 
@@ -535,11 +548,7 @@ impl ServerState {
 
         log::debug!("Broadcasting doc update, {} bytes", recorder.data.len());
 
-        let _ret = self.tx.send(Output::Broadcast(recorder.data));
-
-        if _ret.is_err() {
-            log::debug!("Unable to broadcast document update!");
-        }
+        self.tx.send(Output::Broadcast(recorder.data));
 
         self.comm = update;
     }
@@ -569,7 +578,7 @@ impl ServerState {
             },
         );
 
-        self.tx.send(Output::Broadcast(recorder.data)).unwrap();
+        self.tx.send(Output::Broadcast(recorder.data));
     }
 
     pub fn get_client_info(&self, id: uuid::Uuid) -> Option<&ClientRecord> {

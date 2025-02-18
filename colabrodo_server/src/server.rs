@@ -9,6 +9,7 @@ pub use crate::server_messages::{
     ComponentReference, MethodHandlerSlot, ServerDocumentUpdate,
     ServerMethodState,
 };
+use crate::server_state::Broadcaster;
 pub use crate::server_state::MethodResult;
 use crate::server_state::Output;
 pub use crate::server_state::{InvokeObj, ServerState, ServerStatePtr};
@@ -27,7 +28,6 @@ use futures_util::StreamExt;
 use log;
 use thiserror::Error;
 pub use tokio;
-use tokio::sync::broadcast::error::RecvError;
 use tokio::{
     net::{TcpListener, TcpStream},
     sync::{broadcast, mpsc},
@@ -178,7 +178,7 @@ async fn listen(opts: &ServerOptions) -> TcpListener {
 // handler task
 async fn client_connect_task(
     listener: TcpListener,
-    bcast_send: broadcast::Sender<Output>,
+    bcast_send: Broadcaster,
     to_server_send: tokio::sync::mpsc::Sender<ToServerMessage>,
     stop_tx: CancellationToken,
 ) {
@@ -305,7 +305,7 @@ async fn client_forwarder(
 async fn client_handler(
     stream: TcpStream,
     to_server_send: tokio::sync::mpsc::Sender<ToServerMessage>,
-    mut bcast_recv: broadcast::Receiver<Output>,
+    mut bcast_recv: mpsc::UnboundedReceiver<Output>,
     stop_tx: CancellationToken,
 ) -> Result<(), ()> {
     log::debug!("Client handler task start");
@@ -375,13 +375,10 @@ async fn client_handler(
                 // take each message from the broadcast channel and add it to the
                 // queue
                             match bcast {
-                                Ok(Output::Broadcast(bcast)) => {
+                                Some(Output::Broadcast(bcast)) => {
                                     this_tx.send(tokio_tungstenite::tungstenite::Message::Binary(bcast.into())).unwrap();
                                 },
-                                Err(RecvError::Lagged(_)) => {
-                                    log::error!("Bad broadcast, system is lagging {:?}", bcast)
-                                },
-                                Err(RecvError::Closed) => {
+                                _ => {
                                     log::debug!("Out queue forwarder closed");
                                     break;
                                 }
